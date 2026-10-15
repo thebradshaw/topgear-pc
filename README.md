@@ -36,10 +36,10 @@ The first gamepad is player 1 and the second is player 2.
 
 Needs CMake 3.20+. SDL3 is downloaded and linked statically, so `topgear.exe` has no DLL dependencies.
 
-Windows (Visual Studio 2022):
+Windows (Visual Studio 2022 or newer, run from a Developer Command Prompt):
 
 ```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 

@@ -9,9 +9,9 @@ jobs:
   windows-msvc:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release
       - name: Test (no ROM)
@@ -27,7 +27,7 @@ jobs:
   linux-mingw-cross:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install MinGW
         run: sudo apt-get update && sudo apt-get install -y mingw-w64 ninja-build
       - name: Configure
