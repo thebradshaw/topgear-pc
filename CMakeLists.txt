@@ -78,4 +78,12 @@ if(TG_TEST_ROM)
   add_test(NAME attract_demo COMMAND tg_headless --rom ${TG_TEST_ROM} --frames 7200
     --expect-wram eb074942bd3f6b5efa7402979c2d6e56e4373739112cc711cfe448f4a8291cba
     --expect-frame fc8fc8246cc971806acc2607897b4d99093d1b48884d9aa682271d1036f81eca)
+  # Disassemble, reassemble with ca65/ld65 and require a byte-identical ROM.
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  find_program(CA65 ca65)
+  find_program(LD65 ld65)
+  if(Python3_FOUND AND CA65 AND LD65)
+    add_test(NAME disasm_roundtrip COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_disasm.py
+      --rom ${TG_TEST_ROM} --out ${CMAKE_BINARY_DIR}/disasm)
+  endif()
 endif()

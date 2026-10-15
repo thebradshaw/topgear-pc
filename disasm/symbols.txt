@@ -1,0 +1,7 @@
+# Names and comments for the disassembly: <bank>:<addr> [name] [; comment]
+# Addresses are CPU addresses in the LoROM map (banks 00-0F, $8000-$FFFF).
+
+00:8000 Reset ; power-on and reset vector
+00:EC7D UnusedInterrupt ; COP, BRK, ABORT and emulation-mode NMI/IRQ all point here
+00:FFC0 RomHeader ; internal header: title, map mode, checksum
+00:FFE0 Vectors ; native NMI = $0000 and IRQ = $0004 jump through work RAM

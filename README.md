@@ -41,6 +41,10 @@ Each session writes to `recordings/` next to `topgear.exe`:
 
 Run with `--no-record` to turn this off.
 
+## Disassembly
+
+`tools/disasm.py` turns your ROM into ca65 assembly, using the recorded coverage (`disasm/coverage.tgcov`) to tell code from data and to know the register widths each instruction ran with. Names and comments live in `disasm/symbols.txt`. The generated assembly comes from your ROM, so it stays local and is never committed. `tools/check_disasm.py` reassembles it and checks the ROM comes out byte-identical; with `TG_TEST_ROM` set this runs as the `disasm_roundtrip` test (needs Python 3 and cc65).
+
 ## Building
 
 Needs CMake 3.20+. SDL3 is downloaded and linked statically, so `topgear.exe` has no DLL dependencies.
@@ -81,4 +85,6 @@ ctest --test-dir build -C Release --output-on-failure
 | `src/coverage.c` | Execution and data coverage of the original ROM |
 | `tools/tg_headless.c` | Headless runner for tests and investigation |
 | `tools/covstat.py` | Summarises a coverage file |
+| `tools/disasm.py` | Coverage-driven disassembler (ca65 output) |
+| `disasm/` | Symbols and accumulated coverage (no ROM content) |
 | `tests/` | Tests |
