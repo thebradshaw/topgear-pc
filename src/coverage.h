@@ -28,6 +28,9 @@ enum {
 };
 
 #define TG_COV_RAM_SIZE 0x20000
+// Distinct (address, opcode, mode) triples executed from work RAM. RAM holds different
+// code at different times (overlays), so per-address flags alone are ambiguous there.
+#define TG_COV_RAM_OPS 16384
 
 struct TgCoverage {
   uint8_t flags[TG_ROM_SIZE];
@@ -35,6 +38,7 @@ struct TgCoverage {
   uint8_t db[TG_ROM_SIZE];
   uint16_t dp[TG_ROM_SIZE];
   uint8_t ramFlags[TG_COV_RAM_SIZE];  // same bits as flags[], for code run from work RAM
+  uint32_t ramOps[TG_COV_RAM_OPS];  // hash set: 1 << 31 | ramAddr << 13 | opcode << 5 | mode >> 3
   // tracking state, not saved
   uint32_t prevNext;  // address following the previous instruction
   uint8_t prevOpcode;

@@ -18,6 +18,9 @@ import hashlib
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tgcov import Coverage  # noqa: E402
+
 ROM_SIZE = 0x80000
 BANKS = ROM_SIZE // 0x8000
 ROM_SHA256 = "ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788"
@@ -76,15 +79,8 @@ def widths(flag):
 
 
 def load_coverage(path):
-    d = open(path, "rb").read()
-    if d[:8] != b"TGCOV01\0":
-        sys.exit(f"{path}: not a coverage file")
-    o = 8
-    flags = d[o:o + ROM_SIZE]; o += ROM_SIZE
-    entry = d[o:o + ROM_SIZE]; o += ROM_SIZE
-    db = d[o:o + ROM_SIZE]; o += ROM_SIZE
-    dp = [d[o + 2 * i] | d[o + 2 * i + 1] << 8 for i in range(ROM_SIZE)]
-    return flags, entry, db, dp
+    cov = Coverage.load(path)
+    return cov.flags, cov.entry, cov.db, [cov.dp_at(i) for i in range(ROM_SIZE)]
 
 
 def load_symbols(path):

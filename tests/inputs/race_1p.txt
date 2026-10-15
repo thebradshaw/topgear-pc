@@ -1,4 +1,5 @@
 # 1 player: menus, then a scripted drive with steering, gears and nitro
+# frames 11000
 1439 1 START
 1442 1 -
 1547 1 START

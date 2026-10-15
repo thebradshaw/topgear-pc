@@ -59,15 +59,29 @@ void tg_coverage_on_opcode(TgCoverage* cov, uint32_t adr, const uint8_t* bytes, 
   int len = tg_w65816_length(bytes[0], m8, x8);
   uint8_t widths = m8 ? (x8 ? TG_COV_M8X8 : TG_COV_M8X16) : (x8 ? TG_COV_M16X8 : TG_COV_M16X16);
   uint8_t mode = widths | (emu ? TG_COV_EMU : 0);
-  bool target = adr != cov->prevNext;
-  bool called = target && isCall(cov->prevOpcode);
+  // Arriving after RTI/RTS/RTL is a return, not a jump worth a label.
+  uint8_t prev = cov->prevOpcode;
+  bool target = adr != cov->prevNext && prev != 0x40 && prev != 0x60 && prev != 0x6b;
+  bool called = target && isCall(prev);
   cov->prevNext = (adr & 0xff0000) | ((adr + len) & 0xffff);
   cov->prevOpcode = bytes[0];
 
   int32_t off = tg_lorom_offset(adr);
   if(off < 0) {
     int32_t r = ramOffset(adr);
-    if(r >= 0) cov->ramFlags[r] |= TG_COV_OPCODE | mode;
+    if(r >= 0) {
+      cov->ramFlags[r] |= TG_COV_OPCODE | mode;
+      uint32_t key = 1u << 31 | (uint32_t) r << 13 | (uint32_t) bytes[0] << 5 | mode >> 3;
+      uint32_t h = (key * 2654435761u) >> 18;  // 14-bit hash
+      for(int i = 0; i < TG_COV_RAM_OPS; i++) {
+        uint32_t* slot = &cov->ramOps[(h + i) & (TG_COV_RAM_OPS - 1)];
+        if(*slot == key) break;
+        if(*slot == 0) {
+          *slot = key;
+          break;
+        }
+      }
+    }
     return;
   }
   uint8_t* f = &cov->flags[off];
@@ -92,7 +106,8 @@ void tg_coverage_on_read(TgCoverage* cov, uint32_t adr) {
   if(off >= 0) cov->flags[off] |= TG_COV_READ;
 }
 
-static const char magic[8] = "TGCOV01";
+static const char magic[8] = "TGCOV02";
+static const char magicV1[8] = "TGCOV01";
 
 bool tg_coverage_save(const TgCoverage* cov, const char* path) {
   FILE* f = fopen(path, "wb");
@@ -102,7 +117,8 @@ bool tg_coverage_save(const TgCoverage* cov, const char* path) {
     fwrite(cov->entry, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
     fwrite(cov->db, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
     fwrite(cov->dp, 2, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
-    fwrite(cov->ramFlags, 1, TG_COV_RAM_SIZE, f) == TG_COV_RAM_SIZE;
+    fwrite(cov->ramFlags, 1, TG_COV_RAM_SIZE, f) == TG_COV_RAM_SIZE &&
+    fwrite(cov->ramOps, 4, TG_COV_RAM_OPS, f) == TG_COV_RAM_OPS;
   return fclose(f) == 0 && ok;
 }
 
@@ -111,12 +127,13 @@ bool tg_coverage_load(TgCoverage* cov, const char* path) {
   FILE* f = fopen(path, "rb");
   if(f == NULL) return false;
   char m[8];
-  bool ok = fread(m, 1, 8, f) == 8 && memcmp(m, magic, 8) == 0 &&
+  bool ok = fread(m, 1, 8, f) == 8 && (memcmp(m, magic, 8) == 0 || memcmp(m, magicV1, 8) == 0) &&
     fread(cov->flags, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
     fread(cov->entry, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
     fread(cov->db, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
     fread(cov->dp, 2, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
     fread(cov->ramFlags, 1, TG_COV_RAM_SIZE, f) == TG_COV_RAM_SIZE;
+  if(ok && memcmp(m, magic, 8) == 0) ok = fread(cov->ramOps, 4, TG_COV_RAM_OPS, f) == TG_COV_RAM_OPS;
   fclose(f);
   if(!ok) tg_coverage_init(cov);
   return ok;
