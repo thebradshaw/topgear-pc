@@ -2,7 +2,7 @@
 //
 //   tg_headless --rom <file> [--frames N] [--input script.txt]
 //               [--screenshot out.ppm] [--shots-every N --shots-dir DIR]
-//               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE]
+//               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]
 //
 // Prints the SHA-256 of work RAM and of the final frame so runs can be compared.
 // With --expect-*, exits non-zero when a hash differs (used by the regression tests).
@@ -57,6 +57,7 @@ int main(int argc, char** argv) {
   const char* expectWram = NULL;
   const char* expectFrame = NULL;
   const char* coveragePath = NULL;
+  const char* dumpWram = NULL;
   long frames = 600;
   long shotsEvery = 0;
   for(int i = 1; i < argc; i++) {
@@ -70,8 +71,9 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--expect-wram") == 0 && next) expectWram = argv[++i];
     else if(strcmp(argv[i], "--expect-frame") == 0 && next) expectFrame = argv[++i];
     else if(strcmp(argv[i], "--coverage") == 0 && next) coveragePath = argv[++i];
+    else if(strcmp(argv[i], "--dump-wram") == 0 && next) dumpWram = argv[++i];
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]\n", argv[0]);
       return 2;
     }
   }
@@ -125,6 +127,11 @@ int main(int argc, char** argv) {
   }
   tg_game_get_pixels(game, pixels);
   if(screenshot) writePpm(screenshot, pixels);
+  if(dumpWram) {
+    FILE* f = fopen(dumpWram, "wb");
+    if(f == NULL || fwrite(tg_game_wram(game), 1, 0x20000, f) != 0x20000) fprintf(stderr, "cannot write %s\n", dumpWram);
+    if(f) fclose(f);
+  }
 
   printf("frames %ld\n", frames);
   bool ok = checkHash("wram", tg_game_wram(game), 0x20000, expectWram);
