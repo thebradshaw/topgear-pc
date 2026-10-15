@@ -66,7 +66,7 @@ snesrecomp can be used as an accelerator in step 3 to produce a first-draft C tr
 
 **Phase 5. Enhancements (after fidelity is locked)**
 
-Every enhancement is a separate option, **off by default**. With all of them off the game must still pass the full recording suite, so "original" mode can never drift.
+All nine below are approved. Every enhancement is a separate option, **off by default**. Items 8 and 9 only touch the Windows frontend, not the game, so they can land before the C translation is finished; the rest need the translated renderer and game logic. With all of them off the game must still pass the full recording suite, so "original" mode can never drift.
 
 *Requested by Chris:*
 
@@ -74,7 +74,7 @@ Every enhancement is a separate option, **off by default**. With all of them off
 2. **Smooth high frame rates (120 Hz, 144 Hz, any refresh).** Game logic stays at 60 updates a second so physics, AI and lap times are identical; rendering interpolates between updates (road curve and scroll, car and object positions, scenery parallax). Roadside objects in the original grow by stepping through a few pre-drawn sizes; at high frame rates we scale them continuously instead, so they grow smoothly without new art. Animation frames (car turning, wheels, smoke) keep their original timing unless extra in-between frames are drawn; the renderer will accept an optional frame pack so those can be added later.
 3. **Full-screen single-player view.** Like the "Super Mario Kart FULLSCREEN" hack: in 1-player races, hide the computer's half and give the player's view the whole screen. The road projection is recomputed for the taller view (more lines of road rather than stretched lines), the sky and hills extend upward, and the HUD is laid out for the full screen. Two-player races keep the split.
 
-*Suggested additions:*
+*Also approved by Chris (suggested extras):*
 
 4. **Side-by-side split for 2 players on widescreen**: two tall views next to each other instead of stacked, which suits 16:9 screens better.
 5. **Ghost cars and time attack**: our recordings replay perfectly, so a best lap can be replayed as a translucent ghost to race against.
