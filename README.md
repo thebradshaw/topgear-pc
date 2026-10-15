@@ -1,0 +1,73 @@
+# Top Gear for Windows
+
+A faithful PC port of the 1992 SNES game Top Gear (USA), in progress. The goal is a version that plays exactly like the cartridge first, then optional extras such as widescreen and 120 fps. See [docs/PLAN.md](docs/PLAN.md).
+
+**You need your own ROM.** No game code or assets are in this repository. The game only runs from an unmodified Top Gear (USA) ROM:
+
+- 524,288 bytes (a 512-byte copier header is removed automatically)
+- SHA-256 `ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788`
+
+## Status
+
+Phase 0. Every frame currently runs the original game on the embedded reference emulator ([LakeSnes](https://github.com/angelo-wf/LakeSnes), MIT). As routines are translated to readable C they replace it, with the emulator kept as the fallback and as a referee that checks the port frame by frame.
+
+## Playing
+
+Put `Top Gear (USA).sfc` next to `topgear.exe`, or drag the ROM onto `topgear.exe`.
+
+| Action | Keyboard | Gamepad |
+|---|---|---|
+| D-pad | Arrow keys | D-pad or left stick |
+| B / A / Y / X | Z / X / A / S | South / East / West / North |
+| L / R | Q / W | Shoulders or triggers |
+| Start / Select | Enter / Right Shift | Start / Back |
+
+The first gamepad is player 1 and the second is player 2.
+
+| Key | Function |
+|---|---|
+| F11 or Alt+Enter | Fullscreen |
+| Esc | Leave fullscreen |
+| F2 | Aspect: 4:3 TV or 8:7 square pixels |
+| F3 | Integer scaling |
+| F5 | Reset |
+
+## Building
+
+Needs CMake 3.20+. SDL3 is downloaded and linked statically, so `topgear.exe` has no DLL dependencies.
+
+Windows (Visual Studio 2022):
+
+```
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
+```
+
+Cross-compiling for Windows from Linux (MinGW-w64):
+
+```
+cmake -S . -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
+cmake --build build-win
+```
+
+## Tests
+
+`ctest --test-dir build` runs the ROM-free tests. Pass your ROM to enable the ROM tests, including a two-minute attract-mode run whose RAM and picture hashes are pinned:
+
+```
+cmake -S . -B build -DTG_TEST_ROM="C:/path/to/Top Gear (USA).sfc"
+ctest --test-dir build -C Release --output-on-failure
+```
+
+`tg_headless` runs the game without a window, with optional scripted input (`tools/tg_headless.c` explains the format), screenshots and hash checks.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/game.c` | The game as the frontend sees it; translated C will land behind this interface |
+| `src/main.c` | SDL3 frontend: window, fullscreen, scaling, input, audio |
+| `src/rom.c` | Loads and verifies your ROM |
+| `third_party/lakesnes` | Reference emulator (MIT, see its LICENSE.txt) |
+| `tools/tg_headless.c` | Headless runner for tests and investigation |
+| `tests/` | Tests |

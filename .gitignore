@@ -1,0 +1,11 @@
+# Never commit game data.
+*.sfc
+*.smc
+*.SFC
+*.SMC
+*.zip
+
+build*/
+out/
+.vs/
+*.user

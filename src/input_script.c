@@ -1,0 +1,85 @@
+#include "input_script.h"
+
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "game.h"
+
+static const struct {
+  const char* name;
+  uint16_t bit;
+} buttonNames[] = {
+  {"B", TG_BTN_B}, {"Y", TG_BTN_Y}, {"SELECT", TG_BTN_SELECT}, {"START", TG_BTN_START},
+  {"UP", TG_BTN_UP}, {"DOWN", TG_BTN_DOWN}, {"LEFT", TG_BTN_LEFT}, {"RIGHT", TG_BTN_RIGHT},
+  {"A", TG_BTN_A}, {"X", TG_BTN_X}, {"L", TG_BTN_L}, {"R", TG_BTN_R},
+};
+
+bool tg_parse_buttons(const char* text, uint16_t* buttons) {
+  *buttons = 0;
+  if(strcmp(text, "-") == 0) return true;
+  char copy[128];
+  snprintf(copy, sizeof(copy), "%s", text);
+  for(char* tok = strtok(copy, "+"); tok != NULL; tok = strtok(NULL, "+")) {
+    for(char* c = tok; *c; c++) *c = (char) toupper((unsigned char) *c);
+    bool found = false;
+    for(size_t i = 0; i < sizeof(buttonNames) / sizeof(buttonNames[0]); i++) {
+      if(strcmp(tok, buttonNames[i].name) == 0) {
+        *buttons |= buttonNames[i].bit;
+        found = true;
+      }
+    }
+    if(!found) return false;
+  }
+  return true;
+}
+
+bool tg_input_script_load(const char* path, TgInputScript* script, char* error, int errorSize) {
+  memset(script, 0, sizeof(*script));
+  FILE* f = fopen(path, "r");
+  if(f == NULL) {
+    snprintf(error, errorSize, "cannot open %s", path);
+    return false;
+  }
+  int capacity = 0;
+  char line[256];
+  int lineNo = 0;
+  uint32_t lastFrame = 0;
+  while(fgets(line, sizeof(line), f)) {
+    lineNo++;
+    char* hash = strchr(line, '#');
+    if(hash) *hash = 0;
+    unsigned frame, player;
+    char buttons[128];
+    int n = sscanf(line, "%u %u %127s", &frame, &player, buttons);
+    if(n <= 0) continue;
+    uint16_t mask;
+    if(n != 3 || (player != 1 && player != 2) || !tg_parse_buttons(buttons, &mask) || frame < lastFrame) {
+      snprintf(error, errorSize, "%s:%d: expected '<frame> <1|2> <buttons>' in frame order", path, lineNo);
+      fclose(f);
+      tg_input_script_free(script);
+      return false;
+    }
+    lastFrame = frame;
+    if(script->count == capacity) {
+      capacity = capacity ? capacity * 2 : 64;
+      script->events = realloc(script->events, capacity * sizeof(TgInputEvent));
+    }
+    script->events[script->count++] = (TgInputEvent){frame, (uint8_t) player, mask};
+  }
+  fclose(f);
+  return true;
+}
+
+void tg_input_script_free(TgInputScript* script) {
+  free(script->events);
+  memset(script, 0, sizeof(*script));
+}
+
+void tg_input_script_advance(TgInputScript* script, uint32_t frame) {
+  while(script->next < script->count && script->events[script->next].frame <= frame) {
+    TgInputEvent* e = &script->events[script->next++];
+    script->state[e->player] = e->buttons;
+  }
+}
