@@ -83,6 +83,12 @@ if(TG_TEST_ROM)
     --input ${CMAKE_SOURCE_DIR}/tests/inputs/race_1p.txt
     --expect-wram 08f94c7b56cb0b8ac33b9c557c5c0fdd25c7ab80ee479d374a45a6253b5b2a8a
     --expect-frame 94766e6c901d25c1fdb0f14cf24d3b8c78be1e25318146f0f3905f6d904537c9)
+  # Chris's 15-minute session recorded on Windows. Slow, so labelled "long":
+  # ctest -L long to run it, ctest -LE long to skip it.
+  add_test(NAME chris_session_01 COMMAND tg_headless --rom ${TG_TEST_ROM} --frames 54853
+    --input ${CMAKE_SOURCE_DIR}/tests/inputs/chris_session_01.txt
+    --expect-wram 4ff4ffc25d58655992eaa28e1c404ff7f3a73e815903af5e62361bd135f76cd8)
+  set_tests_properties(chris_session_01 PROPERTIES LABELS long TIMEOUT 1800)
   # Disassemble, reassemble with ca65/ld65 and require a byte-identical ROM.
   find_package(Python3 COMPONENTS Interpreter QUIET)
   find_program(CA65 ca65)
