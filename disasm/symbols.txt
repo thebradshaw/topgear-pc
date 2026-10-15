@@ -12,7 +12,7 @@
 0F:806D GameInit ; installs the NMI trampoline at $0000, default names/records, then the title/menu flow
 0F:80BD SetupColorGradientHdma ; HDMA channels 3/4 write CGRAM ($2121/$2122) from tables at $0D:C7BC/$0D:C7F3
 0F:80F4 ResetNamesAndRecords ; blank player names, default records from $0D:C656 and $0D:C696
-00:8372 RaceInit ; sets up PPU, enables NMI + H/V IRQ (NMITIMEN $B1), installs race trampolines, renders both views once
+00:81B8 RaceSetup ; installs the race NMI/IRQ trampolines; continues into PPU setup, enables NMI + H/V IRQ (NMITIMEN $B1 at $00:8467) and renders both views once
 00:EC1A RaceNmiHandler ; races: reads both joypads only
 00:EC5B RaceIrqHandler ; races: raster IRQ, dispatches through JSR ($000A)
 01:8000 RaceViewPostProcess ; called after each RaceRenderView (tentative)

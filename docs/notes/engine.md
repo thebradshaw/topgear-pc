@@ -18,7 +18,7 @@ Findings from the disassembly. Addresses are SNES CPU addresses; see `disasm/sym
 The menus (bank $0F) and the races (bank $00 plus RAM code) are separate engines that reuse the same low RAM for different variables, so names in `disasm/ram.txt` are prefixed Menu/Race where they differ.
 
 - Menus: NMI = `NmiHandler` ($0F:8000), no IRQ.
-- Races: `RaceInit` rewrites the trampolines to `JML $00:EC1A` (NMI: joypads only) and `JML $00:EC5B` (raster IRQ that calls the routine whose address is in $000A, so each IRQ chains to the next split of the screen), and enables NMI + H/V IRQ.
+- Races: `RaceSetup` ($00:81B8) rewrites the trampolines to `JML $00:EC1A` (NMI: joypads only) and `JML $00:EC5B` (raster IRQ that calls the routine whose address is in $000A, so each IRQ chains to the next split of the screen), and enables NMI + H/V IRQ.
 
 ## Code that runs from RAM
 
