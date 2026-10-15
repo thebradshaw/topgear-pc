@@ -1,0 +1,16 @@
+# Work RAM variables: <addr> <name> [; comment]. 0000-1FFF is low RAM (mirrored in banks 00-3F/80-BF).
+0000 NmiTrampoline ; JML $0F:8000 written by GameInit
+0004 IrqTrampoline ; RTI
+0008 FrameCounter8 ; incremented every NMI
+000A Joy1Held ; controller 1 buttons this frame
+000C Joy2Held
+000E Joy1Pressed ; newly pressed buttons, accumulated until the game clears them
+0010 Joy2Pressed
+0023 DecompSrc ; 24-bit source pointer for DecompressBegin/Next
+0042 InidispShadow ; written to INIDISP ($2100) every NMI (brightness / forced blank)
+0424 NmiDmaChannels ; DMA channel mask started by the NMI handler, then cleared
+1F06 CarTypeIndex
+1F86 Player1Name ; 8 characters, blank = spaces
+1FA3 Player2Name
+1FF6 WarmBootFlag
+1FFC FrameCounter16 ; incremented every NMI, survives soft reset

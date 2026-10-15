@@ -82,8 +82,9 @@ def load_coverage(path):
     o = 8
     flags = d[o:o + ROM_SIZE]; o += ROM_SIZE
     entry = d[o:o + ROM_SIZE]; o += ROM_SIZE
-    db = d[o:o + ROM_SIZE]
-    return flags, entry, db
+    db = d[o:o + ROM_SIZE]; o += ROM_SIZE
+    dp = [d[o + 2 * i] | d[o + 2 * i + 1] << 8 for i in range(ROM_SIZE)]
+    return flags, entry, db, dp
 
 
 def load_symbols(path):
@@ -109,6 +110,47 @@ def load_symbols(path):
     return names, comments
 
 
+# SNES hardware registers, for operand comments.
+HW_REGS = dict(zip(range(0x2100, 0x2134), """INIDISP OBSEL OAMADDL OAMADDH OAMDATA BGMODE MOSAIC BG1SC BG2SC BG3SC BG4SC
+BG12NBA BG34NBA BG1HOFS BG1VOFS BG2HOFS BG2VOFS BG3HOFS BG3VOFS BG4HOFS BG4VOFS VMAIN VMADDL VMADDH VMDATAL
+VMDATAH M7SEL M7A M7B M7C M7D M7X M7Y CGADD CGDATA W12SEL W34SEL WOBJSEL WH0 WH1 WH2 WH3 WBGLOG WOBJLOG TM TS
+TMW TSW CGWSEL CGADSUB COLDATA SETINI""".split()))
+HW_REGS.update(zip(range(0x2134, 0x2140), "MPYL MPYM MPYH SLHV OAMDATAREAD VMDATALREAD VMDATAHREAD CGDATAREAD OPHCT OPVCT STAT77 STAT78".split()))
+HW_REGS.update({0x2140: "APUIO0", 0x2141: "APUIO1", 0x2142: "APUIO2", 0x2143: "APUIO3",
+                0x2180: "WMDATA", 0x2181: "WMADDL", 0x2182: "WMADDM", 0x2183: "WMADDH", 0x4016: "JOYSER0", 0x4017: "JOYSER1"})
+HW_REGS.update(zip(range(0x4200, 0x420E), "NMITIMEN WRIO WRMPYA WRMPYB WRDIVL WRDIVH WRDIVB HTIMEL HTIMEH VTIMEL VTIMEH MDMAEN HDMAEN MEMSEL".split()))
+HW_REGS.update(zip(range(0x4210, 0x4220), "RDNMI TIMEUP HVBJOY RDIO RDDIVL RDDIVH RDMPYL RDMPYH JOY1L JOY1H JOY2L JOY2H JOY3L JOY3H JOY4L JOY4H".split()))
+for _ch in range(8):
+    for _i, _n in enumerate("DMAP BBAD A1TL A1TH A1B DASL DASH DASB A2AL A2AH NLTR".split()):
+        HW_REGS[0x4300 + _ch * 16 + _i] = f"{_n}{_ch}"
+
+
+def load_ram_names(path):
+    """ram.txt: '<addr> <name> [; comment]' with addr as 0000-1FFF (low RAM) or 7E0000-7FFFFF."""
+    names = {}
+    if not path or not os.path.exists(path):
+        return names
+    for line in open(path):
+        line = line.split(";", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        a, name = line.split()[:2]
+        a = int(a, 16)
+        if a < 0x2000:
+            a |= 0x7E0000
+        names[a] = name
+    return names
+
+
+def ram_name(names, addr):
+    """Name for a work-RAM address, allowing an offset into the previous variable."""
+    if addr in names:
+        return names[addr]
+    if addr - 1 in names:
+        return names[addr - 1] + "+1"
+    return None
+
+
 def cpu_addr(off):
     return ((off >> 15) << 16) | 0x8000 | (off & 0x7fff)
 
@@ -125,8 +167,9 @@ def rom_off(bank, addr):
 
 
 class Disassembler:
-    def __init__(self, rom, flags, entry, names, comments):
+    def __init__(self, rom, flags, entry, names, comments, db=None, dp=None, ram_names=None):
         self.rom, self.flags, self.entry = rom, flags, entry
+        self.db, self.dp, self.ram_names = db, dp, ram_names or {}
         self.names, self.comments = names, comments
         self.insns = {}  # offset -> (length, m8, x8)
         self.notes = {}  # offset -> why it was left as data
@@ -215,6 +258,27 @@ class Disassembler:
             return None
         return self.labels[target]
 
+    def ram_comment(self, off, mode, v8, v16, v24):
+        """Name of the work-RAM variable an instruction touches, when it is known."""
+        addr = None
+        if mode in ("dp", "dpx", "dpy", "dpi", "dpix", "dpiy", "dpil", "dpily") and self.dp is not None:
+            addr = 0x7E0000 | ((self.dp[off] + v8) & 0xffff)  # for indirect modes: the pointer
+        elif mode in ("abs", "absx", "absy") and OPS[self.rom[off]][0] not in ("jmp", "jsr"):
+            db = self.db[off] if self.db is not None else 0
+            if (db & 0x40) == 0 and v16 in HW_REGS:
+                return HW_REGS[v16]
+            if db in (0x7E, 0x7F):
+                addr = (db << 16) | v16
+            elif (db & 0x40) == 0 and v16 < 0x2000:
+                addr = 0x7E0000 | v16
+        elif mode in ("long", "longx") and (v24 >> 16) in (0x7E, 0x7F):
+            addr = v24
+        elif mode in ("long", "longx") and (v24 >> 16) & 0x40 == 0 and (v24 & 0xffff) in HW_REGS:
+            return HW_REGS[v24 & 0xffff]
+        if addr is None:
+            return None
+        return ram_name(self.ram_names, addr)
+
     def operand(self, off, n):
         b = self.rom
         op = b[off]
@@ -226,7 +290,7 @@ class Disassembler:
         v24 = v16 | (b[off + 3] << 16 if n > 3 else 0)
         target = self.static_target(off)
         lab = self.label_ref(target, bank)
-        comment = None
+        comment = self.ram_comment(off, mode, v8, v16, v24)
         if mode == "imp":
             return mnem, comment
         if mode == "acc":
@@ -347,6 +411,7 @@ def main():
     ap.add_argument("--rom", required=True)
     ap.add_argument("--coverage", required=True)
     ap.add_argument("--symbols", default=os.path.join(os.path.dirname(__file__), "..", "disasm", "symbols.txt"))
+    ap.add_argument("--ram", default=os.path.join(os.path.dirname(__file__), "..", "disasm", "ram.txt"))
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -355,9 +420,9 @@ def main():
         rom = rom[512:]
     if hashlib.sha256(rom).hexdigest() != ROM_SHA256:
         sys.exit("not an unmodified Top Gear (USA) ROM")
-    flags, entry, _ = load_coverage(args.coverage)
+    flags, entry, db, dp = load_coverage(args.coverage)
     names, comments = load_symbols(args.symbols)
-    d = Disassembler(rom, flags, entry, names, comments)
+    d = Disassembler(rom, flags, entry, names, comments, db, dp, load_ram_names(args.ram))
     d.decide()
     stats = d.write(args.out)
     print(f"{stats['insn']} instructions, {stats['data']} data bytes, {len(d.labels)} labels, "

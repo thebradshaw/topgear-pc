@@ -1,7 +1,14 @@
 # Names and comments for the disassembly: <bank>:<addr> [name] [; comment]
 # Addresses are CPU addresses in the LoROM map (banks 00-0F, $8000-$FFFF).
 
-00:8000 Reset ; power-on and reset vector
+00:8000 Reset ; power-on: decompress RAM code from $0D:E000 to $7E:2000, upload the sound driver, warm-boot check, then GameInit
+00:EA8E DecompressBegin ; byte-stream decompressor used for the RAM code at boot (source pointer in $23-$25)
+00:EA9B DecompressNext ; next decompressed byte in A; carry set at end of stream
 00:EC7D UnusedInterrupt ; COP, BRK, ABORT and emulation-mode NMI/IRQ all point here
 00:FFC0 RomHeader ; internal header: title, map mode, checksum
-00:FFE0 Vectors ; native NMI = $0000 and IRQ = $0004 jump through work RAM
+00:FFE0 Vectors ; native NMI -> $0000 (JML NmiHandler), IRQ -> $0004 (RTI)
+07:8000 UploadSoundDriver ; called at boot with A = 0
+0F:8000 NmiHandler ; runs queued DMA ($0424), writes INIDISP from $42, counts frames, reads both joypads
+0F:806D GameInit ; installs the NMI trampoline at $0000, default names/records, then the title/menu flow
+0F:80BD SetupColorGradientHdma ; HDMA channels 3/4 write CGRAM ($2121/$2122) from tables at $0D:C7BC/$0D:C7F3
+0F:80F4 ResetNamesAndRecords ; blank player names, default records from $0D:C656 and $0D:C696
