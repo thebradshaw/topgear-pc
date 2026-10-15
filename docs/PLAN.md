@@ -83,6 +83,14 @@ All nine below are approved. Every enhancement is a separate option, **off by de
 8. **Display options**: CRT/scanline filter, sharp-bilinear scaling, and a choice of colour (accurate SNES output vs. as it looked on a TV).
 9. **Controls**: in-game button remapping, controller rumble on crashes and nitro, and per-player gamepad assignment.
 
+**Phase 6. "Horizon" remix mode (exploratory, after Phase 5)**
+
+A separate mode, chosen from the menu, that keeps Top Gear's tracks, cars and race rules but presents and plays them in the style of Horizon Chase (itself a modern homage to Top Gear). It is a new way to play, not a setting, and never touches original mode.
+
+- *Look:* a new renderer that builds each track from the game's own track data (curves, scenery, cars, positions) and draws it in a clean, flat-shaded modern style at any resolution and frame rate, with long draw distance, sunsets and weather. Widescreen, high frame rate and the full-screen view from Phase 5 are steps toward it. All art for this mode is newly made; nothing is taken from Horizon Chase or any other game.
+- *Play (optional layer):* collectables on the road, fuel pickups instead of pit stops, a world-tour progression with car upgrades, and tuned AI.
+- *Approach:* prototype one track in the new style first, then decide how far to take it.
+
 ## 4. What I need from you
 
 1. OK to create a private GitHub repo (name suggestion: `topgear-pc`) and push to it.
