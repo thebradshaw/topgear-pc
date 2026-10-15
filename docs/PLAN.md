@@ -65,9 +65,23 @@ snesrecomp can be used as an accelerator in step 3 to produce a first-draft C tr
 - Done when: a full championship plays through on Windows with no visible or audible difference.
 
 **Phase 5. Enhancements (after fidelity is locked)**
-- Widescreen: wider viewports for each player's half of the split screen; extend road and backgrounds drawn by line-scroll.
-- 120 fps (and arbitrary rates): physics at 60 Hz, interpolated rendering.
-- Each enhancement is an option that defaults off, so the original-accuracy mode keeps passing the test suite.
+
+Every enhancement is a separate option, **off by default**. With all of them off the game must still pass the full recording suite, so "original" mode can never drift.
+
+*Requested by Chris:*
+
+1. **Widescreen (16:9 and wider).** Most of a race screen extends naturally once the renderer is in C: the road is computed line by line, so it can be drawn wider; the sky, hills and skyline are repeating tile layers, so they can wrap further; roadside objects and cars just need a wider visible area so they aren't dropped at the old 256-pixel edge. The HUD moves out to the new screen edges. Where art truly runs out (fixed full-screen pictures such as the title, menus and the results portrait), the default is clean side borders, with optional extended artwork filling them. That artwork has to be newly drawn rather than derived from the cartridge's art, so it would ship as a separate optional pack.
+2. **Smooth high frame rates (120 Hz, 144 Hz, any refresh).** Game logic stays at 60 updates a second so physics, AI and lap times are identical; rendering interpolates between updates (road curve and scroll, car and object positions, scenery parallax). Roadside objects in the original grow by stepping through a few pre-drawn sizes; at high frame rates we scale them continuously instead, so they grow smoothly without new art. Animation frames (car turning, wheels, smoke) keep their original timing unless extra in-between frames are drawn; the renderer will accept an optional frame pack so those can be added later.
+3. **Full-screen single-player view.** Like the "Super Mario Kart FULLSCREEN" hack: in 1-player races, hide the computer's half and give the player's view the whole screen. The road projection is recomputed for the taller view (more lines of road rather than stretched lines), the sky and hills extend upward, and the HUD is laid out for the full screen. Two-player races keep the split.
+
+*Suggested additions:*
+
+4. **Side-by-side split for 2 players on widescreen**: two tall views next to each other instead of stacked, which suits 16:9 screens better.
+5. **Ghost cars and time attack**: our recordings replay perfectly, so a best lap can be replayed as a translucent ghost to race against.
+6. **Longer draw distance**: road and objects drawn further toward the horizon, which pairs well with widescreen and high frame rates.
+7. **Saved championship progress**: an optional automatic save alongside the original password system.
+8. **Display options**: CRT/scanline filter, sharp-bilinear scaling, and a choice of colour (accurate SNES output vs. as it looked on a TV).
+9. **Controls**: in-game button remapping, controller rumble on crashes and nitro, and per-player gamepad assignment.
 
 ## 4. What I need from you
 
