@@ -86,5 +86,7 @@ ctest --test-dir build -C Release --output-on-failure
 | `tools/tg_headless.c` | Headless runner for tests and investigation |
 | `tools/covstat.py` | Summarises a coverage file |
 | `tools/disasm.py` | Coverage-driven disassembler (ca65 output) |
+| `tools/covmerge.py` | Merges coverage files, e.g. from your play sessions |
+| `tests/inputs/` | Input recordings replayed by the regression tests |
 | `disasm/` | Symbols and accumulated coverage (no ROM content) |
 | `tests/` | Tests |

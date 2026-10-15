@@ -78,6 +78,11 @@ if(TG_TEST_ROM)
   add_test(NAME attract_demo COMMAND tg_headless --rom ${TG_TEST_ROM} --frames 7200
     --expect-wram eb074942bd3f6b5efa7402979c2d6e56e4373739112cc711cfe448f4a8291cba
     --expect-frame fc8fc8246cc971806acc2607897b4d99093d1b48884d9aa682271d1036f81eca)
+  # Menus, a full scripted 1-player race and the results screen.
+  add_test(NAME race_1p COMMAND tg_headless --rom ${TG_TEST_ROM} --frames 11000
+    --input ${CMAKE_SOURCE_DIR}/tests/inputs/race_1p.txt
+    --expect-wram 08f94c7b56cb0b8ac33b9c557c5c0fdd25c7ab80ee479d374a45a6253b5b2a8a
+    --expect-frame 94766e6c901d25c1fdb0f14cf24d3b8c78be1e25318146f0f3905f6d904537c9)
   # Disassemble, reassemble with ca65/ld65 and require a byte-identical ROM.
   find_package(Python3 COMPONENTS Interpreter QUIET)
   find_program(CA65 ca65)
