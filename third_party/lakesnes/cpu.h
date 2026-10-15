@@ -46,6 +46,9 @@ struct Cpu {
   bool nmiWanted;
   bool intWanted;
   bool resetWanted;
+  // topgear-pc: called before each opcode fetch, for coverage tracing (NULL when unused)
+  void (*traceHook)(void* ctx, Cpu* cpu);
+  void* traceCtx;
 };
 
 Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHandler idle);

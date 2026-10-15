@@ -35,6 +35,20 @@ bool tg_parse_buttons(const char* text, uint16_t* buttons) {
   return true;
 }
 
+void tg_format_buttons(uint16_t buttons, char* out, int size) {
+  if(buttons == 0) {
+    snprintf(out, size, "-");
+    return;
+  }
+  out[0] = 0;
+  for(size_t i = 0; i < sizeof(buttonNames) / sizeof(buttonNames[0]); i++) {
+    if(buttons & buttonNames[i].bit) {
+      if(out[0]) strncat(out, "+", size - strlen(out) - 1);
+      strncat(out, buttonNames[i].name, size - strlen(out) - 1);
+    }
+  }
+}
+
 bool tg_input_script_load(const char* path, TgInputScript* script, char* error, int errorSize) {
   memset(script, 0, sizeof(*script));
   FILE* f = fopen(path, "r");
@@ -50,12 +64,20 @@ bool tg_input_script_load(const char* path, TgInputScript* script, char* error, 
     lineNo++;
     char* hash = strchr(line, '#');
     if(hash) *hash = 0;
-    unsigned frame, player;
+    unsigned frame, player = 0;
     char buttons[128];
-    int n = sscanf(line, "%u %u %127s", &frame, &player, buttons);
-    if(n <= 0) continue;
-    uint16_t mask;
-    if(n != 3 || (player != 1 && player != 2) || !tg_parse_buttons(buttons, &mask) || frame < lastFrame) {
+    uint16_t mask = 0;
+    char word[16];
+    int n;
+    if(sscanf(line, "%u %15s", &frame, word) == 2 && strcmp(word, "reset") == 0) {
+      n = 3;
+    } else {
+      n = sscanf(line, "%u %u %127s", &frame, &player, buttons);
+      if(n <= 0) continue;
+      if(n == 3 && !tg_parse_buttons(buttons, &mask)) n = -1;
+      if(player != 1 && player != 2) n = -1;
+    }
+    if(n != 3 || frame < lastFrame) {
       snprintf(error, errorSize, "%s:%d: expected '<frame> <1|2> <buttons>' in frame order", path, lineNo);
       fclose(f);
       tg_input_script_free(script);
@@ -80,6 +102,7 @@ void tg_input_script_free(TgInputScript* script) {
 void tg_input_script_advance(TgInputScript* script, uint32_t frame) {
   while(script->next < script->count && script->events[script->next].frame <= frame) {
     TgInputEvent* e = &script->events[script->next++];
-    script->state[e->player] = e->buttons;
+    if(e->player == 0) script->resetPending = true;
+    else script->state[e->player] = e->buttons;
   }
 }

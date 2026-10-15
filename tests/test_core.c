@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "coverage.h"
 #include "game.h"
 #include "input_script.h"
 #include "rom.h"
@@ -40,6 +41,25 @@ static void testButtons(void) {
   CHECK(tg_parse_buttons("start", &b) && b == TG_BTN_START);
   CHECK(tg_parse_buttons("B+RIGHT+R", &b) && b == (TG_BTN_B | TG_BTN_RIGHT | TG_BTN_R));
   CHECK(!tg_parse_buttons("TURBO", &b));
+  char text[96];
+  tg_format_buttons(TG_BTN_B | TG_BTN_RIGHT, text, sizeof(text));
+  CHECK(strcmp(text, "B+RIGHT") == 0);
+  tg_format_buttons(0, text, sizeof(text));
+  CHECK(strcmp(text, "-") == 0);
+}
+
+static void testLengths(void) {
+  CHECK(tg_w65816_length(0xa9, true, true) == 2);   // LDA #imm8
+  CHECK(tg_w65816_length(0xa9, false, true) == 3);  // LDA #imm16
+  CHECK(tg_w65816_length(0xa2, true, false) == 3);  // LDX #imm16
+  CHECK(tg_w65816_length(0x22, true, true) == 4);   // JSL long
+  CHECK(tg_w65816_length(0x0b, true, true) == 1);   // PHD
+  CHECK(tg_w65816_length(0xc2, false, false) == 2); // REP
+  CHECK(tg_lorom_offset(0x008000) == 0);
+  CHECK(tg_lorom_offset(0x80ffff) == 0x7fff);
+  CHECK(tg_lorom_offset(0x0f8000) == 0x78000);
+  CHECK(tg_lorom_offset(0x7e8000) == -1);
+  CHECK(tg_lorom_offset(0x001000) == -1);
 }
 
 static void testBoot(const char* romPath) {
@@ -65,6 +85,7 @@ static void testBoot(const char* romPath) {
 int main(int argc, char** argv) {
   testSha256();
   testButtons();
+  testLengths();
   if(argc == 3 && strcmp(argv[1], "--rom") == 0) testBoot(argv[2]);
   if(failures) {
     fprintf(stderr, "%d check(s) failed\n", failures);

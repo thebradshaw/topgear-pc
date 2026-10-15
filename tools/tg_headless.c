@@ -2,16 +2,18 @@
 //
 //   tg_headless --rom <file> [--frames N] [--input script.txt]
 //               [--screenshot out.ppm] [--shots-every N --shots-dir DIR]
-//               [--expect-wram HEX] [--expect-frame HEX]
+//               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE]
 //
 // Prints the SHA-256 of work RAM and of the final frame so runs can be compared.
 // With --expect-*, exits non-zero when a hash differs (used by the regression tests).
+// With --coverage, adds this run's code/data coverage to FILE (created if missing).
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "coverage.h"
 #include "game.h"
 #include "input_script.h"
 #include "rom.h"
@@ -54,6 +56,7 @@ int main(int argc, char** argv) {
   const char* shotsDir = NULL;
   const char* expectWram = NULL;
   const char* expectFrame = NULL;
+  const char* coveragePath = NULL;
   long frames = 600;
   long shotsEvery = 0;
   for(int i = 1; i < argc; i++) {
@@ -66,8 +69,9 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--shots-dir") == 0 && next) shotsDir = argv[++i];
     else if(strcmp(argv[i], "--expect-wram") == 0 && next) expectWram = argv[++i];
     else if(strcmp(argv[i], "--expect-frame") == 0 && next) expectFrame = argv[++i];
+    else if(strcmp(argv[i], "--coverage") == 0 && next) coveragePath = argv[++i];
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE]\n", argv[0]);
       return 2;
     }
   }
@@ -96,9 +100,19 @@ int main(int argc, char** argv) {
     fprintf(stderr, "failed to start game\n");
     return 1;
   }
+  TgCoverage* coverage = NULL;
+  if(coveragePath) {
+    coverage = malloc(sizeof(TgCoverage));
+    tg_coverage_load(coverage, coveragePath);
+    tg_game_set_coverage(game, coverage);
+  }
   uint8_t* pixels = calloc(TG_FB_WIDTH * TG_FB_HEIGHT, 4);
   for(long frame = 0; frame < frames; frame++) {
     tg_input_script_advance(&script, (uint32_t) frame);
+    if(script.resetPending) {
+      tg_game_reset(game, false);
+      script.resetPending = false;
+    }
     tg_game_set_input(game, 1, script.state[1]);
     tg_game_set_input(game, 2, script.state[2]);
     tg_game_run_frame(game);
@@ -116,6 +130,13 @@ int main(int argc, char** argv) {
   bool ok = checkHash("wram", tg_game_wram(game), 0x20000, expectWram);
   ok &= checkHash("frame", pixels, (size_t) TG_FB_WIDTH * TG_FB_HEIGHT * 4, expectFrame);
 
+  if(coverage) {
+    if(!tg_coverage_save(coverage, coveragePath)) {
+      fprintf(stderr, "cannot write %s\n", coveragePath);
+      ok = false;
+    }
+    free(coverage);
+  }
   free(pixels);
   tg_game_destroy(game);
   tg_input_script_free(&script);

@@ -32,6 +32,15 @@ The first gamepad is player 1 and the second is player 2.
 | F3 | Integer scaling |
 | F5 | Reset |
 
+## Recordings
+
+Each session writes to `recordings/` next to `topgear.exe`:
+
+- `session-<date>.txt`: every button change from power-on. Replaying one reproduces the session exactly (`tg_headless --input <file>`, or `topgear --replay <file>`), so recordings become regression tests.
+- `coverage.tgcov`: which parts of the ROM ran or were read, accumulated across sessions. It guides the disassembly.
+
+Run with `--no-record` to turn this off.
+
 ## Building
 
 Needs CMake 3.20+. SDL3 is downloaded and linked statically, so `topgear.exe` has no DLL dependencies.
@@ -69,5 +78,7 @@ ctest --test-dir build -C Release --output-on-failure
 | `src/main.c` | SDL3 frontend: window, fullscreen, scaling, input, audio |
 | `src/rom.c` | Loads and verifies your ROM |
 | `third_party/lakesnes` | Reference emulator (MIT, see its LICENSE.txt) |
+| `src/coverage.c` | Execution and data coverage of the original ROM |
 | `tools/tg_headless.c` | Headless runner for tests and investigation |
+| `tools/covstat.py` | Summarises a coverage file |
 | `tests/` | Tests |

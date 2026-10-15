@@ -36,6 +36,8 @@ Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHand
   cpu->read = read;
   cpu->write = write;
   cpu->idle = idle;
+  cpu->traceHook = NULL;
+  cpu->traceCtx = NULL;
   return cpu;
 }
 
@@ -119,6 +121,7 @@ void cpu_runOpcode(Cpu* cpu) {
     cpu_read(cpu, (cpu->k << 16) | cpu->pc);
     cpu_doInterrupt(cpu);
   } else {
+    if(cpu->traceHook) cpu->traceHook(cpu->traceCtx, cpu);
     uint8_t opcode = cpu_readOpcode(cpu);
     cpu_doOpcode(cpu, opcode);
   }

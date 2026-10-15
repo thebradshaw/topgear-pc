@@ -29,6 +29,7 @@ if(NOT MSVC)
 endif()
 
 add_library(tgcore STATIC
+  src/coverage.c
   src/game.c
   src/input_script.c
   src/rom.c

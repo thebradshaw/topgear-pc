@@ -44,6 +44,10 @@ void tg_game_get_pixels(TgGame* game, uint8_t* pixels);
 // Interleaved stereo int16, count samples per channel.
 void tg_game_get_samples(TgGame* game, int16_t* samples, int count);
 
+// Starts recording execution coverage into cov (NULL stops). cov must outlive the game.
+typedef struct TgCoverage TgCoverage;
+void tg_game_set_coverage(TgGame* game, TgCoverage* cov);
+
 const uint8_t* tg_game_wram(const TgGame* game);  // 128 KiB
 uint32_t tg_game_frame_count(const TgGame* game);
 

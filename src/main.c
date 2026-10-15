@@ -1,4 +1,8 @@
 // Windows (and desktop) frontend: window, fullscreen, scaling, keyboard, gamepads, audio.
+//
+// Every session is recorded to recordings/ next to the executable: the inputs (which
+// replay exactly, for regression tests) and which parts of the ROM ran (for the
+// disassembly). Command line: topgear [rom] [--no-record] [--replay file.txt]
 
 #include <stdio.h>
 #include <string.h>
@@ -6,8 +10,11 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "coverage.h"
 #include "game.h"
+#include "input_script.h"
 #include "rom.h"
+#include "sha256.h"
 
 #define SNES_W 256
 #define SNES_H 224
@@ -29,15 +36,25 @@ static struct {
   bool integerScale;
   AspectMode aspect;
   uint16_t keys[3];  // keyboard state per player
+  uint32_t frame;  // frames run since power-on
+  // recording
+  FILE* record;
+  uint16_t recorded[3];
+  bool resetRequested;
+  TgCoverage* coverage;
+  char coveragePath[2400];
+  // replay
+  TgInputScript replay;
+  bool replaying;
 } app;
 
 static const char* defaultRomNames[] = {"Top Gear (USA).sfc", "Top Gear (USA).smc", "topgear.sfc"};
 
-static bool findRom(int argc, char** argv, TgRom* rom, char* message, size_t messageSize) {
-  if(argc > 1) {
-    TgRomStatus status = tg_rom_load(argv[1], rom);
+static bool findRom(const char* romArg, TgRom* rom, char* message, size_t messageSize) {
+  if(romArg) {
+    TgRomStatus status = tg_rom_load(romArg, rom);
     if(status == TG_ROM_OK) return true;
-    snprintf(message, messageSize, "%s\n\n%s\n\nSHA-256 of your file:\n%s", argv[1], tg_rom_status_message(status), rom->sha256);
+    snprintf(message, messageSize, "%s\n\n%s\n\nSHA-256 of your file:\n%s", romArg, tg_rom_status_message(status), rom->sha256);
     return false;
   }
   const char* base = SDL_GetBasePath();
@@ -151,10 +168,81 @@ static void present(void) {
   SDL_RenderPresent(app.renderer);
 }
 
+static void startRecording(void) {
+  const char* base = SDL_GetBasePath();
+  char dir[2048];
+  snprintf(dir, sizeof(dir), "%srecordings", base ? base : "");
+  if(!SDL_CreateDirectory(dir)) {
+    char* pref = SDL_GetPrefPath("topgear-pc", "Top Gear");
+    if(pref == NULL) return;
+    snprintf(dir, sizeof(dir), "%srecordings", pref);
+    SDL_free(pref);
+    if(!SDL_CreateDirectory(dir)) return;
+  }
+  SDL_Time now;
+  SDL_DateTime t;
+  SDL_GetCurrentTime(&now);
+  SDL_TimeToDateTime(now, &t, true);
+  char path[2300];
+  snprintf(path, sizeof(path), "%s/session-%04d%02d%02d-%02d%02d%02d.txt", dir, t.year, t.month, t.day, t.hour, t.minute, t.second);
+  app.record = fopen(path, "w");
+  if(app.record) {
+    fprintf(app.record, "# Top Gear input recording from power-on. Replay: tg_headless --input <this file>\n");
+    fprintf(app.record, "# ROM SHA-256 %s\n", TG_ROM_SHA256);
+  }
+  snprintf(app.coveragePath, sizeof(app.coveragePath), "%s/coverage.tgcov", dir);
+  app.coverage = SDL_malloc(sizeof(TgCoverage));
+  if(app.coverage) {
+    tg_coverage_load(app.coverage, app.coveragePath);
+    tg_game_set_coverage(app.game, app.coverage);
+  }
+}
+
+static void stopRecording(void) {
+  if(app.record) {
+    uint8_t d[32];
+    tg_sha256(tg_game_wram(app.game), 0x20000, d);
+    fprintf(app.record, "# end frame %u wram ", app.frame);
+    for(int i = 0; i < 32; i++) fprintf(app.record, "%02x", d[i]);
+    fprintf(app.record, "\n");
+    fclose(app.record);
+    app.record = NULL;
+  }
+  if(app.coverage) {
+    tg_game_set_coverage(app.game, NULL);
+    tg_coverage_save(app.coverage, app.coveragePath);
+    SDL_free(app.coverage);
+    app.coverage = NULL;
+  }
+}
+
 static void runFrame(int samples) {
-  tg_game_set_input(app.game, 1, app.keys[1] | padButtons(app.pads[0]));
-  tg_game_set_input(app.game, 2, app.keys[2] | padButtons(app.pads[1]));
+  uint16_t input[3] = {0, app.keys[1] | padButtons(app.pads[0]), app.keys[2] | padButtons(app.pads[1])};
+  bool reset = app.resetRequested;
+  app.resetRequested = false;
+  if(app.replaying) {
+    tg_input_script_advance(&app.replay, app.frame);
+    input[1] = app.replay.state[1];
+    input[2] = app.replay.state[2];
+    reset = app.replay.resetPending;
+    app.replay.resetPending = false;
+  }
+  if(app.record) {
+    if(reset) fprintf(app.record, "%u reset\n", app.frame);
+    for(int p = 1; p <= 2; p++) {
+      if(input[p] != app.recorded[p] || (app.frame == 0 && p == 1)) {
+        char names[96];
+        tg_format_buttons(input[p], names, sizeof(names));
+        fprintf(app.record, "%u %d %s\n", app.frame, p, names);
+        app.recorded[p] = input[p];
+      }
+    }
+  }
+  if(reset) tg_game_reset(app.game, false);
+  tg_game_set_input(app.game, 1, input[1]);
+  tg_game_set_input(app.game, 2, input[2]);
   tg_game_run_frame(app.game);
+  app.frame++;
 
   void* pixels;
   int pitch;
@@ -178,9 +266,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  const char* romArg = NULL;
+  const char* replayPath = NULL;
+  bool record = true;
+  for(int i = 1; i < argc; i++) {
+    if(strcmp(argv[i], "--no-record") == 0) record = false;
+    else if(strcmp(argv[i], "--replay") == 0 && i + 1 < argc) replayPath = argv[++i];
+    else romArg = argv[i];
+  }
+
   TgRom rom;
   char message[4096];
-  if(!findRom(argc, argv, &rom, message, sizeof(message))) {
+  if(!findRom(romArg, &rom, message, sizeof(message))) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", message, NULL);
     SDL_Quit();
     return 1;
@@ -190,6 +287,16 @@ int main(int argc, char** argv) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", "Failed to start the game.", NULL);
     return 1;
   }
+
+  if(replayPath) {
+    if(!tg_input_script_load(replayPath, &app.replay, message, sizeof(message))) {
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", message, NULL);
+      return 1;
+    }
+    app.replaying = true;
+    record = false;
+  }
+  if(record) startRecording();
 
   app.aspect = ASPECT_4_3;
   if(!SDL_CreateWindowAndRenderer("Top Gear", 1024, 768, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &app.window, &app.renderer)) {
@@ -231,7 +338,7 @@ int main(int argc, char** argv) {
             }
             if(e.key.key == SDLK_F2) { app.aspect = (app.aspect + 1) % ASPECT_COUNT; updateTitle(); break; }
             if(e.key.key == SDLK_F3) { app.integerScale = !app.integerScale; updateTitle(); break; }
-            if(e.key.key == SDLK_F5) { tg_game_reset(app.game, false); break; }
+            if(e.key.key == SDLK_F5) { app.resetRequested = true; break; }
           }
           uint16_t button = keyToButton(e.key.key);
           if(button && !(e.key.mod & SDL_KMOD_ALT)) {
@@ -257,6 +364,8 @@ int main(int argc, char** argv) {
     }
   }
 
+  stopRecording();
+  tg_input_script_free(&app.replay);
   tg_game_destroy(app.game);
   tg_rom_free(&rom);
   for(int i = 0; i < 2; i++) if(app.pads[i]) SDL_CloseGamepad(app.pads[i]);

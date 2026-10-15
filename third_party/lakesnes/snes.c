@@ -28,6 +28,8 @@ static int snes_getAccessTime(Snes* snes, uint32_t adr);
 
 Snes* snes_init(void) {
   Snes* snes = malloc(sizeof(Snes));
+  snes->readHook = NULL;
+  snes->readHookCtx = NULL;
   snes->cpu = cpu_init(snes, snes_cpuRead, snes_cpuWrite, snes_cpuIdle);
   snes->apu = apu_init(snes);
   snes->dma = dma_init(snes);
@@ -511,6 +513,7 @@ static int snes_getAccessTime(Snes* snes, uint32_t adr) {
 
 uint8_t snes_read(Snes* snes, uint32_t adr) {
   uint8_t val = snes_rread(snes, adr);
+  if(snes->readHook) snes->readHook(snes->readHookCtx, adr);
   snes->openBus = val;
   return val;
 }

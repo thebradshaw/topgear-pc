@@ -1,3 +1,7 @@
 LakeSnes SNES emulator core, vendored unmodified from
 https://github.com/angelo-wf/LakeSnes at commit 9db90b86e46a377609305e298dd92d71cd1d4c8a.
 MIT licensed; see LICENSE.txt.
+
+Local changes (marked "topgear-pc" in the source):
+- cpu.h/cpu.c: optional traceHook called before each opcode fetch.
+- snes.h/snes.c: optional readHook called for every A-bus read.

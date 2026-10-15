@@ -59,6 +59,9 @@ struct Snes {
   // misc
   bool fastMem;
   uint8_t openBus;
+  // topgear-pc: called for every A-bus read by the CPU or DMA (NULL when unused)
+  void (*readHook)(void* ctx, uint32_t adr);
+  void* readHookCtx;
 };
 
 Snes* snes_init(void);
