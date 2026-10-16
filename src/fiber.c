@@ -40,10 +40,12 @@ void tg_fiber_destroy(TgFiber* f) {
 
 bool tg_fiber_resume(TgFiber* f) {
   if(f->done) return false;
-  void* self = GetCurrentFiber();
-  if(self == NULL || self == (void*) 0x1e00) self = ConvertThreadToFiber(NULL);
-  f->caller = self;
+  // The caller is the fiber that's running: another one of ours, or the thread itself
+  // (made a fiber the first time).
+  static void* thread_fiber;
+  if(g_current == NULL && thread_fiber == NULL) thread_fiber = ConvertThreadToFiber(NULL);
   TgFiber* prev = g_current;
+  f->caller = prev != NULL ? prev->handle : thread_fiber;
   g_current = f;
   SwitchToFiber(f->handle);
   g_current = prev;

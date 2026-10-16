@@ -69,14 +69,13 @@ these as declined.
    the exact leftovers of long routines. An interrupt handler that arrives while the junk
    is still there gets the real values back, since it saves registers on the stack
    without reading them.
-5. Routines that wait for the NMI or an IRQ (a loop on a flag the handler clears, like
-   RaceLoadPalettes at `$00:CCDB` or RaceSyncWait) can't be translated yet: C runs no
-   CPU time, so nothing would clear the flag. They wait for the frame loop to move to C.
-   The raster IRQ stages (`$00:B75A` and the short stages around `$00:B3FE`-`$00:B6D1`,
-   reached through `JSR ($000A)`) are held back for the same reason: their PPU writes
-   land at a particular dot of a scanline, and a C version would make them all at once at
-   the start of the handler. LakeSnes draws each line at dot 128, so a write that the
-   original makes after that point would show a line earlier.
+5. Routines that wait for the NMI or an IRQ (a loop on a flag the handler clears) are
+   marked `TG_WAITS` and call `tg_port_wait()` where the original spins; they run as a
+   fiber in native mode and emulated in verify mode, and tools/shift_compare.py checks
+   them (see frame-loop.md). Raster IRQ stages (reached through `JSR ($000A)`) can be C
+   when their writes don't depend on the dot they land on; frame-loop.md says which.
+   Reads of the APU ports go through `tg_apu_read8`, so verify mode can hand C what the
+   original read.
 6. Run the tests: `ctest --test-dir build -L long` runs every recording. The report shows
    how many calls matched; check that the recordings actually reach the routine's
    branches (a routine that only ever sees zeros proves little).
@@ -111,3 +110,5 @@ these as declined.
 | RaceAddSprite and its split and player 2 copies | $01:8A87, $01:8C5C, $01:8E33, $01:9008 | 1,052,844, 78,105, 1,122,519 and 91,694 |
 | RaceRenderViews | $7E:2000 (copied from $09:899A) | 93,984, checked on their own because the renderer runs past the next vblank |
 | RaceDrivePlayers | $05:D2E0 | 97,714, including the computer steering ($05:E9AF / $05:EB58) and the computer-driven second car ($05:ED92); no recording reaches the track edges that hold a car, or runs a car out of fuel at a sign |
+| RaceProgram, RaceLoadAll (with RaceLoadPalettes and RaceSetupHdma), RaceSyncWait, RacePauseCheck | $00:812A, $00:BF14, $00:EC0E, $00:8878 | Wait for interrupts: native mode only, checked with tools/shift_compare.py on every recording but chris_session_03 |
+| RaceIrqVblank, RaceIrqTop and the raster stages | $00:B6D1, $00:B75A, $00:B3FE-$00:B5E2 | Sound commands checked with the original's APU reads; the mid-screen DMA ($00:BE78) stays emulated |

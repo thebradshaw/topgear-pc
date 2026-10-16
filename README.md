@@ -9,7 +9,9 @@ A faithful PC port of the 1992 SNES game Top Gear (USA), in progress. The goal i
 
 ## Status
 
-Phase 0. Every frame currently runs the original game on the embedded reference emulator ([LakeSnes](https://github.com/angelo-wf/LakeSnes), MIT). As routines are translated to readable C they replace it, with the emulator kept as the fallback and as a referee that checks the port frame by frame.
+Phase 3. The races run in translated C: the race program, the per-frame update, the renderer, the cars, the sprites and the raster interrupts. The menus and a few routines still run as the original game on the embedded reference emulator ([LakeSnes](https://github.com/angelo-wf/LakeSnes), MIT), which also checks the C code call by call against the original.
+
+The C races drop the original's slowdown and loading pauses: a race updates every three frames, the original's normal pace, and loads at once. Run `topgear.exe --original` to play the game's own code throughout, slowdown included.
 
 ## Playing
 
@@ -39,7 +41,7 @@ Each session writes to `recordings/` next to `topgear.exe`:
 - `session-<date>.txt`: every button change from power-on. Replaying one reproduces the session exactly (`tg_headless --input <file>`, or `topgear --replay <file>`), so recordings become regression tests.
 - `coverage.tgcov`: which parts of the ROM ran or were read, accumulated across sessions. It guides the disassembly.
 
-Run with `--no-record` to turn this off.
+Run with `--no-record` to turn this off. Sessions played with `--original` can be checked call by call (`tg_headless --port verify`), so they make the best test recordings.
 
 ## Disassembly
 

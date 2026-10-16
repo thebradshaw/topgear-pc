@@ -31,9 +31,18 @@ static uint16_t dp16(TgRegs* r, uint16_t o) { return ram16((uint16_t) (r->d + o)
 static void dp16_set(TgRegs* r, uint16_t o, uint16_t v) { ram16_set((uint16_t) (r->d + o), v); }
 static void dp8_set(TgRegs* r, uint16_t o, uint8_t v) { g_ram[(uint16_t) (r->d + o)] = v; }
 
+int tg_port_race_frames = 3;
+
+// Routines in other banks, whose calls to original code are in their bank.
+static void in_bank(uint8_t bank, void (*fn)(TgRegs*), TgRegs* r) {
+  uint8_t old = tg_port_set_bank(bank);
+  fn(r);
+  tg_port_set_bank(old);
+}
+
 // Translated routines that can decline a call (see tg_port_decline) run emulated then.
 static void render_views(TgRegs* r, uint16_t ret) {
-  RaceRenderViews(r);
+  in_bank(0x7E, RaceRenderViews, r);
   if(tg_port_take_declined()) tg_call_jsl(r, 0x7E2000, ret, TG_MX_16);
 }
 
@@ -198,7 +207,7 @@ static bool race_intro(TgRegs* r) {
     take_sky_colour();
     render_views(r, 0x85FA);
     RaceBuildWindowTable(r);
-    RaceBuildSprites(r);
+    in_bank(0x01, RaceBuildSprites, r);
     RaceUpdateSegmentValues(r);
     if(!(ram16(0x0100) & 0x8000)) build_split_window_table(r, 0x860C);
     dec_e3(r);
@@ -254,7 +263,9 @@ static void player_finished(uint16_t place, uint16_t msg_clear, uint16_t time,
 static bool race_main(TgRegs* r) {
   for(;;) {
     dp16_set(r, 0x0E, (uint16_t) (dp16(r, 0x0E) + 1));
-    while(dp16(r, 0x0C) == 0) tg_port_wait();
+    // The original goes on as soon as $0C (frames since the last update, less one) isn't
+    // 0, after taking about two frames for an update. Its pace, without slowdown:
+    while(dp16(r, 0x0C) == 0 || dp16(r, 0x0C) < tg_port_race_frames - 1) tg_port_wait();
     ram16_set(0x1E90, (uint16_t) (dp16(r, 0x0C) + 1));
     if(demo_over(r)) return false;
     RacePauseCheck(r);
@@ -264,7 +275,7 @@ static bool race_main(TgRegs* r) {
     RaceDrawHud(r);
     RaceUpdatePitStops(r);
     if(ram16(0x1EE0) == 1) dp16_set(r, 0xE1, 0xFFFF);
-    RaceDrivePlayers(r);
+    in_bank(0x05, RaceDrivePlayers, r);
     if(!(ram16(0x1EDB) & 0x8000)) {
       ram16_set(0x1EDE, ram16(0x1EBE) & 0x00FF);
       dp16_set(r, 0x46, ram16(0x1ED7));
@@ -281,7 +292,7 @@ static bool race_main(TgRegs* r) {
     take_sky_colour();
     render_views(r, 0x8766);
     RaceBuildWindowTable(r);
-    RaceBuildSprites(r);
+    in_bank(0x01, RaceBuildSprites, r);
     RaceUpdateSegmentValues(r);
     RaceCallOvertakes(r);
     if(!(ram16(0x0100) & 0x8000)) build_split_window_table(r, 0x877B);
@@ -381,7 +392,7 @@ void RaceProgram(TgRegs* r) {
     for(int i = 0; i < 2; i++) {
       render_views(r, i == 0 ? 0x84BB : 0x84D1);
       RaceUpdateSegmentValues(r);
-      RaceBuildSprites(r);
+      in_bank(0x01, RaceBuildSprites, r);
       RaceUpdateSegmentValues(r);
       dec_e3(r);
       sync_wait(r);

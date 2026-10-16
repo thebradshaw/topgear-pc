@@ -36,6 +36,7 @@ TgPortMode tg_lockstep_mode(const TgLockstep* ls);
 bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu);
 // From the bus write hooks.
 void tg_lockstep_on_write(TgLockstep* ls, uint32_t adr, uint8_t val);
+void tg_lockstep_on_read(TgLockstep* ls, uint32_t adr, uint8_t val);
 void tg_lockstep_on_hdma_write(TgLockstep* ls, uint8_t adr, uint8_t val);
 // True while C code is running, so tracing and coverage can ignore its bus accesses.
 bool tg_lockstep_in_c(const TgLockstep* ls);

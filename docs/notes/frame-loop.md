@@ -1,36 +1,65 @@
-# Moving the frame loop to C (design)
+# The race loop in C
 
-Status: proposal. Everything translated so far is a routine that runs start to finish
-inside one call from emulated code. What's left in races doesn't fit that shape:
+Everything translated before the race loop is a routine that runs start to finish inside
+one call from emulated code, and is checked call by call (lockstep.c). The race loop
+doesn't fit that shape: it waits for interrupts, and its pace comes from the CPU time the
+original takes.
 
-- Routines that wait for an interrupt: RaceSyncWait (`$00:EC0E`), the palette upload in
-  RaceLoadPalettes (`$00:CCDB`), the pause loop (`$00:8878`), and through them the main
-  race loop and RaceLoadAll (`$00:BF14`).
-- The raster IRQ stages reached through `JSR ($000A)`, whose PPU writes have to land on
-  the right scanline.
+## Waiting: the game code as a fiber
 
-## Waiting: the game code as a coroutine
+Routines marked `TG_WAITS` (registry.c) run on their own stack, a fiber (src/fiber.c:
+Windows fibers, `ucontext` elsewhere), in native mode only. Where the original spins until
+an interrupt handler changes something, the C version calls `tg_port_wait()`, which
+switches back to the emulator with the CPU idling (WAI) where it is. Each time an interrupt
+returns there, the fiber carries on and checks again. Original code the fiber calls
+(`tg_call_*`) runs on the machine itself, so it can take frames: the menus (GameInit), the
+sound driver upload, and the start-up delay loops all run that way.
 
-The C game code gets its own stack (a fiber on Windows, `ucontext` elsewhere, behind a
-small `tg_fiber` API). A translated routine that waits calls `tg_wait_until(cond)`, which
-switches back to the emulator. The emulator keeps running frames, interrupts and the
-frontend as usual; on each NMI or IRQ it checks the condition and switches back into the
-fiber when it holds. Nothing else changes for routines that don't wait.
+The race program, from the end of the menus to the end of a race and back into them, is
+`RaceProgram` ($00:812A, program.c). With it, RaceLoadAll, RaceSyncWait and RacePauseCheck
+are C too (waits.c).
 
-In the end state the whole main loop runs in the fiber and the emulated CPU only idles,
-so the C code paces itself on the same interrupts the original does.
+## Pace
 
-## Checking routines that wait
+Chris chose (2026-10-16) to drop the original's slowdown and loading pauses. The original
+takes about two frames of CPU time per race update, so it normally runs one update every
+three frames, and four or five when a race is busy. C takes no CPU time, so it would run
+an update every two frames; `tg_port_race_frames` (default 3, `--race-frames` in
+tg_headless) holds it to the original's normal pace. Loading is instant.
 
-Per-call lockstep can't compare these: they span frames, and the isolated check (with
-interrupts held off) would never finish. They are checked per frame instead, as zelda3
-does: at the end of each frame, work RAM, VRAM, CGRAM and OAM from the C run are
-compared with the original run from the same state at the start of the frame. The
-per-call checks stay for everything else.
+## Checking
 
-## IRQ stages
+Verify mode can't follow a routine across frames, so `TG_WAITS` routines run emulated
+there, and the recording tests check everything they call as before.
 
-Each stage's PPU writes must take effect on the same line as the original's. LakeSnes
-draws a line at dot 128, so for each stage we record (from the original, once) whether
-its writes land before or after that point, and the C version runs the stage at the
-matching moment: at IRQ time, or deferred until just after the line is drawn.
+The C loop itself is checked by tools/shift_compare.py. It runs a recording in native mode
+twice: once with the waiting routines emulated (`TG_EMULATE_WAITING=1`), once in C with
+`--race-frames 2`, the pace the emulated loop has when the routines it calls take no time.
+The only difference should be that the C run gets each race going a few frames sooner. The
+tool compares every frame's picture, and where the C run gets ahead it moves the
+recording's later input earlier by as much and runs again, until every frame matches.
+
+## The raster interrupts
+
+The race's IRQ handler ($00:EC5B) calls a stage through $0A each time, and each stage sets
+the PPU up for the next band of the screen. They're C now (src/port/irq.c): the vblank
+stage ($00:B6D1) with the top-of-frame work it calls (RaceIrqTop, $00:B75A), and the
+stages for each view's bands. The IRQ comes at dot 124 or later, past the point LakeSnes
+draws the line (dot 128) by the time a stage runs, so writing at once has the same effect
+as the original's writes a little later.
+
+The bottom view's stages end in $00:BE78, which waits for horizontal blank, turns the
+screen off for a palette and OAM DMA mid-screen, and turns it back on. Its writes have to
+land on particular dots, so it still runs emulated, called from the C stages.
+
+RaceIrqTop reads the sound driver's answer on APU port 1 some way into the routine. C reads
+it in no time, when the driver may not have answered yet, so a sound command can go a frame
+later. To check the logic, verify mode hands C the values the original read from the APU
+ports (`tg_apu_read8`).
+
+## Still emulated
+
+- The mid-screen DMA, $00:BE78 (above).
+- RaceBuildGapTable ($00:A8E1), which reads junk past its table, including APU and PPU
+  ports.
+- The menus (bank $0F).

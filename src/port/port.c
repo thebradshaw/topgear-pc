@@ -32,6 +32,19 @@ uint8_t tg_bus_read8(uint32_t adr) {
   return snes_read(g_snes, adr);
 }
 
+static int (*g_apu_replay)(void* ctx, uint32_t adr);
+static void* g_apu_replay_ctx;
+
+void tg_port_set_apu_replay(int (*fn)(void* ctx, uint32_t adr), void* ctx) {
+  g_apu_replay = fn;
+  g_apu_replay_ctx = ctx;
+}
+
+uint8_t tg_apu_read8(uint32_t adr) {
+  int v = g_apu_replay != NULL ? g_apu_replay(g_apu_replay_ctx, adr) : -1;
+  return v >= 0 ? (uint8_t) v : tg_bus_read8(adr);
+}
+
 void tg_bus_write8(uint32_t adr, uint8_t val) {
   snes_write(g_snes, adr, val);
   // On the SNES a DMA starts right after the write that enables it, and the CPU waits for
@@ -138,3 +151,9 @@ void tg_call_jsl(TgRegs* r, uint32_t target, uint16_t ret, uint8_t mx) { run_emu
 void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx) { run_emulated(r, target, stop, mx, kJmp); }
 
 void tg_cpu_cli(void) { g_snes->cpu->i = false; }
+
+uint8_t tg_port_set_bank(uint8_t bank) {
+  uint8_t old = g_snes->cpu->k;
+  g_snes->cpu->k = bank;
+  return old;
+}

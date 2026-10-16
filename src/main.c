@@ -46,6 +46,7 @@ static struct {
   // replay
   TgInputScript replay;
   bool replaying;
+  bool original;  // the game's own code throughout (--original)
 } app;
 
 static const char* defaultRomNames[] = {"Top Gear (USA).sfc", "Top Gear (USA).smc", "topgear.sfc"};
@@ -189,6 +190,8 @@ static void startRecording(void) {
   if(app.record) {
     fprintf(app.record, "# Top Gear input recording from power-on. Replay: tg_headless --input <this file>\n");
     fprintf(app.record, "# ROM SHA-256 %s\n", TG_ROM_SHA256);
+    fprintf(app.record, app.original ? "# Played with the original code (--original)\n"
+                                     : "# Played with the C race code: replay with tg_headless --port native\n");
   }
   snprintf(app.coveragePath, sizeof(app.coveragePath), "%s/coverage.tgcov", dir);
   app.coverage = SDL_malloc(sizeof(TgCoverage));
@@ -269,8 +272,10 @@ int main(int argc, char** argv) {
   const char* romArg = NULL;
   const char* replayPath = NULL;
   bool record = true;
+  bool original = false;
   for(int i = 1; i < argc; i++) {
     if(strcmp(argv[i], "--no-record") == 0) record = false;
+    else if(strcmp(argv[i], "--original") == 0) original = true;
     else if(strcmp(argv[i], "--replay") == 0 && i + 1 < argc) replayPath = argv[++i];
     else romArg = argv[i];
   }
@@ -287,6 +292,11 @@ int main(int argc, char** argv) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", "Failed to start the game.", NULL);
     return 1;
   }
+  // The translated C code runs the races; --original runs the game's own code throughout,
+  // with its slowdown and loading pauses (recordings made that way can be checked call by
+  // call: tg_headless --port verify).
+  app.original = original;
+  tg_game_set_port_mode(app.game, original ? TG_PORT_OFF : TG_PORT_NATIVE);
 
   if(replayPath) {
     if(!tg_input_script_load(replayPath, &app.replay, message, sizeof(message))) {

@@ -518,7 +518,7 @@ static int snes_getAccessTime(Snes* snes, uint32_t adr) {
 
 uint8_t snes_read(Snes* snes, uint32_t adr) {
   uint8_t val = snes_rread(snes, adr);
-  if(snes->readHook) snes->readHook(snes->readHookCtx, adr);
+  if(snes->readHook) snes->readHook(snes->readHookCtx, adr, val);
   snes->openBus = val;
   return val;
 }

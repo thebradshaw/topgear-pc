@@ -4,12 +4,17 @@
 //               [--screenshot out.ppm] [--shots-every N --shots-dir DIR]
 //               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]
 //               [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native]
+//               [--frame-hashes FILE] [--race-frames N]
 //
 // Prints the SHA-256 of work RAM and of the final frame so runs can be compared.
 // With --expect-*, exits non-zero when a hash differs (used by the regression tests).
 // With --coverage, adds this run's code/data coverage to FILE (created if missing).
 // With --port verify, every call to a translated routine is checked against the original
 // (see src/lockstep.h); any mismatch makes the run fail.
+// With --frame-hashes, writes a 64-bit hash of every frame's picture, one line per frame,
+// for comparing runs whose timing differs (tools/shift_compare.py).
+// --race-frames sets the video frames per race update when the race loop runs in C
+// (native mode); the default is 3, the original's pace without its slowdown.
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -18,6 +23,7 @@
 
 #include "coverage.h"
 #include "game.h"
+#include "port/port.h"
 #include "input_script.h"
 #include "rom.h"
 #include "sha256.h"
@@ -61,6 +67,7 @@ int main(int argc, char** argv) {
   const char* expectFrame = NULL;
   const char* coveragePath = NULL;
   const char* dumpWram = NULL;
+  const char* frameHashes = NULL;
   const char* traceOut = NULL;
   long traceFrame = -1;
   long traceCount = 1;
@@ -80,6 +87,8 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--expect-frame") == 0 && next) expectFrame = argv[++i];
     else if(strcmp(argv[i], "--coverage") == 0 && next) coveragePath = argv[++i];
     else if(strcmp(argv[i], "--dump-wram") == 0 && next) dumpWram = argv[++i];
+    else if(strcmp(argv[i], "--frame-hashes") == 0 && next) frameHashes = argv[++i];
+    else if(strcmp(argv[i], "--race-frames") == 0 && next) tg_port_race_frames = (int) strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-frame") == 0 && next) traceFrame = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-out") == 0 && next) traceOut = argv[++i];
     else if(strcmp(argv[i], "--trace-count") == 0 && next) traceCount = strtol(argv[++i], NULL, 10);
@@ -87,7 +96,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "verify") == 0) { portMode = TG_PORT_VERIFY; i++; }
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "native") == 0) { portMode = TG_PORT_NATIVE; i++; }
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N]\n", argv[0]);
       return 2;
     }
   }
@@ -124,6 +133,7 @@ int main(int argc, char** argv) {
   }
   tg_game_set_port_mode(game, portMode);
   uint8_t* pixels = calloc(TG_FB_WIDTH * TG_FB_HEIGHT, 4);
+  FILE* hashes = frameHashes ? fopen(frameHashes, "w") : NULL;
   for(long frame = 0; frame < frames; frame++) {
     tg_input_script_advance(&script, (uint32_t) frame);
     if(script.resetPending) {
@@ -143,6 +153,12 @@ int main(int argc, char** argv) {
       fclose(trace);
       trace = NULL;
     }
+    if(hashes) {
+      tg_game_get_pixels(game, pixels);
+      uint64_t h = 0xcbf29ce484222325ull;  // FNV-1a
+      for(size_t j = 0; j < (size_t) TG_FB_WIDTH * TG_FB_HEIGHT * 4; j++) h = (h ^ pixels[j]) * 0x100000001b3ull;
+      fprintf(hashes, "%016llx\n", (unsigned long long) h);
+    }
     if(shotsEvery > 0 && shotsDir && (frame + 1) % shotsEvery == 0) {
       char path[1024];
       snprintf(path, sizeof(path), "%s/frame%06ld.ppm", shotsDir, frame + 1);
@@ -150,6 +166,7 @@ int main(int argc, char** argv) {
       writePpm(path, pixels);
     }
   }
+  if(hashes) fclose(hashes);
   tg_game_get_pixels(game, pixels);
   if(screenshot) writePpm(screenshot, pixels);
   if(dumpWram) {

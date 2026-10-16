@@ -80,8 +80,9 @@ static void traceOpcode(void* ctx, Cpu* cpu) {
   }
 }
 
-static void traceRead(void* ctx, uint32_t adr) {
+static void traceRead(void* ctx, uint32_t adr, uint8_t val) {
   TgGame* game = ctx;
+  if(game->lockstep) tg_lockstep_on_read(game->lockstep, adr, val);
   if(game->lockstep && tg_lockstep_in_c(game->lockstep)) return;
   if(game->coverage) tg_coverage_on_read(game->coverage, adr);
 }
@@ -106,7 +107,7 @@ static void updateHooks(TgGame* game) {
   bool any = game->coverage || game->trace;
   game->snes->cpu->traceHook = any ? traceOpcode : NULL;
   game->snes->cpu->traceCtx = game;
-  game->snes->readHook = game->coverage ? traceRead : NULL;
+  game->snes->readHook = game->coverage || game->lockstep ? traceRead : NULL;
   game->snes->writeHook = game->trace || game->lockstep ? traceWrite : NULL;
   game->snes->readHookCtx = game;
   game->snes->cpu->callHook = game->lockstep ? portCall : NULL;

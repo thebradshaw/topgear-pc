@@ -80,3 +80,15 @@
 00:AEF3 RaceListGridCars ; RaceListVisibleCars for the fly-in to the grid: from the cameras, no steering (src/port/visible.c)
 00:8878 RacePauseCheck ; start pauses until start is pressed again (waits on the NMI's joypad reads)
 00:B75A RaceIrqTop ; first raster IRQ stage each frame: HDMA tables, OAM DMA, sound commands, then jumps to the next stage
+00:B3FE RaceIrqTopViewOff ; raster stage: the top view's sky band when the view is off
+00:B42F RaceIrqTopViewSky ; raster stage: the top view's sky with no road band
+00:B462 RaceIrqTopViewHorizon ; raster stage: the top view's sky, then the road band from line $AE
+00:B49B RaceIrqTopViewRoad ; raster stage: the top view with the road from the top
+00:B4C4 RaceIrqTopRoadBand ; raster stage: the top view's road band, from the horizon down
+00:B511 RaceIrqBottomViewOff ; raster stage: the bottom view when it's off (ends in the mid-screen DMA)
+00:B545 RaceIrqBottomViewSky ; raster stage: the bottom view's sky with no road band (ends in the mid-screen DMA)
+00:B57B RaceIrqBottomViewHorizon ; raster stage: the bottom view's sky (ends in the mid-screen DMA)
+00:B5B6 RaceIrqBottomViewRoad ; raster stage: the bottom view with the road from the top (ends in the mid-screen DMA)
+00:B5E2 RaceIrqBottomRoadBand ; raster stage: the bottom view's road band, from the horizon down
+00:B6D1 RaceIrqVblank ; raster stage at line $E0: screen off, frame count ($0C), OAM and palette DMA, then $08
+00:BE78 RaceIrqMidScreenDma ; waits for hblank, screen off, palette and OAM DMA for the bottom view, screen on

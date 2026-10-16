@@ -39,6 +39,9 @@ void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx);
 void tg_call_jsl(TgRegs* r, uint32_t target, uint16_t ret, uint8_t mx);
 // CLI: lets IRQs in.
 void tg_cpu_cli(void);
+// Sets the CPU's program bank, returning the old one: C code calling a translated routine
+// from another bank directly sets it first, as that routine's tg_call_* are in its bank.
+uint8_t tg_port_set_bank(uint8_t bank);
 bool tg_port_in_emulated_call(void);
 // Lowest stack pointer reached in original code run from C since the last call.
 uint16_t tg_port_take_min_sp(void);
@@ -118,6 +121,9 @@ static inline void ram16_set(uint32_t adr, uint16_t v) { g_ram[adr] = (uint8_t) 
 // Any address on the CPU bus: ROM, RAM, PPU and CPU registers. Use for hardware
 // registers; ROM tables are cheaper through tg_rom.
 uint8_t tg_bus_read8(uint32_t adr);
+// The APU ports, $2140-$2143 (in verify mode, what the original read).
+uint8_t tg_apu_read8(uint32_t adr);
+void tg_port_set_apu_replay(int (*fn)(void* ctx, uint32_t adr), void* ctx);
 void tg_bus_write8(uint32_t adr, uint8_t val);
 static inline void tg_bus_write16(uint32_t adr, uint16_t v) { tg_bus_write8(adr, (uint8_t) v); tg_bus_write8(adr + 1, (uint8_t) (v >> 8)); }
 
@@ -130,6 +136,12 @@ static inline uint16_t tg_read16(uint32_t adr) {
 // ROM bytes at a LoROM bank:address.
 const uint8_t* tg_rom(uint32_t adr);
 static inline uint16_t rom16(uint32_t adr) { const uint8_t* p = tg_rom(adr); return (uint16_t) (p[0] | p[1] << 8); }
+
+// Video frames per race update when the race loop runs in C (program.c). The original
+// takes 3 when it keeps up and more when it doesn't (slowdown); the C loop always takes
+// this many. 2 is the most the loop allows: it's what the original would do with no CPU
+// time, which is how the comparison tests run it.
+extern int tg_port_race_frames;
 
 // Connects the helpers above to the machine (port.c).
 typedef struct Snes Snes;

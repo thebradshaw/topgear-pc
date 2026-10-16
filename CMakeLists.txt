@@ -43,6 +43,7 @@ add_library(tgcore STATIC
   src/port/tilecache.c
   src/port/hud.c
   src/port/messages.c
+  src/port/irq.c
   src/port/program.c
   src/port/race.c
   src/port/registry.c
@@ -146,6 +147,12 @@ if(TG_TEST_ROM)
   find_package(Python3 COMPONENTS Interpreter QUIET)
   find_program(CA65 ca65)
   find_program(LD65 ld65)
+  # The race loop in C against the emulated one, allowing for its faster loading.
+  if(Python3_FOUND)
+    add_test(NAME race_loop_c COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/shift_compare.py
+      --bin $<TARGET_FILE:tg_headless> --rom ${TG_TEST_ROM} --input ${CMAKE_SOURCE_DIR}/tests/inputs/race_2p.txt --frames 14000)
+    set_tests_properties(race_loop_c PROPERTIES LABELS long TIMEOUT 3600)
+  endif()
   if(Python3_FOUND AND CA65 AND LD65)
     add_test(NAME disasm_roundtrip COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_disasm.py
       --rom ${TG_TEST_ROM} --out ${CMAKE_BINARY_DIR}/disasm)

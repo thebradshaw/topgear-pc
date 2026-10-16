@@ -1,6 +1,18 @@
 #include "port.h"
 
 void RaceRevEngines(TgRegs* r);
+void RaceIrqTopViewOff(TgRegs* r);
+void RaceIrqTopViewSky(TgRegs* r);
+void RaceIrqTopViewHorizon(TgRegs* r);
+void RaceIrqTopViewRoad(TgRegs* r);
+void RaceIrqTopRoadBand(TgRegs* r);
+void RaceIrqBottomRoadBand(TgRegs* r);
+void RaceIrqVblank(TgRegs* r);
+void RaceIrqBottomViewOff(TgRegs* r);
+void RaceIrqBottomViewSky(TgRegs* r);
+void RaceIrqBottomViewHorizon(TgRegs* r);
+void RaceIrqBottomViewRoad(TgRegs* r);
+void RaceIrqTop(TgRegs* r);
 void RaceBuildSprites(TgRegs* r);
 void RaceAddSprite(TgRegs* r);
 void RaceAddSpriteSplit(TgRegs* r);
@@ -67,6 +79,18 @@ const TgPortFunc tg_port_funcs[] = {
   { 0x00AEF3, "RaceListGridCars", RaceListGridCars, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00B18C, "RaceBuildSplitWindowTable", RaceBuildSplitWindowTable, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, TG_DEAD_FLAGS },
   { 0x00B33B, "RaceCallOvertakes", RaceCallOvertakes, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B3FE, "RaceIrqTopViewOff", RaceIrqTopViewOff, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B42F, "RaceIrqTopViewSky", RaceIrqTopViewSky, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B462, "RaceIrqTopViewHorizon", RaceIrqTopViewHorizon, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B49B, "RaceIrqTopViewRoad", RaceIrqTopViewRoad, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B4C4, "RaceIrqTopRoadBand", RaceIrqTopRoadBand, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B511, "RaceIrqBottomViewOff", RaceIrqBottomViewOff, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B545, "RaceIrqBottomViewSky", RaceIrqBottomViewSky, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B57B, "RaceIrqBottomViewHorizon", RaceIrqBottomViewHorizon, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B5B6, "RaceIrqBottomViewRoad", RaceIrqBottomViewRoad, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B5E2, "RaceIrqBottomRoadBand", RaceIrqBottomRoadBand, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B6D1, "RaceIrqVblank", RaceIrqVblank, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00B75A, "RaceIrqTop", RaceIrqTop, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00BF14, "RaceLoadAll", RaceLoadAll, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS, 0, TG_WAITS },
   { 0x00BF44, "RaceLoadCourse", RaceLoadCourse, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00C182, "RaceLoadSkyline", RaceLoadSkyline, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
