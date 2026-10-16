@@ -40,7 +40,10 @@ The first gamepad is player 1 and the second is player 2. To change the controls
 | F9 | Full-screen view: in 1-player races your view fills the whole screen instead of sharing it with the computer's. The horizon stays low and the road flat, as in the original. Press F9 again for a tall road that fills more of the screen, and again to turn it off (off by default; also `--full-view`, `--tall-road`). The same road height is used by side by side |
 | F10 | Widescreen: races are drawn as wide as the window (up to 21:9), with the road, scenery and roadside objects carrying on past the original edges and the HUD moved out to the sides; menus get black borders. In a window it also switches the window between 16:9 and 4:3 (off by default; also `--wide`) |
 | F12 | Side by side: in 2-player races with widescreen on, the two views sit next to each other, each the full height of the screen, instead of one above the other (off by default; also `--side-by-side`) |
+| Shift+F1 | Auto-save: the countries you have reached at each skill level are remembered, so you don't need passwords after restarting (off by default; also `--auto-save`). Kept in `progress.txt` in the settings folder |
 | F1 | Ghost car: in 1-player races, your best finished race on each course is replayed as a see-through car you can race against. Best races are saved as `ghosts.bin` in the settings folder (`%APPDATA%\topgear-pc\Top Gear`) as soon as you set one (off by default; also `--ghost`) |
+
+Your choices for these keys are remembered between sessions in `settings.txt` in the settings folder (`%APPDATA%\topgear-pc\Top Gear`).
 
 ## Recordings
 

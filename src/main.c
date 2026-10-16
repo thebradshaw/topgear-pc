@@ -72,6 +72,10 @@ static struct {
   bool ghost;  // enhancement: race against your best race on each course (F1, --ghost)
   bool recordedGhost;
   char ghostPath[2400];  // where the best races are kept; empty when there is nowhere
+  bool autoSave;  // enhancement: countries reached are remembered between sessions (Shift+F1, --auto-save)
+  uint8_t saved[3];  // the countries open at each skill level, as saved
+  char progressPath[2400];
+  char settingsPath[2400];  // the options, remembered between sessions
   int recordedWide;
 } app;
 
@@ -222,7 +226,67 @@ static void closePad(SDL_JoystickID id) {
   }
 }
 
+// The options are remembered in settings.txt in the settings folder, one "name 0|1" per line.
+typedef struct {
+  const char* name;
+  bool* value;
+} Setting;
+
+static const Setting kSettings[] = {
+  {"fullscreen", &app.fullscreen}, {"integer_scale", &app.integerScale}, {"rumble", &app.rumble},
+  {"smooth", &app.smooth}, {"smooth_scaling", &app.scaling}, {"full_view", &app.fullView},
+  {"tall_road", &app.tallRoad}, {"wide", &app.wide}, {"side_by_side", &app.sideBySide},
+  {"ghost", &app.ghost}, {"auto_save", &app.autoSave},
+};
+
+static void loadSettings(void) {
+  char* text = SDL_LoadFile(app.settingsPath, NULL);
+  if(text == NULL) return;
+  for(char* line = text; line && *line; ) {
+    char* next = strchr(line, '\n');
+    if(next) *next++ = 0;
+    char name[32];
+    int value;
+    if(sscanf(line, "%31s %d", name, &value) == 2) {
+      for(size_t i = 0; i < SDL_arraysize(kSettings); i++) if(strcmp(name, kSettings[i].name) == 0) *kSettings[i].value = value != 0;
+      if(strcmp(name, "aspect") == 0 && value >= 0 && value < ASPECT_COUNT) app.aspect = (AspectMode) value;
+      if(strcmp(name, "filter") == 0 && value >= 0 && value < FILTER_COUNT) app.filter = (FilterMode) value;
+    }
+    line = next;
+  }
+  SDL_free(text);
+}
+
+static void saveSettings(void) {
+  if(!app.settingsPath[0] || app.replaying) return;
+  FILE* f = fopen(app.settingsPath, "w");
+  if(f == NULL) return;
+  fprintf(f, "aspect %d\nfilter %d\n", (int) app.aspect, (int) app.filter);
+  for(size_t i = 0; i < SDL_arraysize(kSettings); i++) fprintf(f, "%s %d\n", kSettings[i].name, *kSettings[i].value ? 1 : 0);
+  fclose(f);
+}
+
+static void saveProgress(void) {
+  FILE* f = app.progressPath[0] ? fopen(app.progressPath, "w") : NULL;
+  if(f == NULL) return;
+  fprintf(f, "%d %d %d\n", app.saved[0], app.saved[1], app.saved[2]);
+  fclose(f);
+}
+
+static void loadProgress(void) {
+  char* text = app.progressPath[0] ? SDL_LoadFile(app.progressPath, NULL) : NULL;
+  if(text == NULL) return;
+  int a, b, c;
+  if(sscanf(text, "%d %d %d", &a, &b, &c) == 3) {
+    app.saved[0] = (uint8_t) (a & 7);
+    app.saved[1] = (uint8_t) (b & 7);
+    app.saved[2] = (uint8_t) (c & 7);
+  }
+  SDL_free(text);
+}
+
 static void updateTitle(void) {
+  saveSettings();
   char title[128];
   snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
            app.integerScale ? ", integer scale" : "",
@@ -231,6 +295,7 @@ static void updateTitle(void) {
   if(app.wide && !app.original) SDL_strlcat(title, ", widescreen", sizeof(title));
   if(app.sideBySide && !app.original) SDL_strlcat(title, ", side by side", sizeof(title));
   if(app.ghost && !app.original) SDL_strlcat(title, ", ghost car", sizeof(title));
+  if(app.autoSave) SDL_strlcat(title, ", auto-save", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
 
@@ -442,12 +507,41 @@ static void runFrame(int samples) {
     }
   }
   if(reset) tg_game_reset(app.game, false);
+  if(app.replaying && app.replay.unlockPending) {
+    uint16_t u = app.replay.unlock;
+    uint8_t open[3] = {u & 15, (u >> 4) & 15, (u >> 8) & 15};
+    tg_game_unlock(app.game, open);
+    app.replay.unlockPending = false;
+  }
+  if(app.autoSave && !app.replaying) {
+    // Countries reached in earlier sessions are opened again (after power-on clears them).
+    uint8_t open[3];
+    tg_game_progress(app.game, open);
+    if(open[0] < app.saved[0] || open[1] < app.saved[1] || open[2] < app.saved[2]) {
+      tg_game_unlock(app.game, app.saved);
+      uint8_t now[3];
+      tg_game_progress(app.game, now);
+      if(app.record && memcmp(now, open, 3) != 0) fprintf(app.record, "%u unlock %d %d %d\n", app.frame, app.saved[0], app.saved[1], app.saved[2]);
+    }
+  }
   tg_game_set_input(app.game, 1, input[1]);
   tg_game_set_input(app.game, 2, input[2]);
   tg_game_run_frame(app.game);
   app.frame++;
   // A new best race is saved straight away (not while replaying someone's recording).
   if(tg_game_ghosts_changed(app.game) && !app.replaying && app.ghostPath[0]) tg_game_save_ghosts(app.game, app.ghostPath);
+  if(app.autoSave && !app.replaying) {
+    uint8_t open[3];
+    tg_game_progress(app.game, open);
+    bool more = false;
+    for(int i = 0; i < 3; i++) {
+      if(open[i] > app.saved[i]) {
+        app.saved[i] = open[i];
+        more = true;
+      }
+    }
+    if(more) saveProgress();
+  }
   rumble();
 
   void* pixels;
@@ -483,6 +577,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Remembered options first; the command line can turn more on.
+  app.aspect = ASPECT_4_3;
+  char* prefDir = SDL_GetPrefPath("topgear-pc", "Top Gear");
+  if(prefDir) {
+    snprintf(app.settingsPath, sizeof(app.settingsPath), "%ssettings.txt", prefDir);
+    snprintf(app.progressPath, sizeof(app.progressPath), "%sprogress.txt", prefDir);
+    SDL_free(prefDir);
+    loadSettings();
+    loadProgress();
+  }
   const char* romArg = NULL;
   const char* replayPath = NULL;
   bool record = true;
@@ -498,6 +602,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--wide") == 0) app.wide = true;
     else if(strcmp(argv[i], "--side-by-side") == 0) app.sideBySide = true;
     else if(strcmp(argv[i], "--ghost") == 0) app.ghost = true;
+    else if(strcmp(argv[i], "--auto-save") == 0) app.autoSave = true;
     else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       i++;
       for(int f = 0; f < FILTER_COUNT; f++) if(strcmp(argv[i], filterNames[f]) == 0) app.filter = f;
@@ -541,13 +646,13 @@ int main(int argc, char** argv) {
     tg_game_load_ghosts(app.game, app.ghostPath);
   }
 
-  app.aspect = ASPECT_4_3;
   loadControls();
-  if(!SDL_CreateWindowAndRenderer("Top Gear", 1024, 768, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &app.window, &app.renderer)) {
+  if(!SDL_CreateWindowAndRenderer("Top Gear", app.wide ? 1366 : 1024, 768, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &app.window, &app.renderer)) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", SDL_GetError(), NULL);
     return 1;
   }
   SDL_SetWindowMinimumSize(app.window, SNES_W, SNES_H);
+  if(app.fullscreen) SDL_SetWindowFullscreen(app.window, true);
   app.texture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, TG_FB_WIDTH, TG_FB_HEIGHT);
   SDL_SetTextureScaleMode(app.texture, SDL_SCALEMODE_NEAREST);
   updateTitle();
@@ -573,11 +678,13 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F11 || (e.key.key == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT))) {
               app.fullscreen = !app.fullscreen;
               SDL_SetWindowFullscreen(app.window, app.fullscreen);
+              saveSettings();
               break;
             }
             if(e.key.key == SDLK_ESCAPE && app.fullscreen) {
               app.fullscreen = false;
               SDL_SetWindowFullscreen(app.window, false);
+              saveSettings();
               break;
             }
             if(e.key.key == SDLK_F2) { app.aspect = (app.aspect + 1) % ASPECT_COUNT; updateTitle(); break; }
@@ -596,6 +703,7 @@ int main(int argc, char** argv) {
               break;
             }
             if(e.key.key == SDLK_F12 && !app.replaying) { app.sideBySide = !app.sideBySide; updateTitle(); break; }
+            if(e.key.key == SDLK_F1 && (e.key.mod & SDL_KMOD_SHIFT)) { app.autoSave = !app.autoSave; updateTitle(); break; }
             if(e.key.key == SDLK_F1 && !app.replaying) { app.ghost = !app.ghost; updateTitle(); break; }
             if(e.key.key == SDLK_F10 && !app.replaying) {
               app.wide = !app.wide;

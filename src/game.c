@@ -159,6 +159,18 @@ void tg_game_set_full_view(TgGame* game, bool on) {
 
 void tg_game_set_tall_road(TgGame* game, bool on) { game->snes->ppu->roadScale = on ? 2.0f : 0; }
 
+void tg_game_progress(TgGame* game, uint8_t open[3]) {
+  for(int i = 0; i < 3; i++) open[i] = (uint8_t) (game->snes->ram[0x1F0A + i * 2] & 7);
+}
+
+void tg_game_unlock(TgGame* game, const uint8_t open[3]) {
+  for(int i = 0; i < 3; i++) {
+    uint8_t* p = &game->snes->ram[0x1F0A + i * 2];
+    if(p[1] != 0 || p[0] > 7) continue;  // not set up yet
+    if(open[i] > p[0]) p[0] = open[i];
+  }
+}
+
 void tg_game_set_ghost(TgGame* game, bool on) {
   tg_port_ghost = on;
   game->snes->ppu->objFlags = on ? tg_port_obj_flags : NULL;

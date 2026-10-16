@@ -70,6 +70,7 @@ bool tg_input_script_load(const char* path, TgInputScript* script, char* error, 
     char word[16];
     int n;
     char value[16];
+    unsigned u[3];
     if(sscanf(line, "%u %15s", &frame, word) == 2 && strcmp(word, "reset") == 0) {
       n = 3;
     } else if(sscanf(line, "%u %15s %15s", &frame, word, value) == 3 && (strcmp(word, "smooth") == 0 || strcmp(word, "scaling") == 0 || strcmp(word, "fullview") == 0 || strcmp(word, "sidebyside") == 0 || strcmp(word, "ghost") == 0 || strcmp(word, "tallroad") == 0)) {
@@ -77,6 +78,10 @@ bool tg_input_script_load(const char* path, TgInputScript* script, char* error, 
                strcmp(word, "sidebyside") == 0 ? 7 : strcmp(word, "ghost") == 0 ? 8 : 9;
       mask = strcmp(value, "on") == 0;
       n = strcmp(value, "on") == 0 || strcmp(value, "off") == 0 ? 3 : -1;
+    } else if(sscanf(line, "%u %15s %u %u %u", &frame, word, &u[0], &u[1], &u[2]) == 5 && strcmp(word, "unlock") == 0) {
+      player = 10;
+      mask = (uint16_t) ((u[0] & 15) | (u[1] & 15) << 4 | (u[2] & 15) << 8);
+      n = 3;
     } else if(sscanf(line, "%u %15s %15s", &frame, word, value) == 3 && strcmp(word, "wide") == 0) {
       player = 6;
       mask = (uint16_t) atoi(value);
@@ -120,6 +125,10 @@ void tg_input_script_advance(TgInputScript* script, uint32_t frame) {
     else if(e->player == 7) script->sideBySide = e->buttons != 0;
     else if(e->player == 8) script->ghost = e->buttons != 0;
     else if(e->player == 9) script->tallRoad = e->buttons != 0;
+    else if(e->player == 10) {
+      script->unlockPending = true;
+      script->unlock = e->buttons;
+    }
     else script->state[e->player] = e->buttons;
   }
 }

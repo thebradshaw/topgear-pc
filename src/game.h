@@ -65,6 +65,10 @@ void tg_game_set_full_view(TgGame* game, bool on);
 // Full view and side by side draw the road 1.3 times taller, with the horizon low as in the
 // original; tall road draws it twice as tall, filling the screen.
 void tg_game_set_tall_road(TgGame* game, bool on);
+// Auto-save: the countries open at each skill level (0-7), and opening them up to the
+// given ones (never closing any).
+void tg_game_progress(TgGame* game, uint8_t open[3]);
+void tg_game_unlock(TgGame* game, const uint8_t open[3]);
 // Widescreen (an enhancement, off by default): races are drawn margin pixels wider on each
 // side (at most 96), other screens in the middle with black borders. The picture is then
 // tg_game_wide_pixels: XRGB, (256 + 2 * margin) x 224, one pixel per SNES pixel (NULL

@@ -165,6 +165,11 @@ int main(int argc, char** argv) {
       tg_game_reset(game, false);
       script.resetPending = false;
     }
+    if(script.unlockPending) {
+      uint8_t open[3] = {script.unlock & 15, (script.unlock >> 4) & 15, (script.unlock >> 8) & 15};
+      tg_game_unlock(game, open);
+      script.unlockPending = false;
+    }
     tg_port_race_frames = script.smooth ? 1 : raceFrames;
     if(script.scaling != tg_port_smooth_sprites) tg_game_set_smooth_sprites(game, script.scaling);
     if(script.fullview != tg_port_full_view) tg_game_set_full_view(game, script.fullview);
