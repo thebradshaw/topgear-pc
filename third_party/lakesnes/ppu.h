@@ -30,6 +30,13 @@ typedef struct Layer {
 
 // Top Gear port enhancement: an object drawn smoothly scaled from its own art, filtered,
 // in place of the OAM entries tagged with it (ppu_smooth.c).
+// Top Gear port: lines can be drawn wider than 256 pixels (widescreen, ppu_full.c), up to
+// this many pixels more on each side. The sprite line buffers have room for that: index
+// them with PPU_OBJX(x).
+#define PPU_WIDE_MAX 96
+#define PPU_LINE_BUF (256 + 2 * PPU_WIDE_MAX)
+#define PPU_OBJX(x) ((x) + PPU_WIDE_MAX)
+
 #define PPU_OBJ_PARTS 32
 typedef struct PpuObjPart {
   int16_t dx, dy;  // from the origin, in the art's pixels
@@ -95,10 +102,7 @@ struct Ppu {
   const PpuObjScale* objScales;
   uint16_t objTag[128];
   int16_t objGround[128];  // Top Gear port: the line each entry's object stands on, or PPU_NO_GROUND
-  float objAlpha[256], objR[256], objG[256], objB[256];  // filtered object pixels
   PpuObjBitmap* objBitmaps;  // a small cache, allocated when first needed
-  uint8_t objPixelBuffer[256]; // line buffers
-  uint8_t objPriorityBuffer[256];
   bool timeOver;
   bool rangeOver;
   bool objInterlace;
@@ -161,17 +165,31 @@ struct Ppu {
   // times 2 for even and odd frame
   uint8_t pixelBuffer[512 * 4 * 239 * 2];
   uint8_t pixelOutputFormat;
-  // Top Gear port: the 1-player race view drawn over the whole screen (ppu_full.c). The game
-  // sets *fullViewFrame during a frame when the next one shows it; the lines of the top
-  // view are then captured as they are drawn and the screen is redrawn from them at the
-  // start of vblank.
+  // Top Gear port: race frames redrawn wider (widescreen) or with the 1-player view over the
+  // whole screen (ppu_full.c). During a frame the game sets *raceFrame to PPU_RACE_FRAME
+  // (and PPU_FULL_VIEW) when the next frame shows a race; the PPU then keeps the state of
+  // each line as it is drawn and redraws the screen from them at the start of vblank.
   const int16_t* objGrounds;  // by low RAM address of an OAM entry, like objScaleTags
-  bool* fullViewFrame;
+  uint8_t* raceFrame;
   struct PpuFullView* full;
-  bool fullArmed;  // this frame is captured
+  uint8_t fullArmed;   // this frame's flags, latched at the last vblank
   bool fullComposing;
   int16_t objShift[128];      // while composing: how far each entry moves down
+  int wideMargin;             // widescreen: extra pixels on each side (0: off)
+  uint32_t* wideBuffer;       // the wide picture, XRGB, (256 + 2 * wideMargin) x 224
+  // The line being drawn: pixels lineLeft to lineRight - 1, into lineOut when set (else
+  // pixelBuffer); hudMargin moves the HUD's sides out by that much.
+  int16_t lineLeft, lineRight, hudMargin;
+  bool hudClamp;  // the HUD covers the whole line: carry its edges on instead
+  uint32_t* lineOut;
+  // Sprite line buffers (kept out of the line state ppu_full.c copies).
+  float objAlpha[PPU_LINE_BUF], objR[PPU_LINE_BUF], objG[PPU_LINE_BUF], objB[PPU_LINE_BUF];  // filtered object pixels
+  uint8_t objPixelBuffer[PPU_LINE_BUF];
+  uint8_t objPriorityBuffer[PPU_LINE_BUF];
 };
+
+#define PPU_RACE_FRAME 1
+#define PPU_FULL_VIEW 2
 
 #define PPU_NO_GROUND (-32768)
 
@@ -196,5 +214,9 @@ void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line);
 void ppu_fullCapture(Ppu* ppu, int line);
 void ppu_fullCompose(Ppu* ppu);
 int ppu_fullMapRow(Ppu* ppu, int row);
+#define PPU_NO_HUD (-32768)
+int ppu_hudSource(Ppu* ppu, int x);
+int ppu_hudShift(Ppu* ppu, int x);
+bool ppu_bgOpaque(Ppu* ppu, int layer, int x, int line);
 
 #endif

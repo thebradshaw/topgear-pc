@@ -98,7 +98,8 @@ static bool add_parts(TgRegs* r, const Variant* v, const PartList* l, uint16_t x
     // comparisons near the ends of the range.
     if(!negative((uint16_t) (sx - ram16((uint16_t) (r->d + 0xF7)))) ||
        negative((uint16_t) (sx - ram16((uint16_t) (r->d + 0xF9))))) continue;
-    bool left = sx >= 0x8000;
+    // Widescreen lets x reach past 255: the OAM's 9th x bit is then set as for x < 0.
+    bool left = tg_port_wide_margin ? (sx & 0x0100) != 0 : sx >= 0x8000;
     oam_write(r, v, y, (uint8_t) sx);
     y++;
     uint16_t sy = (uint16_t) (abs16(r, (uint16_t) (l->base + 4 + x)) + ram16(0x1B8A));
@@ -134,7 +135,8 @@ static uint16_t oam_base(TgRegs* r, const Variant* v);
 // Full-screen view (an enhancement, off by default): each OAM buffer entry an object adds
 // records the line the object stands on, so the PPU can move it with the road (ppu_full.c).
 bool tg_port_full_view;
-bool tg_port_full_frame;
+int tg_port_wide_margin;
+uint8_t tg_port_race_frame;
 int16_t tg_port_obj_grounds[0x2000];  // by low RAM address of an OAM buffer entry
 
 static void mark_ground(TgRegs* r, const Variant* v, uint16_t from, int16_t ground) {
@@ -145,7 +147,7 @@ static void mark_ground(TgRegs* r, const Variant* v, uint16_t from, int16_t grou
 static bool add_parts_all(TgRegs* r, const Variant* v);
 
 static bool add_sprite(TgRegs* r, const Variant* v) {
-  if(!tg_port_full_view) return add_parts_all(r, v);
+  if(!tg_port_full_view && !tg_port_wide_margin) return add_parts_all(r, v);
   uint16_t y0 = ram16(0x1B92);
   bool ok = add_parts_all(r, v);
   mark_ground(r, v, y0, (int16_t) (int16_t) (ram16(0x1B8A) + v->y_add));
@@ -390,7 +392,7 @@ static void close_split(TgRegs* r, const SpriteView* w, const Variant* v) {
     oam_write16(r, v, (uint16_t) (y + 2), 0);
   }
   ram16_set(0x1B92, y);
-  if(tg_port_full_view) mark_ground(r, v, y0, (int16_t) (pos >> 8));
+  if(tg_port_full_view || tg_port_wide_margin) mark_ground(r, v, y0, (int16_t) (pos >> 8));
   uint16_t hy = ram16(0x1B94), slot = ram16(0x1B96);
   uint8_t a = oam_read(r, v, hy);
   for(uint16_t k = slot; k != 4; k++) a |= (uint8_t) (abs8(r, (uint16_t) (0xADF1 + k)) | abs8(r, (uint16_t) (0xADED + k)));
@@ -495,15 +497,16 @@ static int build_objects(TgRegs* r, const SpriteView* w) {
 static void build_view(TgRegs* r, const SpriteView* w) {
   const Variant* v = w->normal;
   if(dp16(r, w->off_dp) & 0x8000) return;
-  if(tg_port_smooth_sprites || tg_port_full_view) {
+  if(tg_port_smooth_sprites || tg_port_full_view || tg_port_wide_margin) {
     uint16_t base = oam_base(r, v);
     for(uint16_t y = 0; y < 0x200; y++) {
       tg_port_obj_tags[(uint16_t) (base + y) & 0x1FFF] = 0;
       tg_port_obj_grounds[(uint16_t) (base + y) & 0x1FFF] = PPU_NO_GROUND;
     }
   }
-  dp16_set(r, 0xF7, 0x0100);
-  dp16_set(r, 0xF9, 0xFFF1);
+  // Parts are kept from x = -15 to 255, or out to the edges of a wide screen.
+  dp16_set(r, 0xF7, (uint16_t) (0x0100 + tg_port_wide_margin));
+  dp16_set(r, 0xF9, (uint16_t) (0xFFF1 - tg_port_wide_margin));
   dp16_set(r, w->half_dp, 0);
   ram16_set(0x1B78, 0);
   ram16_set(0x1B92, 0x000C);

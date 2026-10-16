@@ -13,6 +13,7 @@
 #include <stddef.h>
 
 #include "port.h"
+#include "ppu.h"
 
 #include "race_common.h"
 #include "variables.h"
@@ -470,7 +471,10 @@ uint32_t tg_port_race_irqs;
 
 void RaceIrqTop(TgRegs* r) {
   tg_port_race_irqs++;
-  if(tg_port_full_view) tg_port_full_frame = g_ram[0x1F04] == 0 && !(z(0x40) & 0x8000);
+  if(tg_port_full_view || tg_port_wide_margin) {
+    bool full = tg_port_full_view && g_ram[0x1F04] == 0 && !(z(0x40) & 0x8000);
+    tg_port_race_frame = full ? PPU_RACE_FRAME | PPU_FULL_VIEW : tg_port_wide_margin ? PPU_RACE_FRAME : 0;
+  }
   if(z(0xE3) & 0x8000) {
     z_set(0xE3, 0);
     if(ram16(0x0106) == 0) ram16_set(0x0106, 1);

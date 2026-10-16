@@ -144,11 +144,33 @@ void tg_game_set_smooth_sprites(TgGame* game, bool on) {
   game->snes->ppu->objScales = tg_port_obj_scales;
 }
 
+static void updateRedraw(TgGame* game) {
+  bool on = tg_port_full_view || tg_port_wide_margin > 0;
+  tg_port_race_frame = 0;
+  game->snes->ppu->objGrounds = on ? tg_port_obj_grounds : NULL;
+  game->snes->ppu->raceFrame = on ? &tg_port_race_frame : NULL;
+  game->snes->ppu->wideMargin = tg_port_wide_margin;
+}
+
 void tg_game_set_full_view(TgGame* game, bool on) {
   tg_port_full_view = on;
-  tg_port_full_frame = false;
-  game->snes->ppu->objGrounds = on ? tg_port_obj_grounds : NULL;
-  game->snes->ppu->fullViewFrame = on ? &tg_port_full_frame : NULL;
+  updateRedraw(game);
+}
+
+void tg_game_set_wide(TgGame* game, int margin) {
+  if(margin < 0) margin = 0;
+  if(margin > PPU_WIDE_MAX) margin = PPU_WIDE_MAX;
+  tg_port_wide_margin = margin;
+  updateRedraw(game);
+}
+
+int tg_game_wide_margin(const TgGame* game) {
+  (void) game;
+  return tg_port_wide_margin;
+}
+
+const uint32_t* tg_game_wide_pixels(TgGame* game) {
+  return tg_port_wide_margin > 0 ? game->snes->ppu->wideBuffer : NULL;
 }
 
 void tg_game_set_coverage(TgGame* game, TgCoverage* cov) {

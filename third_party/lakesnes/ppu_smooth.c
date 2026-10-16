@@ -153,7 +153,7 @@ int ppu_smoothOnLine(Ppu* ppu, uint8_t index, int line) {
   int x0, y0, x1, y1;
   objectBox(ppu, s, &x0, &y0, &x1, &y1);
   int dy = shiftOf(ppu, index);
-  return line >= y0 + dy && line < y1 + dy && x1 > 0 && x0 < 256;
+  return line >= y0 + dy && line < y1 + dy && x1 > ppu->lineLeft && x0 < ppu->lineRight;
 }
 
 void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line) {
@@ -166,20 +166,21 @@ void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line) {
   int priority = (s->parts[0].attr & 0x3000) >> 12;
   for(int i = 0; i < bm->w; i++) {
     int x = bm->x0 + i;
-    if(x < 0 || x >= 256) continue;
+    if(x < ppu->lineLeft || x >= ppu->lineRight) continue;
     int k = j * bm->w + i;
+    int ox = PPU_OBJX(x);
     float a = bm->a[k];
     if(a <= 0) continue;
     // Over whatever sprite pixel is already there (drawn earlier, so behind).
     float da = 0, dr = 0, dg = 0, db = 0;
-    if(ppu->objPixelBuffer[x]) {
-      if(ppu->objAlpha[x] > 0) {
-        da = ppu->objAlpha[x];
-        dr = ppu->objR[x];
-        dg = ppu->objG[x];
-        db = ppu->objB[x];
+    if(ppu->objPixelBuffer[ox]) {
+      if(ppu->objAlpha[ox] > 0) {
+        da = ppu->objAlpha[ox];
+        dr = ppu->objR[ox];
+        dg = ppu->objG[ox];
+        db = ppu->objB[ox];
       } else {
-        uint16_t c = ppu->cgram[ppu->objPixelBuffer[x]];
+        uint16_t c = ppu->cgram[ppu->objPixelBuffer[ox]];
         da = 1;
         dr = c & 0x1f;
         dg = (c >> 5) & 0x1f;
@@ -187,11 +188,11 @@ void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line) {
       }
     }
     float oa = a + da * (1 - a);
-    ppu->objR[x] = (bm->r[k] * a + dr * da * (1 - a)) / oa;
-    ppu->objG[x] = (bm->g[k] * a + dg * da * (1 - a)) / oa;
-    ppu->objB[x] = (bm->b[k] * a + db * da * (1 - a)) / oa;
-    ppu->objAlpha[x] = oa;
-    ppu->objPixelBuffer[x] = bm->index[k];
-    ppu->objPriorityBuffer[x] = (uint8_t) priority;
+    ppu->objR[ox] = (bm->r[k] * a + dr * da * (1 - a)) / oa;
+    ppu->objG[ox] = (bm->g[k] * a + dg * da * (1 - a)) / oa;
+    ppu->objB[ox] = (bm->b[k] * a + db * da * (1 - a)) / oa;
+    ppu->objAlpha[ox] = oa;
+    ppu->objPixelBuffer[ox] = bm->index[k];
+    ppu->objPriorityBuffer[ox] = (uint8_t) priority;
   }
 }

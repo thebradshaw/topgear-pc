@@ -62,6 +62,13 @@ void tg_game_set_port_mode(TgGame* game, TgPortMode mode);
 void tg_game_set_smooth_sprites(TgGame* game, bool on);
 // The full-screen 1-player race view (an enhancement, off by default).
 void tg_game_set_full_view(TgGame* game, bool on);
+// Widescreen (an enhancement, off by default): races are drawn margin pixels wider on each
+// side (at most 96), other screens in the middle with black borders. The picture is then
+// tg_game_wide_pixels: XRGB, (256 + 2 * margin) x 224, one pixel per SNES pixel (NULL
+// before the first frame).
+void tg_game_set_wide(TgGame* game, int margin);
+int tg_game_wide_margin(const TgGame* game);
+const uint32_t* tg_game_wide_pixels(TgGame* game);
 // Debugging: VRAM, CGRAM and OAM to a file.
 void tg_game_dump_ppu(TgGame* game, const char* path);
 // Prints what the translated routines did; returns the number of mismatches found.

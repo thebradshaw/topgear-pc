@@ -43,7 +43,9 @@ static struct {
   FilterMode filter;
   bool rumble;  // controller rumble in races (F8, --rumble)
   SDL_Texture* upscaled;  // sharp-bilinear's intermediate picture
-  int upscaledFactor;
+  int upscaledFactor, upscaledW;
+  SDL_Texture* wideTexture;  // the widescreen picture, wideTextureW x 224
+  int wideTextureW;
   uint16_t keys[3];  // keyboard state per player
   uint32_t frame;  // frames run since power-on
   // recording
@@ -62,6 +64,8 @@ static struct {
   bool recordedScaling;
   bool fullView;  // enhancement: 1-player races fill the whole screen (F9, --full-view)
   bool recordedFullView;
+  bool wide;  // enhancement: races drawn as wide as the window (F10, --wide)
+  int recordedWide;
 } app;
 
 static const char* defaultRomNames[] = {"Top Gear (USA).sfc", "Top Gear (USA).smc", "topgear.sfc"};
@@ -217,14 +221,20 @@ static void updateTitle(void) {
            app.integerScale ? ", integer scale" : "",
            app.smooth && !app.original ? ", smooth motion" : "", app.scaling ? ", smooth scaling" : "",
            app.fullView && !app.original ? ", full-screen view" : "", app.rumble ? ", rumble" : "");
+  if(app.wide && !app.original) SDL_strlcat(title, ", widescreen", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
 
 static void present(void) {
   int outW, outH;
   SDL_GetCurrentRenderOutputSize(app.renderer, &outW, &outH);
-  // Picture size in output pixels before scaling: 256x224 with the chosen pixel aspect.
-  double picW = app.aspect == ASPECT_4_3 ? SNES_H * 4.0 / 3.0 : SNES_W;
+  // Picture size in output pixels before scaling: 256x224 (or wider) with the chosen pixel
+  // aspect.
+  int margin = tg_port_wide_margin;
+  bool wide = margin > 0 && app.wideTexture && app.wideTextureW == SNES_W + 2 * margin;
+  int srcW = wide ? app.wideTextureW : SNES_W;
+  SDL_Texture* tex = wide ? app.wideTexture : app.texture;
+  double picW = (app.aspect == ASPECT_4_3 ? SNES_H * 4.0 / 3.0 / SNES_W : 1.0) * srcW;
   double picH = SNES_H;
   double scale = SDL_min(outW / picW, outH / picH);
   if(app.integerScale && scale >= 1.0) scale = SDL_floor(scale);
@@ -235,28 +245,30 @@ static void present(void) {
   dst.y = (float) SDL_floor((outH - dst.h) / 2);
   // The framebuffer is 512x480 with 2x2 pixels; the 224 visible lines start at y=16.
   SDL_FRect src = {0, 16, TG_FB_WIDTH, SNES_H * 2};
+  if(wide) src = (SDL_FRect) {0, 0, (float) srcW, SNES_H};
   SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
   SDL_RenderClear(app.renderer);
   if(app.filter == FILTER_SMOOTH) {
-    int k = (int) SDL_ceil(SDL_max(dst.w / SNES_W, dst.h / SNES_H));
+    int k = (int) SDL_ceil(SDL_max(dst.w / srcW, dst.h / SNES_H));
     if(k < 1) k = 1;
     if(k > 8) k = 8;
-    if(app.upscaled == NULL || app.upscaledFactor != k) {
+    if(app.upscaled == NULL || app.upscaledFactor != k || app.upscaledW != srcW) {
       if(app.upscaled) SDL_DestroyTexture(app.upscaled);
-      app.upscaled = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_TARGET, SNES_W * k, SNES_H * k);
+      app.upscaled = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_TARGET, srcW * k, SNES_H * k);
       if(app.upscaled) SDL_SetTextureScaleMode(app.upscaled, SDL_SCALEMODE_LINEAR);
       app.upscaledFactor = k;
+      app.upscaledW = srcW;
     }
     if(app.upscaled) {
       SDL_SetRenderTarget(app.renderer, app.upscaled);
-      SDL_RenderTexture(app.renderer, app.texture, &src, NULL);
+      SDL_RenderTexture(app.renderer, tex, &src, NULL);
       SDL_SetRenderTarget(app.renderer, NULL);
       SDL_RenderTexture(app.renderer, app.upscaled, NULL, &dst);
     } else {
-      SDL_RenderTexture(app.renderer, app.texture, &src, &dst);
+      SDL_RenderTexture(app.renderer, tex, &src, &dst);
     }
   } else {
-    SDL_RenderTexture(app.renderer, app.texture, &src, &dst);
+    SDL_RenderTexture(app.renderer, tex, &src, &dst);
   }
   if(app.filter == FILTER_SCANLINES && dst.h >= SNES_H * 2) {
     // Darken the lower part of every line, as the gaps between a CRT's scanlines.
@@ -343,6 +355,16 @@ static void rumble(void) {
   }
 }
 
+// Widescreen: the margin that makes the picture as wide as the window.
+static int wantedMargin(void) {
+  if(!app.wide || app.original) return 0;
+  int outW, outH;
+  if(!SDL_GetCurrentRenderOutputSize(app.renderer, &outW, &outH) || outH <= 0) return 0;
+  double pixel = app.aspect == ASPECT_4_3 ? SNES_H * 4.0 / 3.0 / SNES_W : 1.0;
+  int m = (int) SDL_floor(((double) outW / outH * SNES_H / pixel - SNES_W) / 2);
+  return m < 0 ? 0 : m > 96 ? 96 : m;
+}
+
 static void runFrame(int samples) {
   uint16_t input[3] = {0, app.keys[1] | padButtons(app.pads[0]), app.keys[2] | padButtons(app.pads[1])};
   bool reset = app.resetRequested;
@@ -356,12 +378,15 @@ static void runFrame(int samples) {
     if(app.replay.smooth != app.smooth) { app.smooth = app.replay.smooth; updateTitle(); }
     if(app.replay.scaling != app.scaling) { app.scaling = app.replay.scaling; updateTitle(); }
     if(app.replay.fullview != app.fullView) { app.fullView = app.replay.fullview; updateTitle(); }
+    if((app.replay.wide > 0) != app.wide) { app.wide = app.replay.wide > 0; updateTitle(); }
   }
   // Smooth motion runs the race logic every frame; the original updates it every third
   // frame (its pace is scaled by the frames elapsed, so the race takes the same time).
   tg_port_race_frames = app.smooth ? 1 : 3;
   if(app.scaling != tg_port_smooth_sprites) tg_game_set_smooth_sprites(app.game, app.scaling);
   if(app.fullView != tg_port_full_view) tg_game_set_full_view(app.game, app.fullView);
+  int margin = app.replaying ? app.replay.wide : wantedMargin();
+  if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
   if(app.record) {
     if(reset) fprintf(app.record, "%u reset\n", app.frame);
     if(app.smooth != app.recordedSmooth) {
@@ -375,6 +400,10 @@ static void runFrame(int samples) {
     if(app.fullView != app.recordedFullView) {
       fprintf(app.record, "%u fullview %s\n", app.frame, app.fullView ? "on" : "off");
       app.recordedFullView = app.fullView;
+    }
+    if(margin != app.recordedWide) {
+      fprintf(app.record, "%u wide %d\n", app.frame, margin);
+      app.recordedWide = margin;
     }
     for(int p = 1; p <= 2; p++) {
       if(input[p] != app.recorded[p] || (app.frame == 0 && p == 1)) {
@@ -397,6 +426,17 @@ static void runFrame(int samples) {
   if(SDL_LockTexture(app.texture, NULL, &pixels, &pitch)) {
     tg_game_get_pixels(app.game, pixels);
     SDL_UnlockTexture(app.texture);
+  }
+  const uint32_t* wide = tg_game_wide_pixels(app.game);
+  if(wide) {
+    int w = SNES_W + 2 * tg_port_wide_margin;
+    if(app.wideTexture == NULL || app.wideTextureW != w) {
+      if(app.wideTexture) SDL_DestroyTexture(app.wideTexture);
+      app.wideTexture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, w, SNES_H);
+      if(app.wideTexture) SDL_SetTextureScaleMode(app.wideTexture, SDL_SCALEMODE_NEAREST);
+      app.wideTextureW = w;
+    }
+    if(app.wideTexture) SDL_UpdateTexture(app.wideTexture, NULL, wide, w * 4);
   }
 
   static int16_t buffer[2048 * 2];
@@ -425,6 +465,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--rumble") == 0) app.rumble = true;
     else if(strcmp(argv[i], "--smooth-scaling") == 0) app.scaling = true;
     else if(strcmp(argv[i], "--full-view") == 0) app.fullView = true;
+    else if(strcmp(argv[i], "--wide") == 0) app.wide = true;
     else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       i++;
       for(int f = 0; f < FILTER_COUNT; f++) if(strcmp(argv[i], filterNames[f]) == 0) app.filter = f;
@@ -508,6 +549,17 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F7 && !app.replaying) { app.scaling = !app.scaling; updateTitle(); break; }
             if(e.key.key == SDLK_F8) { app.rumble = !app.rumble; updateTitle(); break; }
             if(e.key.key == SDLK_F9 && !app.replaying) { app.fullView = !app.fullView; updateTitle(); break; }
+            if(e.key.key == SDLK_F10 && !app.replaying) {
+              app.wide = !app.wide;
+              if(!app.fullscreen) {
+                // A window gets the shape of the picture: 16:9 for widescreen, else 4:3.
+                int w, h;
+                SDL_GetWindowSize(app.window, &w, &h);
+                SDL_SetWindowSize(app.window, app.wide ? h * 16 / 9 : h * 4 / 3, h);
+              }
+              updateTitle();
+              break;
+            }
           }
           uint16_t button = keyToButton(e.key.key);
           if(button && !(e.key.mod & SDL_KMOD_ALT)) {

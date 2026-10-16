@@ -28,11 +28,25 @@
 #include "rom.h"
 #include "sha256.h"
 
+static TgGame* g_game;
+
 static void writePpm(const char* path, const uint8_t* xrgb) {
-  // Writes the visible 256x224 picture (every other pixel of the 512x448 area).
+  // Writes the visible 256x224 picture (every other pixel of the 512x448 area), or the
+  // wide picture in widescreen.
+  const uint32_t* wide = tg_game_wide_pixels(g_game);
+  int w = 256 + 2 * tg_game_wide_margin(g_game);
   FILE* f = fopen(path, "wb");
   if(f == NULL) {
     fprintf(stderr, "cannot write %s\n", path);
+    return;
+  }
+  if(wide) {
+    fprintf(f, "P6\n%d 224\n255\n", w);
+    for(int i = 0; i < w * 224; i++) {
+      uint8_t rgb[3] = {(uint8_t) (wide[i] >> 16), (uint8_t) (wide[i] >> 8), (uint8_t) wide[i]};
+      fwrite(rgb, 1, 3, f);
+    }
+    fclose(f);
     return;
   }
   fprintf(f, "P6\n256 224\n255\n");
@@ -125,6 +139,8 @@ int main(int argc, char** argv) {
   }
 
   TgGame* game = tg_game_create(&rom);
+
+  g_game = game;
   if(game == NULL) {
     fprintf(stderr, "failed to start game\n");
     return 1;
@@ -148,6 +164,7 @@ int main(int argc, char** argv) {
     tg_port_race_frames = script.smooth ? 1 : raceFrames;
     if(script.scaling != tg_port_smooth_sprites) tg_game_set_smooth_sprites(game, script.scaling);
     if(script.fullview != tg_port_full_view) tg_game_set_full_view(game, script.fullview);
+    if(script.wide != tg_port_wide_margin) tg_game_set_wide(game, script.wide);
     tg_game_set_input(game, 1, script.state[1]);
     tg_game_set_input(game, 2, script.state[2]);
     if(frame == traceFrame && traceOut) {
