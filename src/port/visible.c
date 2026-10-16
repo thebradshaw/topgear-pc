@@ -58,9 +58,11 @@ static const View kViews[2] = {
   { 0x1EDC, 0x59, RaceP2Car, RaceView2Cars, 0x1EE6 },
 };
 
-static void list_view(TgRegs* r, const View* v, bool first) {
+// first: the first view of RaceListVisibleCars; fly_in: RaceListGridCars, which always
+// starts from the camera and moves no cars.
+static void list_view(TgRegs* r, const View* v, bool first, bool fly_in) {
   uint16_t x, y = 0;
-  bool hidden = ram16(v->hidden_word) & 0x8000;
+  bool hidden = fly_in || (ram16(v->hidden_word) & 0x8000);
   uint16_t start;
   if(hidden) {
     // Start at the first car at or past the camera, less $10.
@@ -88,7 +90,9 @@ static void list_view(TgRegs* r, const View* v, bool first) {
     goto next_car;
   }
   for(;;) {
-    if(first) {
+    if(fly_in) {
+      // no steering
+    } else if(first) {
       if(ram16(NEXT(x, 0x0A)) != 0) {
         steer_car(r, x);
         ram16_set(NEXT(x, 0x10), 0xFFFF);
@@ -133,6 +137,19 @@ static void list_view(TgRegs* r, const View* v, bool first) {
 // camera with their sprite words, and drifts the computer cars side to side (once each,
 // in the first view that reaches them). A, X, Y and N/V/Z/C are don't-care.
 void RaceListVisibleCars(TgRegs* r) {
-  list_view(r, &kViews[0], true);
-  list_view(r, &kViews[1], false);
+  list_view(r, &kViews[0], true, false);
+  list_view(r, &kViews[1], false, false);
+}
+
+static const View kGridViews[2] = {
+  { 0x1EDB, 0x46, RaceP1Car, RaceView1Cars, 0x1E8A },
+  { 0x1EDC, 0x59, RaceP2Car, RaceView2Cars, 0x1E8C },
+};
+
+// $00:AEF3. The same lists while the cameras fly in to the starting grid: always from
+// each camera, with no player car singled out and no cars moved, and sprite turns taken
+// against the players' own side positions. A, X, Y and N/V/Z/C are don't-care.
+void RaceListGridCars(TgRegs* r) {
+  list_view(r, &kGridViews[0], false, true);
+  list_view(r, &kGridViews[1], false, true);
 }

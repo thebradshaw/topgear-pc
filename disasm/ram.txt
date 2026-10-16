@@ -57,6 +57,15 @@
 1E8E RaceDistance ; scratch: distance moved this update, speed / 2 x frames
 1EEC RaceP1Skid ; sideways push after a bump, counts down; the steering can't turn meanwhile
 1EEE RaceP2Skid
-1EF5 RaceP1DriveFlags ; $01 pushed past the grip, $04 finished, $10 revs settling at the start, $20 out of fuel, $80 bumped
+1EF5 RaceP1DriveFlags ; $01 pushed past the grip, $02 ahead of the other player (RaceCallOvertakes), $04 finished, $10 revs settling at the start, $20 out of fuel, $80 bumped
 1EF6 RaceP2DriveFlags
 1FF4 RaceRandomSeed
+1E86 RaceP1PitState ; word: >= 0 outside the pits; -1 waiting to stop, then counts down through the stop (RaceUpdatePitStops)
+1E88 RaceP2PitState
+1EFB RaceP1BumpTimer ; byte: counts from a bump; at $50 a random bump sound plays
+1EFC RaceP2BumpTimer
+1BB4 RaceTileCacheTurn ; word flipped each call of RaceUpdateTileCache: negative = view 1's turn
+1BB6 RaceTileCacheMapRows ; course length / 16, even
+1BB8 RaceTileCacheRow ; scratch: the current view's map row
+1BC0 RaceTileCache1Left ; view 1's tile cache (view 2's is $14E higher); see src/port/tilecache.c
+0572 RaceP1PitTiles ; pit stop tile streaming state, $0572-$057F (player 2: $0580-$058D)

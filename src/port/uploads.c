@@ -43,25 +43,37 @@ void RaceUploadMessageTiles(TgRegs* r) {
   else if(ram16(second) != 0) message_block(second, ram16(second));
 }
 
-// $00:8FC0. While $1E86 is -3 and $1BB4 bit 15 is set, streams 4 KiB of tiles from
-// bank $03 into VRAM at $3000, 1 KiB per vblank (the set chosen by $1F8F bits 0-1),
-// then moves $1E86 on. Leaves 16-bit A and index; registers and flags are don't-care.
+// While a player's pit state is -3 and the cache is on the other view this frame
+// ($1BB4), streams 4 KiB of pit crew tiles from bank $03 into the view's VRAM, 1 KiB per
+// vblank (the set chosen by the player's car), then moves the state on. Player 2's
+// variables are $E above player 1's.
+static void bank3_tiles(uint16_t state_adr, bool view_flag, uint16_t v, uint16_t car, uint16_t vram_base) {
+  uint16_t state = ram16(state_adr);
+  if(state != 0xFFFD || ((ram16(0x1BB4) & 0x8000) != 0) != view_flag) return;
+  if(ram16((uint16_t) (0x0572 + v)) == 0) {
+    ram16_set((uint16_t) (0x0572 + v), 1);
+    ram16_set((uint16_t) (0x0574 + v), 4);
+    ram16_set((uint16_t) (0x0576 + v), 0);
+    ram16_set((uint16_t) (0x0578 + v), 0);
+  }
+  uint16_t src = (uint16_t) (((g_ram[car] & 3) << 12) + 0x99C0 + ram16((uint16_t) (0x0578 + v)));
+  ram16_set((uint16_t) (0x0578 + v), (uint16_t) (ram16((uint16_t) (0x0578 + v)) + 0x0400));
+  uint16_t vram = (uint16_t) (vram_base + ram16((uint16_t) (0x0576 + v)));
+  ram16_set((uint16_t) (0x0576 + v), (uint16_t) (ram16((uint16_t) (0x0576 + v)) + 0x0200));
+  dma_to_vram(0x03, src, 0x0400, vram);
+  uint16_t left = (uint16_t) (ram16((uint16_t) (0x0574 + v)) - 1);
+  ram16_set((uint16_t) (0x0574 + v), left);
+  if(left == 0) ram16_set(state_adr, (uint16_t) (state - 1));
+}
+
+// $00:8FC0 (player 1: $1E86, VRAM $3000, car $1F8F) and $00:9046 (player 2: $1E88,
+// $4000, car $1FAC). Leave 16-bit A and index; registers and flags are don't-care.
 void RaceUploadBank3Tiles(TgRegs* r) {
   (void) r;
-  uint16_t state = ram16(0x1E86);
-  if(state != 0xFFFD || !(ram16(0x1BB4) & 0x8000)) return;
-  if(ram16(0x0572) == 0) {
-    ram16_set(0x0572, 1);
-    ram16_set(0x0574, 4);
-    ram16_set(0x0576, 0);
-    ram16_set(0x0578, 0);
-  }
-  uint16_t src = (uint16_t) (((g_ram[0x1F8F] & 3) << 12) + 0x99C0 + ram16(0x0578));
-  ram16_set(0x0578, (uint16_t) (ram16(0x0578) + 0x0400));
-  uint16_t vram = (uint16_t) (0x3000 + ram16(0x0576));
-  ram16_set(0x0576, (uint16_t) (ram16(0x0576) + 0x0200));
-  dma_to_vram(0x03, src, 0x0400, vram);
-  uint16_t left = (uint16_t) (ram16(0x0574) - 1);
-  ram16_set(0x0574, left);
-  if(left == 0) ram16_set(0x1E86, (uint16_t) (state - 1));
+  bank3_tiles(0x1E86, true, 0x0000, 0x1F8F, 0x3000);
+}
+
+void RaceUploadBank3TilesP2(TgRegs* r) {
+  (void) r;
+  bank3_tiles(0x1E88, false, 0x000E, 0x1FAC, 0x4000);
 }

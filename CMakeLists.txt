@@ -37,6 +37,9 @@ add_library(tgcore STATIC
   src/port/cars.c
   src/port/decompress.c
   src/port/drive.c
+  src/port/render.c
+  src/port/setup.c
+  src/port/tilecache.c
   src/port/hud.c
   src/port/messages.c
   src/port/race.c

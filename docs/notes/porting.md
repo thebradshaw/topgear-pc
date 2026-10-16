@@ -69,7 +69,15 @@ these as declined.
    the exact leftovers of long routines. An interrupt handler that arrives while the junk
    is still there gets the real values back, since it saves registers on the stack
    without reading them.
-5. Run the tests: `ctest --test-dir build -L long` runs every recording. The report shows
+5. Routines that wait for the NMI or an IRQ (a loop on a flag the handler clears, like
+   RaceLoadPalettes at `$00:CCDB` or RaceSyncWait) can't be translated yet: C runs no
+   CPU time, so nothing would clear the flag. They wait for the frame loop to move to C.
+   The raster IRQ stages (`$00:B75A` and the short stages around `$00:B3FE`-`$00:B6D1`,
+   reached through `JSR ($000A)`) are held back for the same reason: their PPU writes
+   land at a particular dot of a scanline, and a C version would make them all at once at
+   the start of the handler. LakeSnes draws each line at dot 128, so a write that the
+   original makes after that point would show a line earlier.
+6. Run the tests: `ctest --test-dir build -L long` runs every recording. The report shows
    how many calls matched; check that the recordings actually reach the routine's
    branches (a routine that only ever sees zeros proves little).
 
@@ -78,18 +86,28 @@ these as declined.
 | Routine | Address | Matching calls in a full test run |
 |---|---|---|
 | RaceRevEngines | $00:88A1 | 11,689; no recording revs player 2 on the start line yet |
-| RaceUpdateSegmentValues | $00:8910 | 99,726 |
-| RaceUploadBank3Tiles | $00:8FC0 | 308,926 |
+| RaceUpdateSegmentValues | $00:8910 | 100,126 |
+| RacePitScrollP1, RacePitScrollP2 | $00:8966, $00:8A2C | 2,942 and 4,862 |
+| RacePitReloadP1, RacePitReloadP2 | $00:8DA8, $00:8EB4 | 308,926 each |
+| RaceUploadBank3Tiles, RaceUploadBank3TilesP2 | $00:8FC0, $00:9046 | 308,926 each |
+| RaceUpdatePitStops | $00:90CC | 97,714 |
 | RaceBuildWindowTable | $00:9381 | 100,408 |
 | RaceMoveCars | $00:A175 | 97,714; no recording bumps a car that is already being pushed |
 | RaceSortCars | $00:A1BD | 7 on its own, plus every RaceMoveCars call, which runs into it |
+| RaceSetupGrid | $00:A558 | 39 |
 | RaceFinishOthers | $00:AB7A | 13 |
 | RaceListVisibleCars | $00:ABFC | 97,753 |
-| RaceBuildSplitWindowTable | $00:B18C | 96,714 |
+| RaceListGridCars | $00:AEF3 | 840, in every recording except the two longest |
+| RaceBuildSplitWindowTable | $00:B18C | 96,992 |
+| RaceCallOvertakes | $00:B33B | 97,708 |
+| Race set-up: RaceLoadCourse, RaceLoadSkyline, RaceLoadRoadside, RaceLoadCars, RacePreloadTileCache, RaceDrawHudFrame, RaceClearHdmaTables, RaceSetupNames | $00:BF44, $00:C182, $00:C230, $00:C5B2, $00:C6BB, $00:C722, $00:CC9B, $00:D913 | 39 each |
 | RaceDrawHud | $00:CE61 | 109,403 |
 | RaceUploadMessageTiles | $00:D86A | 308,926 |
 | RaceUpdateMessages | $00:DA75 | 109,403 |
+| RaceUpdateTileCache | $00:E20D | 312,457 |
+| DecompressToVram | $00:EA40 | 39 from the original, plus every RaceLoadRoadside call |
 | DecompressBegin, DecompressNext | $00:EA8E, $00:EA9B | 132 and 783,245 |
 | RaceBuildSprites | $01:8000 | 82,905; its special objects still run the original code |
 | RaceAddSprite and its split and player 2 copies | $01:8A87, $01:8C5C, $01:8E33, $01:9008 | 1,052,844, 78,105, 1,122,519 and 91,694 |
+| RaceRenderViews | $7E:2000 (copied from $09:899A) | 93,984, checked on their own because the renderer runs past the next vblank |
 | RaceDrivePlayers | $05:D2E0 | 97,714, including the computer steering ($05:E9AF / $05:EB58) and the computer-driven second car ($05:ED92); no recording reaches the track edges that hold a car, or runs a car out of fuel at a sign |

@@ -15,6 +15,7 @@
 
 #include "port.h"
 #include "variables.h"
+#include "race_common.h"
 
 typedef struct Driver {
   uint16_t view_off;     // $0040 / $0053: nonzero when the view is off (no player)
@@ -118,7 +119,7 @@ static TgRegs call(uint16_t target, uint16_t ret, uint16_t a, uint16_t x, uint16
 }
 
 // $00:A89E with A = 0: the next random byte (also left in $1EF7).
-static uint16_t race_random(void) {
+uint16_t race_random(void) {
   uint16_t t = (uint16_t) (ram16(0x1FF4) + 7);
   ram16_set(0x1EF7, t);
   ram16_set(0x1EF9, (uint16_t) (t << 2));

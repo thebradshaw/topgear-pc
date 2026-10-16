@@ -3,6 +3,7 @@
 
 // Work RAM addresses used by translated code, named as in disasm/ram.txt.
 
+#define CarTypeIndex 0x1F06  // course number in races (name from the menus)
 #define RaceJoy1Held 0x0010  // direct page offset
 #define RaceJoy2Held 0x0012  // direct page offset
 #define RaceWindowMode 0x0100  // $C0DF in 1-player races: per-view window shapes (tentative)
