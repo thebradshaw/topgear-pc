@@ -35,6 +35,10 @@ bool tg_port_take_declined(void);
 void tg_call_jsr(TgRegs* r, uint16_t target, uint16_t ret, uint8_t mx);
 // The same for original code reached by a JMP that comes back by jumping to stop.
 void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx);
+// The same for a JSL to bank:address from the routine's bank.
+void tg_call_jsl(TgRegs* r, uint32_t target, uint16_t ret, uint8_t mx);
+// CLI: lets IRQs in.
+void tg_cpu_cli(void);
 bool tg_port_in_emulated_call(void);
 // Lowest stack pointer reached in original code run from C since the last call.
 uint16_t tg_port_take_min_sp(void);
@@ -42,6 +46,7 @@ uint16_t tg_port_take_min_sp(void);
 enum {
   TG_CALL_JSR = 0,  // returns with RTS
   TG_CALL_JSL = 1,  // returns with RTL
+  TG_CALL_NONE = 2, // reached by a jump or a return, and never returns
 };
 
 // Entry width requirements: the routine only runs translated when M/X match.
@@ -75,7 +80,28 @@ typedef struct TgPortFunc {
   uint8_t dead;      // TG_DEAD_*
   uint16_t bus_noise; // a low-RAM byte the original fills from open bus, where HDMA can leave
                       // a byte mid-instruction; not compared (0: none)
+  uint8_t flags;     // TG_WAITS
 } TgPortFunc;
+
+// The routine waits for interrupts (tg_port_wait). It runs on its own stack, as a fiber,
+// and only in native mode: the per-call check can't follow a call across frames.
+enum { TG_WAITS = 1 };
+
+// Inside a routine marked TG_WAITS: lets the machine run until the next interrupt has
+// been handled. Use in place of the original's spin loops, checking the condition after
+// each return, as the original did between interrupts.
+void tg_port_wait(void);
+
+// Where the machine has to be for a waiting routine to carry on: after tg_port_wait, back
+// where it waited, with the CPU idling (WAI) until then; after a call to original code
+// (tg_call_*, which from a waiting routine runs on the machine itself, so it may take
+// frames), at the call's return.
+typedef struct TgResumePoint {
+  uint16_t pc, sp;
+  uint8_t k;
+  bool idle;
+} TgResumePoint;
+const TgResumePoint* tg_port_resume_point(void);
 
 // All translated routines (registry.c).
 extern const TgPortFunc tg_port_funcs[];

@@ -40,9 +40,15 @@ void RacePitReloadP2(TgRegs* r);
 void RacePitScrollP1(TgRegs* r);
 void RacePitScrollP2(TgRegs* r);
 void RaceUploadBank3TilesP2(TgRegs* r);
+void RacePauseCheck(TgRegs* r);
+void RaceSyncWait(TgRegs* r);
+void RaceLoadAll(TgRegs* r);
+void RaceProgram(TgRegs* r);
 
 // Every translated routine, sorted by address.
 const TgPortFunc tg_port_funcs[] = {
+  { 0x00812A, "RaceProgram", RaceProgram, TG_CALL_NONE, TG_MX_ANY, TG_MX_ANY, 0, 0, TG_WAITS },
+  { 0x008878, "RacePauseCheck", RacePauseCheck, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, TG_DEAD_AXY_FLAGS, 0, TG_WAITS },
   { 0x0088A1, "RaceRevEngines", RaceRevEngines, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, 0 },
   { 0x008910, "RaceUpdateSegmentValues", RaceUpdateSegmentValues, TG_CALL_JSR, TG_MX_I16, TG_MX_16, 0 },
   { 0x008966, "RacePitScrollP1", RacePitScrollP1, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_FLAGS },
@@ -61,6 +67,7 @@ const TgPortFunc tg_port_funcs[] = {
   { 0x00AEF3, "RaceListGridCars", RaceListGridCars, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00B18C, "RaceBuildSplitWindowTable", RaceBuildSplitWindowTable, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, TG_DEAD_FLAGS },
   { 0x00B33B, "RaceCallOvertakes", RaceCallOvertakes, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00BF14, "RaceLoadAll", RaceLoadAll, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS, 0, TG_WAITS },
   { 0x00BF44, "RaceLoadCourse", RaceLoadCourse, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00C182, "RaceLoadSkyline", RaceLoadSkyline, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00C230, "RaceLoadRoadside", RaceLoadRoadside, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
@@ -76,6 +83,7 @@ const TgPortFunc tg_port_funcs[] = {
   { 0x00EA40, "DecompressToVram", DecompressToVram, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x00EA8E, "DecompressBegin", DecompressBegin, TG_CALL_JSR, TG_MX_ANY, TG_MX_A8_I16, 0 },
   { 0x00EA9B, "DecompressNext", DecompressNext, TG_CALL_JSR, TG_MX_ANY, TG_MX_A8_I16, 0 },
+  { 0x00EC0E, "RaceSyncWait", RaceSyncWait, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x018000, "RaceBuildSprites", RaceBuildSprites, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x018A87, "RaceAddSprite", RaceAddSprite, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_X | TG_DEAD_Y | TG_DEAD_NVZ },
   { 0x018C5C, "RaceAddSpriteSplit", RaceAddSpriteSplit, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_X | TG_DEAD_Y | TG_DEAD_NVZ },

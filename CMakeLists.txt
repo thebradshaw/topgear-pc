@@ -30,6 +30,7 @@ endif()
 
 add_library(tgcore STATIC
   src/coverage.c
+  src/fiber.c
   src/game.c
   src/input_script.c
   src/lockstep.c
@@ -42,11 +43,13 @@ add_library(tgcore STATIC
   src/port/tilecache.c
   src/port/hud.c
   src/port/messages.c
+  src/port/program.c
   src/port/race.c
   src/port/registry.c
   src/port/sprites.c
   src/port/uploads.c
   src/port/visible.c
+  src/port/waits.c
   src/rom.c
   src/sha256.c
 )

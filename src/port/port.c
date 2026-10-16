@@ -3,6 +3,7 @@
 #include "port.h"
 
 #include "../coverage.h"
+#include "../fiber.h"
 #include "cpu.h"
 #include "dma.h"
 #include "snes.h"
@@ -11,6 +12,7 @@ uint8_t* g_ram;
 static bool g_declined;
 
 void tg_port_decline(void) { g_declined = true; }
+
 
 bool tg_port_take_declined(void) {
   bool d = g_declined;
@@ -61,9 +63,35 @@ uint16_t tg_port_take_min_sp(void) {
 
 bool tg_port_in_emulated_call(void) { return g_emulatedDepth > 0; }
 
-// Runs emulated code from target in the current bank until it reaches stop with the
-// stack pointer back at sp.
-static void run_emulated(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx, bool jsr) {
+static TgResumePoint g_resume;
+
+const TgResumePoint* tg_port_resume_point(void) { return &g_resume; }
+
+void tg_port_wait(void) {
+  Cpu* cpu = g_snes->cpu;
+  g_resume = (TgResumePoint) { cpu->pc, cpu->sp, cpu->k, true };
+  tg_fiber_yield();
+}
+
+static void run_until(Cpu* cpu, uint16_t target, uint16_t stop, uint8_t k, uint16_t sp) {
+  g_emulatedDepth++;
+  for(long steps = 0; !(cpu->pc == stop && cpu->k == k && cpu->sp == sp); steps++) {
+    if(steps == 10000000) {
+      fprintf(stderr, "original code called at $%02X:%04X never got back to $%04X (now at $%02X:%04X, S=%04X, wanted %04X)\n",
+        k, target, stop, cpu->k, cpu->pc, cpu->sp, sp);
+      abort();
+    }
+    cpu_runOpcode(cpu);
+    if(cpu->sp < g_minSp) g_minSp = cpu->sp;
+  }
+  g_emulatedDepth--;
+}
+
+enum { kJmp, kJsr, kJsl };
+
+// Runs emulated code from target (in the current bank unless it's a JSL) until it gets
+// to stop, in the current bank, with the stack pointer back where it was.
+static void run_emulated(TgRegs* r, uint32_t target, uint16_t stop, uint8_t mx, int how) {
   Cpu* cpu = g_snes->cpu;
   uint16_t pc = cpu->pc;
   uint8_t k = cpu->k;
@@ -77,25 +105,25 @@ static void run_emulated(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx, 
   cpu->db = r->db;
   cpu->n = r->n; cpu->v = r->v; cpu->z = r->z; cpu->c = r->c;
   uint16_t sp = cpu->sp;
-  if(jsr) {
-    // JSR: the return address minus one, high byte first, on the stack in bank 0.
+  if(how != kJmp) {
+    // JSR: the return address minus one, high byte first, on the stack in bank 0; JSL
+    // pushes the bank first.
+    uint16_t s = sp;
+    if(how == kJsl) snes_write(g_snes, s--, k);
     uint16_t pushed = (uint16_t) (stop - 1);
-    snes_write(g_snes, sp, (uint8_t) (pushed >> 8));
-    snes_write(g_snes, (uint16_t) (sp - 1), (uint8_t) pushed);
-    cpu->sp = (uint16_t) (sp - 2);
+    snes_write(g_snes, s, (uint8_t) (pushed >> 8));
+    snes_write(g_snes, (uint16_t) (s - 1), (uint8_t) pushed);
+    cpu->sp = (uint16_t) (s - 2);
   }
-  cpu->pc = target;
-  g_emulatedDepth++;
-  for(long steps = 0; !(cpu->pc == stop && cpu->k == k && cpu->sp == sp); steps++) {
-    if(steps == 10000000) {
-      fprintf(stderr, "original code called at $%02X:%04X never got back to $%04X (now at $%02X:%04X, S=%04X, wanted %04X)\n",
-        k, target, stop, cpu->k, cpu->pc, cpu->sp, sp);
-      abort();
-    }
-    cpu_runOpcode(cpu);
-    if(cpu->sp < g_minSp) g_minSp = cpu->sp;
+  if(how == kJsl) cpu->k = (uint8_t) (target >> 16);
+  cpu->pc = (uint16_t) target;
+  if(tg_fiber_active()) {
+    // From a routine that waits: the machine runs the call itself.
+    g_resume = (TgResumePoint) { stop, sp, k, false };
+    tg_fiber_yield();
+  } else {
+    run_until(cpu, (uint16_t) target, stop, k, sp);
   }
-  g_emulatedDepth--;
   r->a = cpu->a; r->x = cpu->x; r->y = cpu->y;
   r->d = cpu->dp; r->db = cpu->db;
   r->n = cpu->n; r->v = cpu->v; r->z = cpu->z; r->c = cpu->c;
@@ -105,5 +133,8 @@ static void run_emulated(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx, 
   cpu->xf = xf;
 }
 
-void tg_call_jsr(TgRegs* r, uint16_t target, uint16_t ret, uint8_t mx) { run_emulated(r, target, ret, mx, true); }
-void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx) { run_emulated(r, target, stop, mx, false); }
+void tg_call_jsr(TgRegs* r, uint16_t target, uint16_t ret, uint8_t mx) { run_emulated(r, target, ret, mx, kJsr); }
+void tg_call_jsl(TgRegs* r, uint32_t target, uint16_t ret, uint8_t mx) { run_emulated(r, target, ret, mx, kJsl); }
+void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx) { run_emulated(r, target, stop, mx, kJmp); }
+
+void tg_cpu_cli(void) { g_snes->cpu->i = false; }
