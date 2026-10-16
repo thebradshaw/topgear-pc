@@ -1,6 +1,25 @@
 #include "port.h"
 
 void RaceRevEngines(TgRegs* r);
+void MenuDrawPlayerPlace(TgRegs* r);
+void MenuLoadCarPalettes(TgRegs* r);
+void MenuDrawCarPortraits(TgRegs* r);
+void MenuDrawFlagSprites(TgRegs* r);
+void MenuDrawStringAndQueue(TgRegs* r);
+void MenuNameEntryStart(TgRegs* r);
+void MenuDrawNameHeading(TgRegs* r);
+void MenuBlankBigRows(TgRegs* r);
+void MenuBlankSmallRows(TgRegs* r);
+void MenuDrawTenLines(TgRegs* r);
+void MenuDrawScreen(TgRegs* r);
+void MenuDrawTextSprites(TgRegs* r);
+void MenuDrawTextSpritesAt(TgRegs* r);
+void MenuDrawScreenText(TgRegs* r);
+void MenuDrawText(TgRegs* r);
+void MenuDrawScreenBigText(TgRegs* r);
+void MenuDrawBigText(TgRegs* r);
+void MenuDrawCursorBox(TgRegs* r);
+void MenuDrawBoxes(TgRegs* r);
 void MenuUploadHudMap(TgRegs* r);
 void MenuUploadMapTile(TgRegs* r);
 void MenuClearScreen(TgRegs* r);
@@ -168,13 +187,18 @@ const TgPortFunc tg_port_funcs[] = {
   { 0x0F82F0, "MenuUploadHudMap", MenuUploadHudMap, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x0F836D, "MenuUploadMapTile", MenuUploadMapTile, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x0F83A1, "MenuDefaultPlayerName", MenuDefaultPlayerName, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F8693, "MenuDrawPlayerPlace", MenuDrawPlayerPlace, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F86E7, "MenuRecordPlayerPlaces", MenuRecordPlayerPlaces, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F8705, "MenuLoadPaletteRow15", MenuLoadPaletteRow15, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F871A, "MenuCheckQualified", MenuCheckQualified, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x0F8733, "MenuAdvanceCourse", MenuAdvanceCourse, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0F8781, "MenuBlankBigRows", MenuBlankBigRows, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F87AD, "MenuBlankSmallRows", MenuBlankSmallRows, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F87D9, "MenuMarkNameEnds", MenuMarkNameEnds, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x0F8802, "MenuUnmarkNameEnds", MenuUnmarkNameEnds, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x0F8BB6, "MenuToDecimal", MenuToDecimal, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F8BD6, "MenuDrawTenLines", MenuDrawTenLines, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F8C16, "MenuLoadCarPalettes", MenuLoadCarPalettes, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F8C68, "MenuLoadPaletteRow9", MenuLoadPaletteRow9, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x0F8C86, "MenuLoadPaletteRow15b", MenuLoadPaletteRow15b, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x0F8F80, "MenuClearFadeRows", MenuClearFadeRows, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
@@ -185,17 +209,31 @@ const TgPortFunc tg_port_funcs[] = {
   { 0x0F90E6, "MenuStartDemo", MenuStartDemo, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9102, "MenuDrawCarPortraitAt", MenuDrawCarPortraitAt, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F911C, "MenuDrawCarPortrait", MenuDrawCarPortrait, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F914E, "MenuDrawCarPortraits", MenuDrawCarPortraits, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F93A3, "MenuDrawFlagSprites", MenuDrawFlagSprites, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9426, "MenuComparePassword", MenuComparePassword, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0F95AC, "MenuDrawStringAndQueue", MenuDrawStringAndQueue, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9AD6, "MenuDrawCarStats", MenuDrawCarStats, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9B3B, "MenuNameEntryStart", MenuNameEntryStart, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9B56, "MenuPlaceEntryCursor", MenuPlaceEntryCursor, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9B70, "MenuDrawNameHeading", MenuDrawNameHeading, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9B7B, "MenuLoadPlayerName", MenuLoadPlayerName, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9BC4, "MenuStorePlayerName", MenuStorePlayerName, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9BF9, "MenuDrawControlPad", MenuDrawControlPad, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9C31, "MenuDrawScreen", MenuDrawScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9C42, "MenuClearScreen", MenuClearScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x0F9C5B, "MenuClearTilemapBuffer", MenuClearTilemapBuffer, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9C66, "MenuClearFadeWork", MenuClearFadeWork, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9DDD, "MenuQueueOamAndMap", MenuQueueOamAndMap, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0F9DFC, "MenuQueueTilemap", MenuQueueTilemap, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9ED0, "MenuDrawTextSprites", MenuDrawTextSprites, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9ED3, "MenuDrawTextSpritesAt", MenuDrawTextSpritesAt, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9F35, "MenuDrawScreenText", MenuDrawScreenText, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9F3E, "MenuDrawText", MenuDrawText, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9F88, "MenuDrawScreenBigText", MenuDrawScreenBigText, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0F9F93, "MenuDrawBigText", MenuDrawBigText, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0FA045, "MenuDrawCursorBox", MenuDrawCursorBox, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0FA131, "MenuDrawBoxes", MenuDrawBoxes, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0FA1C4, "MenuSpriteOrigin", MenuSpriteOrigin, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0FA1D0, "MenuTilemapAddr", MenuTilemapAddr, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0FA1EB, "MenuClearPalette", MenuClearPalette, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
