@@ -455,6 +455,7 @@ static void pit_lane(TgRegs* r, uint16_t state, uint16_t speed, uint8_t scroll, 
     ram16_set(speed, (uint16_t) (a + ram16(speed)));
   }
   z_set(scroll, (uint16_t) (z(scroll) - ((ram16(speed) >> 8) >> 3)));
+  r->a = z(scroll);  // the pit scroll routines take the scroll in A
   pit_scroll(r);
   cgram_colour(light_a, 0x0C63);
   cgram_colour(light_b, 0x0C63);
