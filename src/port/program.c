@@ -275,7 +275,9 @@ static bool race_main(TgRegs* r) {
     dp16_set(r, 0x0E, (uint16_t) (dp16(r, 0x0E) + 1));
     // The original goes on as soon as $0C (frames since the last update, less one) isn't
     // 0, after taking about two frames for an update. Its pace, without slowdown:
-    while(dp16(r, 0x0C) == 0 || dp16(r, 0x0C) < tg_port_race_frames - 1) tg_port_wait();
+    if(tg_port_race_frames > 1) {
+      while(dp16(r, 0x0C) == 0 || dp16(r, 0x0C) < tg_port_race_frames - 1) tg_port_wait();
+    }
     ram16_set(0x1E90, (uint16_t) (dp16(r, 0x0C) + 1));
     if(demo_over(r)) return false;
     RacePauseCheck(r);
@@ -363,6 +365,8 @@ static void race_start(void) {
   ram16_set(0x1EF6, 0x0010);
 }
 
+void GameInit(TgRegs* r);
+
 // $00:8834-$00:8875: after the race, back to the menus. After the demo, the title
 // screen's cars come back from $013C.
 static void race_end(TgRegs* r) {
@@ -378,7 +382,9 @@ static void race_end(TgRegs* r) {
   }
   tg_bus_write8(0x4200, 0x00);
   r->a = 1;
-  tg_call_jsl(r, 0x0F806D, 0x8873, TG_MX_16);  // GameInit: the menus, until the next race
+  uint8_t bank = tg_port_set_bank(0x0F);  // calls to original code from the menus are to bank $0F
+  GameInit(r);  // the menus, until the next race
+  tg_port_set_bank(bank);
 }
 
 // $00:812A, reached when the menus (GameInit) return: one race, then the menus again.

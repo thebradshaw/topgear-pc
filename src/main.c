@@ -13,6 +13,7 @@
 #include "coverage.h"
 #include "game.h"
 #include "input_script.h"
+#include "port/port.h"
 #include "rom.h"
 #include "sha256.h"
 
@@ -47,6 +48,8 @@ static struct {
   TgInputScript replay;
   bool replaying;
   bool original;  // the game's own code throughout (--original)
+  bool smooth;  // enhancement: race logic every frame instead of every third (F6, --smooth)
+  bool recordedSmooth;
 } app;
 
 static const char* defaultRomNames[] = {"Top Gear (USA).sfc", "Top Gear (USA).smc", "topgear.sfc"};
@@ -89,7 +92,8 @@ static uint16_t keyToButton(SDL_Keycode key) {
     case SDLK_S: return TG_BTN_X;
     case SDLK_Q: return TG_BTN_L;
     case SDLK_W: return TG_BTN_R;
-    case SDLK_RETURN: return TG_BTN_START;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER: return TG_BTN_START;
     case SDLK_RSHIFT: return TG_BTN_SELECT;
   }
   return 0;
@@ -144,7 +148,8 @@ static void closePad(SDL_JoystickID id) {
 
 static void updateTitle(void) {
   char title[128];
-  snprintf(title, sizeof(title), "Top Gear  |  %s%s", aspectNames[app.aspect], app.integerScale ? ", integer scale" : "");
+  snprintf(title, sizeof(title), "Top Gear  |  %s%s%s", aspectNames[app.aspect], app.integerScale ? ", integer scale" : "",
+           app.smooth && !app.original ? ", smooth motion" : "");
   SDL_SetWindowTitle(app.window, title);
 }
 
@@ -229,9 +234,17 @@ static void runFrame(int samples) {
     input[2] = app.replay.state[2];
     reset = app.replay.resetPending;
     app.replay.resetPending = false;
+    if(app.replay.smooth != app.smooth) { app.smooth = app.replay.smooth; updateTitle(); }
   }
+  // Smooth motion runs the race logic every frame; the original updates it every third
+  // frame (its pace is scaled by the frames elapsed, so the race takes the same time).
+  tg_port_race_frames = app.smooth ? 1 : 3;
   if(app.record) {
     if(reset) fprintf(app.record, "%u reset\n", app.frame);
+    if(app.smooth != app.recordedSmooth) {
+      fprintf(app.record, "%u smooth %s\n", app.frame, app.smooth ? "on" : "off");
+      app.recordedSmooth = app.smooth;
+    }
     for(int p = 1; p <= 2; p++) {
       if(input[p] != app.recorded[p] || (app.frame == 0 && p == 1)) {
         char names[96];
@@ -276,6 +289,7 @@ int main(int argc, char** argv) {
   for(int i = 1; i < argc; i++) {
     if(strcmp(argv[i], "--no-record") == 0) record = false;
     else if(strcmp(argv[i], "--original") == 0) original = true;
+    else if(strcmp(argv[i], "--smooth") == 0) app.smooth = true;
     else if(strcmp(argv[i], "--replay") == 0 && i + 1 < argc) replayPath = argv[++i];
     else romArg = argv[i];
   }
@@ -349,6 +363,7 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F2) { app.aspect = (app.aspect + 1) % ASPECT_COUNT; updateTitle(); break; }
             if(e.key.key == SDLK_F3) { app.integerScale = !app.integerScale; updateTitle(); break; }
             if(e.key.key == SDLK_F5) { app.resetRequested = true; break; }
+            if(e.key.key == SDLK_F6 && !app.replaying) { app.smooth = !app.smooth; updateTitle(); break; }
           }
           uint16_t button = keyToButton(e.key.key);
           if(button && !(e.key.mod & SDL_KMOD_ALT)) {

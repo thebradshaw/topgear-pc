@@ -44,6 +44,8 @@ add_library(tgcore STATIC
   src/port/hud.c
   src/port/menu_leaves.c
   src/port/menu_text.c
+  src/port/menu_results.c
+  src/port/menu_flow.c
   src/port/messages.c
   src/port/irq.c
   src/port/program.c

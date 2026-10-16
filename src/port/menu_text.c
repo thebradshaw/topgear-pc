@@ -304,6 +304,7 @@ rest:
   r->a = 0x30C0;
   r->x = x;
   r->y = y;
+  cmp16(r, x, 0x0200);  // the flags of the loop's end; $0F:93A3 takes the carry
 }
 
 void MenuLoadPlayerName(TgRegs* r);

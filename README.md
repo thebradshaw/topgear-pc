@@ -33,6 +33,7 @@ The first gamepad is player 1 and the second is player 2.
 | F2 | Aspect: 4:3 TV or 8:7 square pixels |
 | F3 | Integer scaling |
 | F5 | Reset |
+| F6 | Smooth motion: the race updates every frame instead of every third (off by default; also `--smooth`) |
 
 ## Recordings
 

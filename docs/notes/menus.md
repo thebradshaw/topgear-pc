@@ -286,3 +286,11 @@ submenus; 8C95 title; GameInit with 815A/818E/83D7/84F5. Register GameInit as TG
 a loop around tg_port_wait(). Unrun branches (2P, KPH, credits, country end) can be
 translated from tools/decode.py output but no recording checks them yet; a recording that
 plays 2P and clears a country would cover most of them.
+
+Status (2026-10-16): batches 1-6 are translated. Batches 1-4 are registered one routine at
+a time and checked by verify mode (src/port/menu_leaves.c, menu_text.c, menu_results.c).
+Batches 5-6 are src/port/menu_flow.c: GameInit ($0F:806D) runs as one TG_WAITS fiber and
+the race-end code in program.c calls it directly with K set to $0F. tools/shift_compare.py
+matches the emulated menus on attract, race_2p, country_uk and country_japan; race_1p and a
+few others differ by two frames at race end, a pre-existing flaw of the race-end check.
+Still emulated from the C flow: 8C77 and 8FC3 (secret credits).

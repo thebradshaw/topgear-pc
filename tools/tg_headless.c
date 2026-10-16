@@ -132,6 +132,7 @@ int main(int argc, char** argv) {
     tg_game_set_coverage(game, coverage);
   }
   tg_game_set_port_mode(game, portMode);
+  int raceFrames = tg_port_race_frames;
   uint8_t* pixels = calloc(TG_FB_WIDTH * TG_FB_HEIGHT, 4);
   FILE* hashes = frameHashes ? fopen(frameHashes, "w") : NULL;
   for(long frame = 0; frame < frames; frame++) {
@@ -140,6 +141,7 @@ int main(int argc, char** argv) {
       tg_game_reset(game, false);
       script.resetPending = false;
     }
+    tg_port_race_frames = script.smooth ? 1 : raceFrames;
     tg_game_set_input(game, 1, script.state[1]);
     tg_game_set_input(game, 2, script.state[2]);
     if(frame == traceFrame && traceOut) {
