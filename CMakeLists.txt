@@ -90,7 +90,7 @@ if(TG_TEST_ROM)
     --expect-wram 4ff4ffc25d58655992eaa28e1c404ff7f3a73e815903af5e62361bd135f76cd8)
   set_tests_properties(chris_session_01 PROPERTIES LABELS long TIMEOUT 1800)
   # Scripted recordings that reach the other game modes: a 2-player race, and the first
-  # race of each country unlocked with its password. Each takes a while, so labelled "long".
+  # race of each country unlocked with its password, and a race on each harder skill level. Each takes a while, so labelled "long".
   foreach(rec IN ITEMS
       "race_2p|14000|af867184fd380ccfc5327252cdb15d44ee7b6ce23c06b7aaa668bac6bf5f8592|ca02793076b8845454d3cc4d949bda5bc49fe16d063e310331f86318ed644ba7"
       "country_s_america|9762|299d275f2492573fc26ca109689ecd4422d5e7e7bdeb4997fca83cef3332213f|af587dd1ef071b5d55271b8b80aa345a5a30715d6f0bcff295af4bfa6c138d78"
@@ -100,6 +100,8 @@ if(TG_TEST_ROM)
       "country_france|10562|8cd9a88843f7c213dfb411ee86b251c072163cbe24dcb3bca46c9e0ae6e085e6|2cbbce0c1b6fc7de74bf4e59a1e598ceb17949066756fc32f645a36c389eeee6"
       "country_italy|10522|4402fc56aed633d28a8d45a181ed0a634d4ee3b5680e9f7805ca377877d2e86a|0cd8c2b0ed333398a9122c100d3de1cfa42fc5fab9974732045cc66e39373d29"
       "country_uk|10242|b9dc85e182f4d1d6c0c33712e8405030e380c15526a343071e7b02214cf091d5|d783491c8f629c6fdea76648c4d59b31692a5fa7dcfe9a427c3b067e459824ba"
+      "skill_professional|11432|71dd6a46a8b858aeb363354fee2df784005d192a38f58c6448af9377560897bb|94766e6c901d25c1fdb0f14cf24d3b8c78be1e25318146f0f3905f6d904537c9"
+      "skill_championship|11540|f9a5a1c7b220f84e72bbf16cb828384de6c29c0fd4ffa5dcf330db7412cee631|94766e6c901d25c1fdb0f14cf24d3b8c78be1e25318146f0f3905f6d904537c9"
     )
     string(REPLACE "|" ";" rec "${rec}")
     list(GET rec 0 name)
