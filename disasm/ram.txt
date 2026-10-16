@@ -16,9 +16,16 @@
 0046 RaceView1Pos ; camera track position for the top view, eases toward RaceP1TrackPos
 0059 RaceView2Pos ; camera track position for the bottom view, eases toward RaceP2TrackPos
 0200 RaceCars ; car records, 18 bytes each, linked through the ROM table at $00:A3C6
+038E RacePaletteTop ; 96 colours DMAd to CGRAM $20 at the top view's raster IRQ
 0424 MenuNmiDmaChannels ; DMA channel mask started by the menu NMI handler, then cleared
+044E RacePaletteBottom
+0592 RaceScrollTop ; 104 (BG3HOFS, BG3VOFS) word pairs, one per road line; buffer A
+0732 RaceScrollBottom ; buffer A, bottom view
+08D2 RaceScrollTopB ; buffer B
+0A72 RaceScrollBottomB ; buffer B, bottom view
 0C12 RaceHdmaColorTable ; indirect HDMA table for CGRAM channels 0-4
 0E54 RaceHdmaWindowTable ; HDMA table for window edges WH0-WH3
+0F0A RaceOamBuffers ; four 544-byte OAM images, one per view and buffer
 1E5A RaceP1Speed ; also the camera step during RaceIntro
 1E5C RaceP2Speed ; (inferred from symmetry with player 1)
 1E5E RaceP1Rpm
