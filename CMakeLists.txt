@@ -35,6 +35,7 @@ add_library(tgcore STATIC
   src/lockstep.c
   src/port/port.c
   src/port/hud.c
+  src/port/messages.c
   src/port/race.c
   src/port/registry.c
   src/rom.c

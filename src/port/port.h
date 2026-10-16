@@ -34,6 +34,7 @@ enum {
   TG_MX_16 = 1,     // M=0, X=0 (16-bit A and index)
   TG_MX_8 = 2,      // M=1, X=1
   TG_MX_A8_I16 = 3, // M=1, X=0
+  TG_MX_I16 = 4,    // X=0, M either
 };
 
 // Registers the callers never read after the routine returns. They aren't compared, and in
@@ -74,6 +75,12 @@ static inline void ram16_set(uint32_t adr, uint16_t v) { g_ram[adr] = (uint8_t) 
 uint8_t tg_bus_read8(uint32_t adr);
 void tg_bus_write8(uint32_t adr, uint8_t val);
 static inline void tg_bus_write16(uint32_t adr, uint16_t v) { tg_bus_write8(adr, (uint8_t) v); tg_bus_write8(adr + 1, (uint8_t) (v >> 8)); }
+
+// Reads ROM and RAM directly and anything else through the bus.
+uint8_t tg_read8(uint32_t adr);
+static inline uint16_t tg_read16(uint32_t adr) {
+  return (uint16_t) (tg_read8(adr) | tg_read8((adr & 0xff0000) | (uint16_t) (adr + 1)) << 8);
+}
 
 // ROM bytes at a LoROM bank:address.
 const uint8_t* tg_rom(uint32_t adr);

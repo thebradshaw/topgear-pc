@@ -24,3 +24,12 @@ void tg_bus_write8(uint32_t adr, uint8_t val) {
 const uint8_t* tg_rom(uint32_t adr) {
   return g_rom + tg_lorom_offset(adr);
 }
+
+uint8_t tg_read8(uint32_t adr) {
+  int32_t off = tg_lorom_offset(adr);
+  if(off >= 0) return g_rom[off];
+  uint8_t bank = (uint8_t) (adr >> 16);
+  if(bank == 0x7e || bank == 0x7f) return g_ram[adr & 0x1ffff];
+  if((bank & 0x40) == 0 && (adr & 0xffff) < 0x2000) return g_ram[adr & 0x1fff];
+  return snes_read(g_snes, adr);
+}

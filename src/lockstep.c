@@ -55,6 +55,12 @@ TgLockstep* tg_lockstep_create(Snes* snes, const uint8_t* rom, TgPortMode mode) 
   ls->mode = mode;
   ls->stats = calloc(tg_port_func_count, sizeof(FuncStats));
   ls->skipOnce = 0xffffffff;
+  for(int i = 1; i < tg_port_func_count; i++) {
+    if(tg_port_funcs[i].addr <= tg_port_funcs[i - 1].addr) {
+      fprintf(stderr, "src/port/registry.c: %s is out of address order\n", tg_port_funcs[i].name);
+      abort();
+    }
+  }
   for(int i = 0; i < tg_port_func_count; i++) {
     uint16_t lo = (uint16_t) tg_port_funcs[i].addr;
     ls->entryBits[lo >> 3] |= (uint8_t) (1 << (lo & 7));
@@ -191,6 +197,7 @@ static bool mxMatches(const TgPortFunc* f, const Cpu* cpu) {
     case TG_MX_16: return !cpu->mf && !cpu->xf;
     case TG_MX_8: return cpu->mf && cpu->xf;
     case TG_MX_A8_I16: return cpu->mf && !cpu->xf;
+    case TG_MX_I16: return !cpu->xf;
     default: return true;
   }
 }
@@ -245,6 +252,12 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   uint32_t adr = (uint32_t) cpu->k << 16 | lo;
   if(adr == ls->skipOnce) {
     ls->skipOnce = 0xffffffff;
+  for(int i = 1; i < tg_port_func_count; i++) {
+    if(tg_port_funcs[i].addr <= tg_port_funcs[i - 1].addr) {
+      fprintf(stderr, "src/port/registry.c: %s is out of address order\n", tg_port_funcs[i].name);
+      abort();
+    }
+  }
     return false;
   }
   const TgPortFunc* f = tg_port_find(adr);

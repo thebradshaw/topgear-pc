@@ -5,6 +5,21 @@
 
 #define RaceJoy1Held 0x0010  // direct page offset
 #define RaceJoy2Held 0x0012  // direct page offset
+#define RaceWindowMode 0x0100  // $C0DF in 1-player races: per-view window shapes (tentative)
+#define RaceP1SegmentValue 0x0112  // $7E:3E00 entry for each view's track segment (tentative)
+#define RaceP2SegmentValue 0x0114
+#define RaceLeaderSegmentValue 0x0116  // same for the car furthest along
+#define RaceWindowTablePtr 0x00EB  // direct page offset; pointer in the data bank
+#define RaceWindowShape1 0x182E  // bits 9-11 pick view 1's window shape (tentative)
+#define RaceWindowShape2 0x1830
+#define RaceWindowHidden1 0x1EDB  // word whose bit 15 hides view 1's window (tentative)
+#define RaceWindowHidden2 0x1EDC
+#define RaceCars 0x0200  // car records, 18 bytes each
+#define RaceCarSize 0x12
+#define RaceSegmentTable 0x3E00  // $7E:3E00, one word per track segment
+#define RaceP1Messages 0x0118  // HUD message state, 18 bytes per player (see messages.c)
+#define RaceP2Messages 0x012A
+#define RaceLaps 0x1E56  // laps in the race
 #define RaceP1Speed 0x1E5A
 #define RaceP2Speed 0x1E5C
 #define RaceP1Rpm 0x1E5E
@@ -14,9 +29,16 @@
 #define RaceP1Nitros 0x1E6C  // nitro boosts left, shown as a digit
 #define RaceP2Nitros 0x1E6E
 #define RaceP1Gear 0x1E72  // 0-4
+#define RaceP1Lap 0x1E76
+#define RaceP2Lap 0x1E78
 #define RaceP2Gear 0x1E74
 #define RaceP1Position 0x1E7A  // 0 = first
 #define RaceP2Position 0x1E7C
+#define RaceP1TrackPos 0x1ED7  // high byte is the track segment
+#define RaceP2TrackPos 0x1EDA
+#define RacePitEntry 0x1EF0  // track position the pit message is keyed to (tentative)
+#define RaceP1PitFlags 0x1EF4  // word; $4000 = pit message shown (P2's word overlaps at $1EF5)
+#define RaceP2PitFlags 0x1EF5
 #define RaceFramesElapsed 0x1E90  // video frames since the last race update (normally 3)
 #define RaceTime 0x1EAE  // shown as the lap time when a player's own is negative (tentative)
 #define RaceP1PositionShown 0x1F00  // shown instead of RaceP1Position when not negative (tentative)

@@ -32,8 +32,10 @@ aren't compared: C does that arithmetic directly.
 
 ## Adding one
 
-1. Read the routine in the disassembly (`tools/check_disasm.py --out DIR` regenerates it
-   locally; never commit it). Name it and its RAM in `disasm/symbols.txt` and
+1. Read the whole routine in the disassembly, following every branch: some routines
+   carry on past an early RTS (RaceBuildWindowTable did, and the checker caught it).
+   `tools/check_disasm.py --out DIR` regenerates the disassembly locally; never commit
+   it. Name it and its RAM in `disasm/symbols.txt` and
    `disasm/ram.txt`.
 2. Write it in `src/port/`, keeping the original's behaviour exactly, including quirks;
    comment anything that looks like a bug rather than fixing it. Add RAM names to
@@ -52,4 +54,7 @@ aren't compared: C does that arithmetic directly.
 | Routine | Address | Checked calls (all recordings) |
 |---|---|---|
 | RaceRevEngines | $00:88A1 | 5,414 per full test run. Chris's session revs player 1 on the start line; no recording revs player 2 yet |
-| RaceDrawHud | $00:CE61 | 37,099 per full test run |
+| RaceUpdateSegmentValues | $00:8910 | 30,129 |
+| RaceBuildWindowTable | $00:9381 | 32,674; only Chris's session reaches the 1-player window shapes |
+| RaceDrawHud | $00:CE61 | 37,099 |
+| RaceUpdateMessages | $00:DA75 | 37,120; no recording shows the wrap at the track start or the dropped low-fuel flag |
