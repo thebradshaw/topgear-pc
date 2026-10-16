@@ -64,6 +64,8 @@ static struct {
   bool recordedScaling;
   bool fullView;  // enhancement: 1-player races fill the whole screen (F9, --full-view)
   bool recordedFullView;
+  bool tallRoad;  // full view with the road twice as tall, filling the screen (F9 again, --tall-road)
+  bool recordedTallRoad;
   bool wide;  // enhancement: races drawn as wide as the window (F10, --wide)
   bool sideBySide;  // enhancement: 2-player widescreen views side by side (F12, --side-by-side)
   bool recordedSideBySide;
@@ -225,7 +227,7 @@ static void updateTitle(void) {
   snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
            app.integerScale ? ", integer scale" : "",
            app.smooth && !app.original ? ", smooth motion" : "", app.scaling ? ", smooth scaling" : "",
-           app.fullView && !app.original ? ", full-screen view" : "", app.rumble ? ", rumble" : "");
+           app.fullView && !app.original ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
   if(app.wide && !app.original) SDL_strlcat(title, ", widescreen", sizeof(title));
   if(app.sideBySide && !app.original) SDL_strlcat(title, ", side by side", sizeof(title));
   if(app.ghost && !app.original) SDL_strlcat(title, ", ghost car", sizeof(title));
@@ -385,6 +387,7 @@ static void runFrame(int samples) {
     if(app.replay.smooth != app.smooth) { app.smooth = app.replay.smooth; updateTitle(); }
     if(app.replay.scaling != app.scaling) { app.scaling = app.replay.scaling; updateTitle(); }
     if(app.replay.fullview != app.fullView) { app.fullView = app.replay.fullview; updateTitle(); }
+    if(app.replay.tallRoad != app.tallRoad) { app.tallRoad = app.replay.tallRoad; updateTitle(); }
     if((app.replay.wide > 0) != app.wide) { app.wide = app.replay.wide > 0; updateTitle(); }
     if(app.replay.sideBySide != app.sideBySide) { app.sideBySide = app.replay.sideBySide; updateTitle(); }
     if(app.replay.ghost != app.ghost) { app.ghost = app.replay.ghost; updateTitle(); }
@@ -394,6 +397,7 @@ static void runFrame(int samples) {
   tg_port_race_frames = app.smooth ? 1 : 3;
   if(app.scaling != tg_port_smooth_sprites) tg_game_set_smooth_sprites(app.game, app.scaling);
   if(app.fullView != tg_port_full_view) tg_game_set_full_view(app.game, app.fullView);
+  tg_game_set_tall_road(app.game, app.tallRoad);
   int margin = app.replaying ? app.replay.wide : wantedMargin();
   if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
   if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
@@ -411,6 +415,10 @@ static void runFrame(int samples) {
     if(app.fullView != app.recordedFullView) {
       fprintf(app.record, "%u fullview %s\n", app.frame, app.fullView ? "on" : "off");
       app.recordedFullView = app.fullView;
+    }
+    if(app.tallRoad != app.recordedTallRoad) {
+      fprintf(app.record, "%u tallroad %s\n", app.frame, app.tallRoad ? "on" : "off");
+      app.recordedTallRoad = app.tallRoad;
     }
     if(margin != app.recordedWide) {
       fprintf(app.record, "%u wide %d\n", app.frame, margin);
@@ -486,6 +494,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--rumble") == 0) app.rumble = true;
     else if(strcmp(argv[i], "--smooth-scaling") == 0) app.scaling = true;
     else if(strcmp(argv[i], "--full-view") == 0) app.fullView = true;
+    else if(strcmp(argv[i], "--tall-road") == 0) app.tallRoad = true;
     else if(strcmp(argv[i], "--wide") == 0) app.wide = true;
     else if(strcmp(argv[i], "--side-by-side") == 0) app.sideBySide = true;
     else if(strcmp(argv[i], "--ghost") == 0) app.ghost = true;
@@ -578,7 +587,14 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F6 && !app.replaying) { app.smooth = !app.smooth; updateTitle(); break; }
             if(e.key.key == SDLK_F7 && !app.replaying) { app.scaling = !app.scaling; updateTitle(); break; }
             if(e.key.key == SDLK_F8) { app.rumble = !app.rumble; updateTitle(); break; }
-            if(e.key.key == SDLK_F9 && !app.replaying) { app.fullView = !app.fullView; updateTitle(); break; }
+            if(e.key.key == SDLK_F9 && !app.replaying) {
+              // Off, then full view with the original's low horizon, then with a tall road.
+              if(!app.fullView) app.fullView = true;
+              else if(!app.tallRoad) app.tallRoad = true;
+              else app.fullView = app.tallRoad = false;
+              updateTitle();
+              break;
+            }
             if(e.key.key == SDLK_F12 && !app.replaying) { app.sideBySide = !app.sideBySide; updateTitle(); break; }
             if(e.key.key == SDLK_F1 && !app.replaying) { app.ghost = !app.ghost; updateTitle(); break; }
             if(e.key.key == SDLK_F10 && !app.replaying) {

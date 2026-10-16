@@ -62,6 +62,9 @@ void tg_game_set_port_mode(TgGame* game, TgPortMode mode);
 void tg_game_set_smooth_sprites(TgGame* game, bool on);
 // The full-screen 1-player race view (an enhancement, off by default).
 void tg_game_set_full_view(TgGame* game, bool on);
+// Full view and side by side draw the road 1.3 times taller, with the horizon low as in the
+// original; tall road draws it twice as tall, filling the screen.
+void tg_game_set_tall_road(TgGame* game, bool on);
 // Widescreen (an enhancement, off by default): races are drawn margin pixels wider on each
 // side (at most 96), other screens in the middle with black borders. The picture is then
 // tg_game_wide_pixels: XRGB, (256 + 2 * margin) x 224, one pixel per SNES pixel (NULL

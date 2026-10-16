@@ -157,6 +157,8 @@ void tg_game_set_full_view(TgGame* game, bool on) {
   updateRedraw(game);
 }
 
+void tg_game_set_tall_road(TgGame* game, bool on) { game->snes->ppu->roadScale = on ? 2.0f : 0; }
+
 void tg_game_set_ghost(TgGame* game, bool on) {
   tg_port_ghost = on;
   game->snes->ppu->objFlags = on ? tg_port_obj_flags : NULL;
