@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "coverage.h"
+#include "lockstep.h"
 #include "snes.h"
 
 struct TgGame {
@@ -12,6 +13,7 @@ struct TgGame {
   uint8_t rom[TG_ROM_SIZE];
   TgCoverage* coverage;
   FILE* trace;
+  TgLockstep* lockstep;
 };
 
 TgGame* tg_game_create(const TgRom* rom) {
@@ -29,6 +31,7 @@ TgGame* tg_game_create(const TgRom* rom) {
 
 void tg_game_destroy(TgGame* game) {
   if(game == NULL) return;
+  tg_lockstep_destroy(game->lockstep);
   if(game->snes) snes_free(game->snes);
   free(game);
 }
@@ -79,12 +82,24 @@ static void traceOpcode(void* ctx, Cpu* cpu) {
 
 static void traceRead(void* ctx, uint32_t adr) {
   TgGame* game = ctx;
+  if(game->lockstep && tg_lockstep_in_c(game->lockstep)) return;
   if(game->coverage) tg_coverage_on_read(game->coverage, adr);
 }
 
 static void traceWrite(void* ctx, uint32_t adr, uint8_t val) {
   TgGame* game = ctx;
+  if(game->lockstep) tg_lockstep_on_write(game->lockstep, adr, val);
   if(game->trace) fprintf(game->trace, "  W %06X=%02X\n", adr, val);
+}
+
+static void hdmaWrite(void* ctx, uint8_t adr, uint8_t val) {
+  TgGame* game = ctx;
+  tg_lockstep_on_hdma_write(game->lockstep, adr, val);
+}
+
+static bool portCall(void* ctx, Cpu* cpu) {
+  TgGame* game = ctx;
+  return tg_lockstep_on_opcode(game->lockstep, cpu);
 }
 
 static void updateHooks(TgGame* game) {
@@ -92,8 +107,21 @@ static void updateHooks(TgGame* game) {
   game->snes->cpu->traceHook = any ? traceOpcode : NULL;
   game->snes->cpu->traceCtx = game;
   game->snes->readHook = game->coverage ? traceRead : NULL;
-  game->snes->writeHook = game->trace ? traceWrite : NULL;
+  game->snes->writeHook = game->trace || game->lockstep ? traceWrite : NULL;
   game->snes->readHookCtx = game;
+  game->snes->cpu->callHook = game->lockstep ? portCall : NULL;
+  game->snes->hdmaWriteHook = game->lockstep ? hdmaWrite : NULL;
+  game->snes->cpu->callCtx = game;
+}
+
+void tg_game_set_port_mode(TgGame* game, TgPortMode mode) {
+  tg_lockstep_destroy(game->lockstep);
+  game->lockstep = mode == TG_PORT_OFF ? NULL : tg_lockstep_create(game->snes, game->rom, mode);
+  updateHooks(game);
+}
+
+int tg_game_port_report(TgGame* game, FILE* f) {
+  return game->lockstep ? tg_lockstep_report(game->lockstep, f) : 0;
 }
 
 void tg_game_set_coverage(TgGame* game, TgCoverage* cov) {

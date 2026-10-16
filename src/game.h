@@ -52,6 +52,14 @@ void tg_game_set_coverage(TgGame* game, TgCoverage* cov);
 // while set; NULL stops. Used to see what a routine reads and writes in one frame.
 void tg_game_set_trace(TgGame* game, void* file);
 
+// Whether translated routines (src/port) run, and whether each call is checked against
+// the original. See lockstep.h.
+#include <stdio.h>
+#include "lockstep.h"
+void tg_game_set_port_mode(TgGame* game, TgPortMode mode);
+// Prints what the translated routines did; returns the number of mismatches found.
+int tg_game_port_report(TgGame* game, FILE* f);
+
 const uint8_t* tg_game_wram(const TgGame* game);  // 128 KiB
 uint32_t tg_game_frame_count(const TgGame* game);
 

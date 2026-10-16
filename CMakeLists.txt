@@ -32,6 +32,10 @@ add_library(tgcore STATIC
   src/coverage.c
   src/game.c
   src/input_script.c
+  src/lockstep.c
+  src/port/port.c
+  src/port/race.c
+  src/port/registry.c
   src/rom.c
   src/sha256.c
 )
@@ -72,20 +76,22 @@ add_executable(test_core tests/test_core.c)
 target_link_libraries(test_core PRIVATE tgcore)
 add_test(NAME core COMMAND test_core)
 if(TG_TEST_ROM)
+  # Recording tests run with --port verify: every call to a translated routine is checked
+  # against the original (src/lockstep.h), and any difference fails the test.
   add_test(NAME rom_boot COMMAND test_core --rom ${TG_TEST_ROM})
   # Two minutes of the untouched attract sequence, ending in the split-screen demo race.
   # Pinned hashes catch any change in game behaviour or rendering.
-  add_test(NAME attract_demo COMMAND tg_headless --rom ${TG_TEST_ROM} --frames 7200
+  add_test(NAME attract_demo COMMAND tg_headless --rom ${TG_TEST_ROM} --port verify --frames 7200
     --expect-wram eb074942bd3f6b5efa7402979c2d6e56e4373739112cc711cfe448f4a8291cba
     --expect-frame fc8fc8246cc971806acc2607897b4d99093d1b48884d9aa682271d1036f81eca)
   # Menus, a full scripted 1-player race and the results screen.
-  add_test(NAME race_1p COMMAND tg_headless --rom ${TG_TEST_ROM} --frames 11000
+  add_test(NAME race_1p COMMAND tg_headless --rom ${TG_TEST_ROM} --port verify --frames 11000
     --input ${CMAKE_SOURCE_DIR}/tests/inputs/race_1p.txt
     --expect-wram 08f94c7b56cb0b8ac33b9c557c5c0fdd25c7ab80ee479d374a45a6253b5b2a8a
     --expect-frame 94766e6c901d25c1fdb0f14cf24d3b8c78be1e25318146f0f3905f6d904537c9)
   # Chris's 15-minute session recorded on Windows. Slow, so labelled "long":
   # ctest -L long to run it, ctest -LE long to skip it.
-  add_test(NAME chris_session_01 COMMAND tg_headless --rom ${TG_TEST_ROM} --frames 54853
+  add_test(NAME chris_session_01 COMMAND tg_headless --rom ${TG_TEST_ROM} --port verify --frames 54853
     --input ${CMAKE_SOURCE_DIR}/tests/inputs/chris_session_01.txt
     --expect-wram 4ff4ffc25d58655992eaa28e1c404ff7f3a73e815903af5e62361bd135f76cd8)
   set_tests_properties(chris_session_01 PROPERTIES LABELS long TIMEOUT 1800)
@@ -108,7 +114,7 @@ if(TG_TEST_ROM)
     list(GET rec 1 frames)
     list(GET rec 2 wram)
     list(GET rec 3 frame)
-    add_test(NAME ${name} COMMAND tg_headless --rom ${TG_TEST_ROM} --frames ${frames}
+    add_test(NAME ${name} COMMAND tg_headless --rom ${TG_TEST_ROM} --port verify --frames ${frames}
       --input ${CMAKE_SOURCE_DIR}/tests/inputs/${name}.txt --expect-wram ${wram} --expect-frame ${frame})
     set_tests_properties(${name} PROPERTIES LABELS long TIMEOUT 1800)
   endforeach()

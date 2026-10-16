@@ -38,6 +38,9 @@ Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHand
   cpu->idle = idle;
   cpu->traceHook = NULL;
   cpu->traceCtx = NULL;
+  cpu->callHook = NULL;
+  cpu->callCtx = NULL;
+  cpu->interrupts = 0;
   return cpu;
 }
 
@@ -121,6 +124,7 @@ void cpu_runOpcode(Cpu* cpu) {
     cpu_read(cpu, (cpu->k << 16) | cpu->pc);
     cpu_doInterrupt(cpu);
   } else {
+    if(cpu->callHook && cpu->callHook(cpu->callCtx, cpu)) return;
     if(cpu->traceHook) cpu->traceHook(cpu->traceCtx, cpu);
     uint8_t opcode = cpu_readOpcode(cpu);
     cpu_doOpcode(cpu, opcode);
@@ -268,6 +272,7 @@ static void cpu_doInterrupt(Cpu* cpu) {
   cpu->d = false;
   cpu->k = 0;
   cpu->intWanted = false;
+  cpu->interrupts++;
   if(cpu->nmiWanted) {
     cpu->nmiWanted = false;
     cpu->pc = cpu_readWord(cpu, 0xffea, 0xffeb, false);

@@ -3,11 +3,13 @@
 //   tg_headless --rom <file> [--frames N] [--input script.txt]
 //               [--screenshot out.ppm] [--shots-every N --shots-dir DIR]
 //               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]
-//               [--trace-frame N [--trace-count K] --trace-out FILE]
+//               [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native]
 //
 // Prints the SHA-256 of work RAM and of the final frame so runs can be compared.
 // With --expect-*, exits non-zero when a hash differs (used by the regression tests).
 // With --coverage, adds this run's code/data coverage to FILE (created if missing).
+// With --port verify, every call to a translated routine is checked against the original
+// (see src/lockstep.h); any mismatch makes the run fail.
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -65,6 +67,7 @@ int main(int argc, char** argv) {
   FILE* trace = NULL;
   long frames = 600;
   long shotsEvery = 0;
+  TgPortMode portMode = TG_PORT_OFF;
   for(int i = 1; i < argc; i++) {
     const char* next = i + 1 < argc ? argv[i + 1] : NULL;
     if(strcmp(argv[i], "--rom") == 0 && next) romPath = argv[++i];
@@ -80,8 +83,11 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--trace-frame") == 0 && next) traceFrame = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-out") == 0 && next) traceOut = argv[++i];
     else if(strcmp(argv[i], "--trace-count") == 0 && next) traceCount = strtol(argv[++i], NULL, 10);
+    else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "off") == 0) { portMode = TG_PORT_OFF; i++; }
+    else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "verify") == 0) { portMode = TG_PORT_VERIFY; i++; }
+    else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "native") == 0) { portMode = TG_PORT_NATIVE; i++; }
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native]\n", argv[0]);
       return 2;
     }
   }
@@ -116,6 +122,7 @@ int main(int argc, char** argv) {
     tg_coverage_load(coverage, coveragePath);
     tg_game_set_coverage(game, coverage);
   }
+  tg_game_set_port_mode(game, portMode);
   uint8_t* pixels = calloc(TG_FB_WIDTH * TG_FB_HEIGHT, 4);
   for(long frame = 0; frame < frames; frame++) {
     tg_input_script_advance(&script, (uint32_t) frame);
@@ -154,6 +161,7 @@ int main(int argc, char** argv) {
   printf("frames %ld\n", frames);
   bool ok = checkHash("wram", tg_game_wram(game), 0x20000, expectWram);
   ok &= checkHash("frame", pixels, (size_t) TG_FB_WIDTH * TG_FB_HEIGHT * 4, expectFrame);
+  if(portMode != TG_PORT_OFF && tg_game_port_report(game, stdout) > 0) ok = false;
 
   if(coverage) {
     if(!tg_coverage_save(coverage, coveragePath)) {

@@ -31,6 +31,8 @@ Snes* snes_init(void) {
   snes->readHook = NULL;
   snes->readHookCtx = NULL;
   snes->writeHook = NULL;
+  snes->hdmaWriteHook = NULL;
+  snes->inHdma = false;
   snes->cpu = cpu_init(snes, snes_cpuRead, snes_cpuWrite, snes_cpuIdle);
   snes->apu = apu_init(snes);
   snes->dma = dma_init(snes);
@@ -271,6 +273,7 @@ uint8_t snes_readBBus(Snes* snes, uint8_t adr) {
 }
 
 void snes_writeBBus(Snes* snes, uint8_t adr, uint8_t val) {
+  if(snes->inHdma && snes->hdmaWriteHook) snes->hdmaWriteHook(snes->readHookCtx, adr, val);
   if(adr < 0x40) {
     ppu_write(snes->ppu, adr, val);
     return;

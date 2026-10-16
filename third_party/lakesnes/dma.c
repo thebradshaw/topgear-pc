@@ -284,6 +284,7 @@ static void dma_doHdma(Dma* dma, bool doSync, int cpuCycles) {
   // full transfer overhead
   snes_runCycles(dma->snes, 8);
   // do all copies
+  dma->snes->inHdma = true;
   for(int i = 0; i < 8; i++) {
     // terminate any dma
     if(dma->channel[i].hdmaActive) dma->channel[i].dmaActive = false;
@@ -307,6 +308,7 @@ static void dma_doHdma(Dma* dma, bool doSync, int cpuCycles) {
       }
     }
   }
+  dma->snes->inHdma = false;
   // do all updates
   for(int i = 0; i < 8; i++) {
     if(dma->channel[i].hdmaActive && !dma->channel[i].terminated) {

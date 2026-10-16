@@ -64,6 +64,10 @@ struct Snes {
   void* readHookCtx;
   // topgear-pc: called for every A-bus write by the CPU or DMA (NULL when unused)
   void (*writeHook)(void* ctx, uint32_t adr, uint8_t val);
+  // topgear-pc: called for every B-bus write made by HDMA (NULL when unused); the
+  // lockstep checker replays these, since they depend on time rather than on the code
+  void (*hdmaWriteHook)(void* ctx, uint8_t adr, uint8_t val);
+  bool inHdma;
 };
 
 Snes* snes_init(void);

@@ -49,6 +49,13 @@ struct Cpu {
   // topgear-pc: called before each opcode fetch, for coverage tracing (NULL when unused)
   void (*traceHook)(void* ctx, Cpu* cpu);
   void* traceCtx;
+  // topgear-pc: called before each opcode fetch; returning true means the hook ran the
+  // code at PC itself (a translated routine) and the opcode is skipped (NULL when unused)
+  bool (*callHook)(void* ctx, Cpu* cpu);
+  void* callCtx;
+  // topgear-pc: counts NMIs and IRQs taken, so the lockstep checker can tell when one
+  // interrupted a routine
+  uint32_t interrupts;
 };
 
 Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHandler idle);

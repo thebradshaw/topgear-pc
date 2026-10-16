@@ -3,5 +3,8 @@ https://github.com/angelo-wf/LakeSnes at commit 9db90b86e46a377609305e298dd92d71
 MIT licensed; see LICENSE.txt.
 
 Local changes (marked "topgear-pc" in the source):
-- cpu.h/cpu.c: optional traceHook called before each opcode fetch.
-- snes.h/snes.c: optional readHook and writeHook called for every A-bus read and write.
+- cpu.h/cpu.c: optional traceHook called before each opcode fetch; optional callHook
+  there that can run a translated routine in place of the code at PC; a count of
+  interrupts taken.
+- snes.h/snes.c: optional readHook and writeHook called for every A-bus read and write;
+  optional hdmaWriteHook called for every B-bus write made by HDMA (dma.c sets inHdma).
