@@ -72,8 +72,8 @@ bool tg_input_script_load(const char* path, TgInputScript* script, char* error, 
     char value[16];
     if(sscanf(line, "%u %15s", &frame, word) == 2 && strcmp(word, "reset") == 0) {
       n = 3;
-    } else if(sscanf(line, "%u %15s %15s", &frame, word, value) == 3 && (strcmp(word, "smooth") == 0 || strcmp(word, "scaling") == 0)) {
-      player = strcmp(word, "smooth") == 0 ? 3 : 4;
+    } else if(sscanf(line, "%u %15s %15s", &frame, word, value) == 3 && (strcmp(word, "smooth") == 0 || strcmp(word, "scaling") == 0 || strcmp(word, "fullview") == 0)) {
+      player = strcmp(word, "smooth") == 0 ? 3 : strcmp(word, "scaling") == 0 ? 4 : 5;
       mask = strcmp(value, "on") == 0;
       n = strcmp(value, "on") == 0 || strcmp(value, "off") == 0 ? 3 : -1;
     } else {
@@ -110,6 +110,7 @@ void tg_input_script_advance(TgInputScript* script, uint32_t frame) {
     if(e->player == 0) script->resetPending = true;
     else if(e->player == 3) script->smooth = e->buttons != 0;
     else if(e->player == 4) script->scaling = e->buttons != 0;
+    else if(e->player == 5) script->fullview = e->buttons != 0;
     else script->state[e->player] = e->buttons;
   }
 }

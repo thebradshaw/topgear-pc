@@ -78,7 +78,14 @@ Ppu* ppu_init(Snes* snes) {
   ppu->objScaleTags = NULL;
   ppu->objScales = NULL;
   ppu->objBitmaps = NULL;
+  ppu->objGrounds = NULL;
+  ppu->fullViewFrame = NULL;
+  ppu->full = NULL;
+  ppu->fullComposing = false;
+  ppu->fullArmed = false;
   memset(ppu->objTag, 0, sizeof(ppu->objTag));
+  for(int i = 0; i < 128; i++) ppu->objGround[i] = PPU_NO_GROUND;
+  memset(ppu->objShift, 0, sizeof(ppu->objShift));
   memset(ppu->objAlpha, 0, sizeof(ppu->objAlpha));
   ppu_setPixelOutputFormat(ppu, ppu_pixelOutputFormatBGRX);
   return ppu;
@@ -86,6 +93,7 @@ Ppu* ppu_init(Snes* snes) {
 
 void ppu_free(Ppu* ppu) {
   free(ppu->objBitmaps);
+  free(ppu->full);
   free(ppu);
 }
 
@@ -252,6 +260,7 @@ bool ppu_checkOverscan(Ppu* ppu) {
 
 void ppu_handleVblank(Ppu* ppu) {
   // called either right after ppu_checkOverscan at (0,225), or at (0,240)
+  if(ppu->fullViewFrame) ppu_fullCompose(ppu);
   if(!ppu->forcedBlank) {
     ppu->oamAdr = ppu->oamAdrWritten;
     ppu->oamInHigh = ppu->oamInHighWritten;
@@ -279,6 +288,7 @@ void ppu_runLine(Ppu* ppu, int line) {
   for(int x = 0; x < 256; x++) {
     ppu_handlePixel(ppu, x, line);
   }
+  if(ppu->fullArmed && !ppu->fullComposing) ppu_fullCapture(ppu, line);
 }
 
 void ppu_setPixelOutputFormat(Ppu* ppu, int pixelOutputFormat) {
@@ -613,6 +623,7 @@ void ppu_tagObj(Ppu* ppu, uint8_t bank, uint16_t adr) {
   bool lowRam = (bank == 0x7e || ((bank & 0x40) == 0 && (bank & 0x7f) < 0x40)) && adr < 0x2000;
   uint16_t tag = lowRam && ppu->objScaleTags ? ppu->objScaleTags[adr] : 0;
   ppu->objTag[ppu->oamAdr >> 1] = tag;
+  ppu->objGround[ppu->oamAdr >> 1] = lowRam && ppu->objGrounds ? ppu->objGrounds[adr] : PPU_NO_GROUND;
 }
 
 static void ppu_evaluateSprites(Ppu* ppu, int line) {

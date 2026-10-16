@@ -94,6 +94,7 @@ struct Ppu {
   const uint16_t* objScaleTags;
   const PpuObjScale* objScales;
   uint16_t objTag[128];
+  int16_t objGround[128];  // Top Gear port: the line each entry's object stands on, or PPU_NO_GROUND
   float objAlpha[256], objR[256], objG[256], objB[256];  // filtered object pixels
   PpuObjBitmap* objBitmaps;  // a small cache, allocated when first needed
   uint8_t objPixelBuffer[256]; // line buffers
@@ -160,7 +161,19 @@ struct Ppu {
   // times 2 for even and odd frame
   uint8_t pixelBuffer[512 * 4 * 239 * 2];
   uint8_t pixelOutputFormat;
+  // Top Gear port: the 1-player race view drawn over the whole screen (ppu_full.c). The game
+  // sets *fullViewFrame during a frame when the next one shows it; the lines of the top
+  // view are then captured as they are drawn and the screen is redrawn from them at the
+  // start of vblank.
+  const int16_t* objGrounds;  // by low RAM address of an OAM entry, like objScaleTags
+  bool* fullViewFrame;
+  struct PpuFullView* full;
+  bool fullArmed;  // this frame is captured
+  bool fullComposing;
+  int16_t objShift[128];      // while composing: how far each entry moves down
 };
+
+#define PPU_NO_GROUND (-32768)
 
 enum { ppu_pixelOutputFormatXBGR = 0, ppu_pixelOutputFormatBGRX = 1 };
 
@@ -180,5 +193,8 @@ void ppu_setPixelOutputFormat(Ppu* ppu, int pixelOutputFormat);
 void ppu_tagObj(Ppu* ppu, uint8_t bank, uint16_t adr);
 int ppu_smoothOnLine(Ppu* ppu, uint8_t index, int line);
 void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line);
+void ppu_fullCapture(Ppu* ppu, int line);
+void ppu_fullCompose(Ppu* ppu);
+int ppu_fullMapRow(Ppu* ppu, int row);
 
 #endif

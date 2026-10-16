@@ -131,13 +131,29 @@ static PpuObjBitmap* bitmapFor(Ppu* ppu, uint16_t tag) {
 }
 
 // -1: a hidden entry of an object; 0: the object's first entry, not on this line; 1: on it.
+// The lines an object may cover; in the full-screen view, where they moved to.
+static void clipLines(Ppu* ppu, const PpuObjScale* s, int* top, int* bottom) {
+  *top = s->clipTop;
+  *bottom = s->clipBottom;
+  if(!ppu->fullComposing) return;
+  *top = *top <= 4 ? 0 : ppu_fullMapRow(ppu, *top);
+  *bottom = *bottom >= 108 ? 224 : ppu_fullMapRow(ppu, *bottom);
+}
+
+static int shiftOf(Ppu* ppu, uint8_t index) {
+  return ppu->fullComposing ? ppu->objShift[index >> 1] : 0;
+}
+
 int ppu_smoothOnLine(Ppu* ppu, uint8_t index, int line) {
   if(!isAnchor(ppu, index)) return -1;
   const PpuObjScale* s = &ppu->objScales[ppu->objTag[index >> 1]];
-  if(line < s->clipTop || line >= s->clipBottom || s->count == 0) return 0;
+  int top, bottom;
+  clipLines(ppu, s, &top, &bottom);
+  if(line < top || line >= bottom || s->count == 0) return 0;
   int x0, y0, x1, y1;
   objectBox(ppu, s, &x0, &y0, &x1, &y1);
-  return line >= y0 && line < y1 && x1 > 0 && x0 < 256;
+  int dy = shiftOf(ppu, index);
+  return line >= y0 + dy && line < y1 + dy && x1 > 0 && x0 < 256;
 }
 
 void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line) {
@@ -145,7 +161,7 @@ void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line) {
   const PpuObjScale* s = &ppu->objScales[tag];
   PpuObjBitmap* bm = bitmapFor(ppu, tag);
   if(bm == NULL) return;
-  int j = line - bm->y0;
+  int j = line - shiftOf(ppu, index) - bm->y0;
   if(j < 0 || j >= bm->h) return;
   int priority = (s->parts[0].attr & 0x3000) >> 12;
   for(int i = 0; i < bm->w; i++) {

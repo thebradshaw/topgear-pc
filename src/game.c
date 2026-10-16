@@ -144,6 +144,13 @@ void tg_game_set_smooth_sprites(TgGame* game, bool on) {
   game->snes->ppu->objScales = tg_port_obj_scales;
 }
 
+void tg_game_set_full_view(TgGame* game, bool on) {
+  tg_port_full_view = on;
+  tg_port_full_frame = false;
+  game->snes->ppu->objGrounds = on ? tg_port_obj_grounds : NULL;
+  game->snes->ppu->fullViewFrame = on ? &tg_port_full_frame : NULL;
+}
+
 void tg_game_set_coverage(TgGame* game, TgCoverage* cov) {
   game->coverage = cov;
   updateHooks(game);

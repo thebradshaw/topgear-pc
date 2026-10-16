@@ -150,6 +150,13 @@ extern bool tg_port_smooth_sprites;
 // Counts the race's top-of-frame interrupts (RaceIrqTop): changes every frame of a race.
 extern uint32_t tg_port_race_irqs;
 extern uint16_t tg_port_obj_tags[0x2000];
+// Full-screen 1-player view (sprites.c, LakeSnes ppu_full.c), an enhancement: when set,
+// the sprite builder records each OAM entry's ground line in tg_port_obj_grounds, and
+// RaceIrqTop sets tg_port_full_frame for frames of a 1-player race, which the PPU then
+// redraws with the top view over the whole screen (tg_game_set_full_view connects them).
+extern bool tg_port_full_view;
+extern bool tg_port_full_frame;
+extern int16_t tg_port_obj_grounds[0x2000];
 
 // Connects the helpers above to the machine (port.c).
 typedef struct Snes Snes;

@@ -37,6 +37,7 @@ The first gamepad is player 1 and the second is player 2. To change the controls
 | F6 | Smooth motion: the race updates every frame instead of every third (off by default; also `--smooth`) |
 | F7 | Smooth scaling: signs, trees and cars grow steadily as they approach instead of jumping between sprite sizes (off by default; also `--smooth-scaling`) |
 | F8 | Controller rumble when your car hits something and when nitro fires (off by default; also `--rumble`) |
+| F9 | Full-screen view: in 1-player races your view fills the whole screen instead of sharing it with the computer's, with more lines of road (off by default; also `--full-view`) |
 
 ## Recordings
 
