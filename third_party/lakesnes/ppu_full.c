@@ -36,7 +36,7 @@
 #define ROAD_ROW 31      // the road below this row is drawn f->scale times taller, ending at
                          // the bottom of the screen: 1.3 keeps the horizon low and the road
                          // flat as in the original; 2 (tall road) fills the screen with road
-#define HUD_SPLIT 44     // HUD rows from here on ...
+#define HUD_SPLIT 47     // HUD rows from here on (below the race messages) ...
 #define HUD_MOVE 116     // ... move down this far
 #define HUD_LEFT 64      // widescreen: HUD columns left of this move left ...
 #define HUD_RIGHT 160    // ... and from this one on, right
@@ -50,6 +50,11 @@ typedef struct PpuFullView {
   float outRoad;   // where ROAD_ROW is on the screen
   uint8_t* lines;  // SCREEN_LINES copies of the line state
   uint8_t* live;
+  // VRAM as the top view was drawn: the bottom view's car art goes into the same place
+  // afterwards. Swapped in while the top view is redrawn (vramLive keeps the rest).
+  uint16_t vramTop[0x8000];
+  uint16_t vramLive[0x8000];
+  bool haveVramTop, vramIsTop;
   // High frame rate: the line states of the last two race frames, and the in-between ones.
   uint8_t* cur;
   uint8_t* prev;
@@ -100,6 +105,10 @@ void ppu_fullCapture(Ppu* ppu, int line) {
   }
   memcpy(f->lines + (size_t) row * stateSize(), (uint8_t*) ppu + stateStart(), stateSize());
   f->got[row] = true;
+  if(row == VIEW_LINES - 1) {
+    memcpy(f->vramTop, ppu->vram, sizeof(f->vramTop));
+    f->haveVramTop = true;
+  }
 }
 
 static int bg3Row(PpuFullView* f, int row) {
@@ -423,6 +432,18 @@ bool ppu_interpCompose(Ppu* ppu, float t) {
   return true;
 }
 
+// Draws from the VRAM of the top view (top) or of the end of the frame.
+static void useVram(Ppu* ppu, PpuFullView* f, bool top) {
+  if(!f->haveVramTop || top == f->vramIsTop) return;
+  if(top) {
+    memcpy(f->vramLive, ppu->vram, sizeof(f->vramLive));
+    memcpy(ppu->vram, f->vramTop, sizeof(f->vramTop));
+  } else {
+    memcpy(ppu->vram, f->vramLive, sizeof(f->vramLive));
+  }
+  f->vramIsTop = top;
+}
+
 // Redraws the screen from the line states in f->lines.
 static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
   bool side = (flags & PPU_SIDE_BY_SIDE) && m > 0;
@@ -438,6 +459,7 @@ static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
     ppu->hudMargin = (int16_t) (half / 2 - 128);
     for(int v = 0; v < 2; v++) {
       setView(ppu, f, v * VIEW_STEP);
+      useVram(ppu, f, v == 0);
       for(int y = 0; y < SCREEN_LINES; y++) {
         ppu->lineOut = ppu->wideBuffer + (size_t) y * w + v * (w - half);
         composeLine(ppu, f, y);
@@ -448,6 +470,7 @@ static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
       out[half - 1] = out[w - half] = 0;
     }
     f->off = 0;
+    useVram(ppu, f, false);
     ppu->fullComposing = false;
     ppu->lineLeft = 0;
     ppu->lineRight = 256;
@@ -463,6 +486,7 @@ static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
   ppu->hudMargin = (int16_t) m;
   for(int y = 0; y < SCREEN_LINES; y++) {
     ppu->lineOut = m > 0 ? ppu->wideBuffer + (size_t) y * (256 + 2 * m) : NULL;
+    useVram(ppu, f, full || y < VIEW_STEP);
     if(full) {
       composeLine(ppu, f, y);
     } else {
@@ -478,6 +502,7 @@ static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
   ppu->hudMargin = 0;
   ppu->hudClamp = false;
   ppu->lineOut = NULL;
+  useVram(ppu, f, false);
   loadState(ppu, f->live);
 }
 
