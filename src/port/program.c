@@ -258,6 +258,16 @@ static void player_finished(uint16_t place, uint16_t msg_clear, uint16_t time,
   ram16_set(msg, 5);
 }
 
+// The raster IRQ's last step of a fade out ($00:B965): a view already black (level 0)
+// has its fade flag cleared and the screen blanked.
+static void fade_done(TgRegs* r, uint8_t flag, uint8_t level) {
+  uint16_t f = (uint16_t) (r->d + flag), l = (uint16_t) (r->d + level);
+  if((g_ram[f] & 0x80) && (g_ram[l] & 0x0F) == 0) {
+    g_ram[f] = 0;
+    g_ram[l] |= 0x80;
+  }
+}
+
 // $00:86C3-$00:8831: the race, one pass per race update. Returns at the end of the race
 // with $1E58 = $FFFF, or false straight away if the demo ended.
 static bool race_main(TgRegs* r) {
@@ -315,6 +325,12 @@ static bool race_main(TgRegs* r) {
       continue;
     }
     if(countdown == 1) {
+      // The pass above set $E1/$E2 to fade the views out. The original takes about two
+      // frames for a pass, so the raster IRQ's fade has run before this check and
+      // cleared a flag whose view was already black; the C pass takes no time, so that
+      // step happens here, or the race never ends.
+      fade_done(r, 0xE1, 0x52);
+      fade_done(r, 0xE2, 0x65);
       if(dp16(r, 0xE1) != 0) continue;
     } else {
       ram16_set(0x1EE0, (uint16_t) (countdown - 1));
