@@ -89,6 +89,27 @@ if(TG_TEST_ROM)
     --input ${CMAKE_SOURCE_DIR}/tests/inputs/chris_session_01.txt
     --expect-wram 4ff4ffc25d58655992eaa28e1c404ff7f3a73e815903af5e62361bd135f76cd8)
   set_tests_properties(chris_session_01 PROPERTIES LABELS long TIMEOUT 1800)
+  # Scripted recordings that reach the other game modes: a 2-player race, and the first
+  # race of each country unlocked with its password. Each takes a while, so labelled "long".
+  foreach(rec IN ITEMS
+      "race_2p|14000|af867184fd380ccfc5327252cdb15d44ee7b6ce23c06b7aaa668bac6bf5f8592|ca02793076b8845454d3cc4d949bda5bc49fe16d063e310331f86318ed644ba7"
+      "country_s_america|9762|299d275f2492573fc26ca109689ecd4422d5e7e7bdeb4997fca83cef3332213f|af587dd1ef071b5d55271b8b80aa345a5a30715d6f0bcff295af4bfa6c138d78"
+      "country_japan|10242|89cf229c909c271462147467800dfa3ddebb4fa75f871746fa0c91ba6e8d8a20|c9225e4c522e860785001a9310eb0197082544ea3ccff226332aea03f721beb6"
+      "country_germany|10402|85168033966361e7cb9a92e44f65e31dbaa0c9165935e93317ba93970151a4a2|b87c5f9d370169fe3f4bf8d42be01d63e7d20f9ce7727036c401ca4600f03af3"
+      "country_scandinavia|10602|00697c0c070b2350a196a6a60be443d7f20743104dfc7de3265e79e9c6499754|c81af3c92b1ebaefd42d36be63e180765e2f96e4acb483ed51aa3e8e9facf4bd"
+      "country_france|10562|8cd9a88843f7c213dfb411ee86b251c072163cbe24dcb3bca46c9e0ae6e085e6|2cbbce0c1b6fc7de74bf4e59a1e598ceb17949066756fc32f645a36c389eeee6"
+      "country_italy|10522|4402fc56aed633d28a8d45a181ed0a634d4ee3b5680e9f7805ca377877d2e86a|0cd8c2b0ed333398a9122c100d3de1cfa42fc5fab9974732045cc66e39373d29"
+      "country_uk|10242|b9dc85e182f4d1d6c0c33712e8405030e380c15526a343071e7b02214cf091d5|d783491c8f629c6fdea76648c4d59b31692a5fa7dcfe9a427c3b067e459824ba"
+    )
+    string(REPLACE "|" ";" rec "${rec}")
+    list(GET rec 0 name)
+    list(GET rec 1 frames)
+    list(GET rec 2 wram)
+    list(GET rec 3 frame)
+    add_test(NAME ${name} COMMAND tg_headless --rom ${TG_TEST_ROM} --frames ${frames}
+      --input ${CMAKE_SOURCE_DIR}/tests/inputs/${name}.txt --expect-wram ${wram} --expect-frame ${frame})
+    set_tests_properties(${name} PROPERTIES LABELS long TIMEOUT 1800)
+  endforeach()
   # Disassemble, reassemble with ca65/ld65 and require a byte-identical ROM.
   find_package(Python3 COMPONENTS Interpreter QUIET)
   find_program(CA65 ca65)
