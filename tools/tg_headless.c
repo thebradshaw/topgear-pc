@@ -3,6 +3,7 @@
 //   tg_headless --rom <file> [--frames N] [--input script.txt]
 //               [--screenshot out.ppm] [--shots-every N --shots-dir DIR]
 //               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]
+//               [--trace-frame N [--trace-count K] --trace-out FILE]
 //
 // Prints the SHA-256 of work RAM and of the final frame so runs can be compared.
 // With --expect-*, exits non-zero when a hash differs (used by the regression tests).
@@ -58,6 +59,10 @@ int main(int argc, char** argv) {
   const char* expectFrame = NULL;
   const char* coveragePath = NULL;
   const char* dumpWram = NULL;
+  const char* traceOut = NULL;
+  long traceFrame = -1;
+  long traceCount = 1;
+  FILE* trace = NULL;
   long frames = 600;
   long shotsEvery = 0;
   for(int i = 1; i < argc; i++) {
@@ -72,8 +77,11 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--expect-frame") == 0 && next) expectFrame = argv[++i];
     else if(strcmp(argv[i], "--coverage") == 0 && next) coveragePath = argv[++i];
     else if(strcmp(argv[i], "--dump-wram") == 0 && next) dumpWram = argv[++i];
+    else if(strcmp(argv[i], "--trace-frame") == 0 && next) traceFrame = strtol(argv[++i], NULL, 10);
+    else if(strcmp(argv[i], "--trace-out") == 0 && next) traceOut = argv[++i];
+    else if(strcmp(argv[i], "--trace-count") == 0 && next) traceCount = strtol(argv[++i], NULL, 10);
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE]\n", argv[0]);
       return 2;
     }
   }
@@ -117,7 +125,17 @@ int main(int argc, char** argv) {
     }
     tg_game_set_input(game, 1, script.state[1]);
     tg_game_set_input(game, 2, script.state[2]);
+    if(frame == traceFrame && traceOut) {
+      trace = fopen(traceOut, "w");
+      tg_game_set_trace(game, trace);
+    }
+    if(trace) fprintf(trace, "# frame %ld\n", frame);
     tg_game_run_frame(game);
+    if(trace && frame == traceFrame + traceCount - 1) {
+      tg_game_set_trace(game, NULL);
+      fclose(trace);
+      trace = NULL;
+    }
     if(shotsEvery > 0 && shotsDir && (frame + 1) % shotsEvery == 0) {
       char path[1024];
       snprintf(path, sizeof(path), "%s/frame%06ld.ppm", shotsDir, frame + 1);

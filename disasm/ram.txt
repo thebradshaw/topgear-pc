@@ -5,7 +5,7 @@
 0004 IrqTrampoline ; RTI in menus, JML $00:EC5B in races
 0008 MenuFrameCounter8/Race08 ; menus: incremented every NMI; races: a code pointer ($B75A at start)
 000A MenuJoy1Held/RaceIrqHandler ; races: routine the raster IRQ calls via JSR ($000A)
-000C MenuJoy2Held
+000C MenuJoy2Held/RaceSyncFlag ; races: set by RaceSyncWait, cleared from the raster IRQ chain
 000E MenuJoy1Pressed ; newly pressed buttons, accumulated until the game clears them
 0010 MenuJoy2Pressed/RaceJoy1Held
 0012 RaceJoy2Held
@@ -14,6 +14,8 @@
 0023 DecompSrc ; 24-bit source pointer for DecompressBegin/Next
 0042 MenuInidispShadow ; written to INIDISP ($2100) every menu NMI
 0424 MenuNmiDmaChannels ; DMA channel mask started by the menu NMI handler, then cleared
+0C12 RaceHdmaColorTable ; indirect HDMA table for CGRAM channels 0-4
+0E54 RaceHdmaWindowTable ; HDMA table for window edges WH0-WH3
 1F06 CarTypeIndex
 1F86 Player1Name ; 8 characters, blank = spaces
 1FA3 Player2Name

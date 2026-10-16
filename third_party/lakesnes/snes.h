@@ -62,6 +62,8 @@ struct Snes {
   // topgear-pc: called for every A-bus read by the CPU or DMA (NULL when unused)
   void (*readHook)(void* ctx, uint32_t adr);
   void* readHookCtx;
+  // topgear-pc: called for every A-bus write by the CPU or DMA (NULL when unused)
+  void (*writeHook)(void* ctx, uint32_t adr, uint8_t val);
 };
 
 Snes* snes_init(void);

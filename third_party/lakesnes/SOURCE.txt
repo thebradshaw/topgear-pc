@@ -4,4 +4,4 @@ MIT licensed; see LICENSE.txt.
 
 Local changes (marked "topgear-pc" in the source):
 - cpu.h/cpu.c: optional traceHook called before each opcode fetch.
-- snes.h/snes.c: optional readHook called for every A-bus read.
+- snes.h/snes.c: optional readHook and writeHook called for every A-bus read and write.

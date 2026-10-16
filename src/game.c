@@ -1,5 +1,6 @@
 #include "game.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,6 +11,7 @@ struct TgGame {
   Snes* snes;
   uint8_t rom[TG_ROM_SIZE];
   TgCoverage* coverage;
+  FILE* trace;
 };
 
 TgGame* tg_game_create(const TgRom* rom) {
@@ -65,20 +67,43 @@ static void traceOpcode(void* ctx, Cpu* cpu) {
   uint32_t adr = ((uint32_t) cpu->k << 16) | cpu->pc;
   uint8_t bytes[4];
   for(int i = 0; i < 4; i++) bytes[i] = peek(game, (adr & 0xff0000) | ((adr + i) & 0xffff));
-  tg_coverage_on_opcode(game->coverage, adr, bytes, cpu->mf, cpu->xf, cpu->e, cpu->db, cpu->dp);
+  if(game->coverage) tg_coverage_on_opcode(game->coverage, adr, bytes, cpu->mf, cpu->xf, cpu->e, cpu->db, cpu->dp);
+  if(game->trace) {
+    int len = tg_w65816_length(bytes[0], cpu->mf, cpu->xf);
+    fprintf(game->trace, "%06X ", adr);
+    for(int i = 0; i < 4; i++) fprintf(game->trace, i < len ? "%02X" : "  ", bytes[i]);
+    fprintf(game->trace, " A=%04X X=%04X Y=%04X S=%04X D=%04X DB=%02X %c%c V=%d\n", cpu->a, cpu->x, cpu->y,
+      cpu->sp, cpu->dp, cpu->db, cpu->mf ? 'm' : 'M', cpu->xf ? 'x' : 'X', game->snes->vPos);
+  }
 }
 
 static void traceRead(void* ctx, uint32_t adr) {
   TgGame* game = ctx;
-  tg_coverage_on_read(game->coverage, adr);
+  if(game->coverage) tg_coverage_on_read(game->coverage, adr);
+}
+
+static void traceWrite(void* ctx, uint32_t adr, uint8_t val) {
+  TgGame* game = ctx;
+  if(game->trace) fprintf(game->trace, "  W %06X=%02X\n", adr, val);
+}
+
+static void updateHooks(TgGame* game) {
+  bool any = game->coverage || game->trace;
+  game->snes->cpu->traceHook = any ? traceOpcode : NULL;
+  game->snes->cpu->traceCtx = game;
+  game->snes->readHook = game->coverage ? traceRead : NULL;
+  game->snes->writeHook = game->trace ? traceWrite : NULL;
+  game->snes->readHookCtx = game;
 }
 
 void tg_game_set_coverage(TgGame* game, TgCoverage* cov) {
   game->coverage = cov;
-  game->snes->cpu->traceHook = cov ? traceOpcode : NULL;
-  game->snes->cpu->traceCtx = game;
-  game->snes->readHook = cov ? traceRead : NULL;
-  game->snes->readHookCtx = game;
+  updateHooks(game);
+}
+
+void tg_game_set_trace(TgGame* game, void* file) {
+  game->trace = file;
+  updateHooks(game);
 }
 
 const uint8_t* tg_game_wram(const TgGame* game) {

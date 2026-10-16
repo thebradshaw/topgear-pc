@@ -30,6 +30,7 @@ Snes* snes_init(void) {
   Snes* snes = malloc(sizeof(Snes));
   snes->readHook = NULL;
   snes->readHookCtx = NULL;
+  snes->writeHook = NULL;
   snes->cpu = cpu_init(snes, snes_cpuRead, snes_cpuWrite, snes_cpuIdle);
   snes->apu = apu_init(snes);
   snes->dma = dma_init(snes);
@@ -470,6 +471,7 @@ static uint8_t snes_rread(Snes* snes, uint32_t adr) {
 }
 
 void snes_write(Snes* snes, uint32_t adr, uint8_t val) {
+  if(snes->writeHook) snes->writeHook(snes->readHookCtx, adr, val);
   snes->openBus = val;
   uint8_t bank = adr >> 16;
   adr &= 0xffff;

@@ -16,3 +16,5 @@
 00:EC1A RaceNmiHandler ; races: reads both joypads only
 00:EC5B RaceIrqHandler ; races: raster IRQ, dispatches through JSR ($000A)
 01:8000 RaceViewPostProcess ; called after each RaceRenderView (tentative)
+00:B639 RaceSetupHdma ; seven HDMA channels: CGRAM colours (0-4), BG3 scroll (5), window edges (6)
+00:EC0E RaceSyncWait ; sets $0C = ~A, then spins until a raster IRQ handler clears it; this paces the race to one update every three frames
