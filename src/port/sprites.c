@@ -10,10 +10,11 @@
 #include "port.h"
 #include "ppu.h"
 
-// Smooth scaling (an enhancement, off by default): each object's sprites are tagged with
-// a scale about the object's position, and the PPU draws them scaled (ppu.h), so objects
-// grow smoothly instead of jumping between frames (smooth_scale below). Only drawing
-// changes: the OAM buffers hold other frames, but nothing in the game reads them.
+// Smooth scaling (an enhancement, off by default): the OAM entries of each object are
+// tagged with a record of the object's largest art and its exact scale, and the PPU draws
+// that, filtered, in their place (ppu.h, ppu_smooth.c). Objects then grow smoothly instead
+// of jumping between the game's few pre-drawn sizes. The OAM buffers stay as the original
+// builds them.
 bool tg_port_smooth_sprites;
 uint16_t tg_port_obj_tags[0x2000];  // by low RAM address of an OAM buffer entry
 PpuObjScale tg_port_obj_scales[0x1000];
@@ -236,38 +237,69 @@ enum { DRAWN, FULL, FULL_IN_GROUP, SPECIAL };
 
 static uint16_t oam_base(TgRegs* r, const Variant* v) { return (uint16_t) oam_adr(r, v, 0); }
 
-// Smooth scaling draws each object with the next smaller frame than the original's,
-// enlarged by up to about 1.35 so it grows continuously and reaches the original frame's
-// size where the original switches to it. Enlarging keeps every pixel of the art, where
-// shrinking would drop rows and columns. Sets *frame to the frame base to use; returns the
-// scale, or 0 to draw as usual.
-static float smooth_scale(TgRegs* r, uint16_t key, uint16_t* frame) {
-  *frame = abs8(r, (uint16_t) (0xA94D + key));
-  if(key < 0x80 || key >= 0x3F0) return 0;
-  uint16_t start = key;  // the nearest key drawn with the frame used
-  if(*frame >= 2) {
-    *frame = (uint16_t) (*frame - 2);
-    while(start < 0x3F0 && abs8(r, (uint16_t) (0xA94D + start)) != *frame) start++;
-  } else {
-    while(start > 0x80 && abs8(r, (uint16_t) (0xA94D + start - 1)) == *frame) start--;
+// The art of the sprite definition for frame word w (as $1B86) into rec, scaled by f about
+// the origin. False if it has no parts or uses other tiles than the frame the game draws
+// (only the drawn frame's tiles are sure to be in VRAM).
+static bool record_art(TgRegs* r, const Variant* v, uint16_t w, uint16_t drawn_tiles, PpuObjScale* rec) {
+  uint16_t def = abs16(r, (uint16_t) (0xAE15 + w));
+  uint16_t id = abs16(r, (uint16_t) (0xB245 + def));
+  if(id != drawn_tiles) return false;
+  uint16_t tiles = abs16(r, (uint16_t) (v->tiles + id));
+  uint16_t palette = ram16((uint16_t) (0x1B9C + abs16(r, (uint16_t) (0xB245 + def + 4))));
+  uint16_t x = (uint16_t) (def + 6);
+  rec->count = 0;
+  for(int list = 0; list < 2; list++) {
+    uint16_t base = list == 0 ? 0xB245 : 0xB247;
+    uint16_t n = abs16(r, (uint16_t) (base + x));
+    for(uint16_t i = 0; i < n; i++) {
+      uint16_t e = (uint16_t) (base + 2 + x + i * 6);
+      if(rec->count == PPU_OBJ_PARTS) return false;
+      PpuObjPart* p = &rec->parts[rec->count++];
+      p->dx = (int16_t) abs16(r, e);
+      p->dy = (int16_t) abs16(r, (uint16_t) (e + 2));
+      p->attr = (uint16_t) (abs16(r, (uint16_t) (e + 4)) + tiles + palette);
+      p->big = list == 0;  // the first list is 16x16 parts, the second 8x8
+    }
+    x = (uint16_t) (x + n * 6);
   }
-  // Times the square root of the step between frames (about 1.35), so objects keep the
-  // original's size on average rather than its smallest.
-  float f = size_curve(key) / size_curve(start) * 1.16f;
-  return f > 0.2f && f < 1.8f ? f : 0;
+  return rec->count != 0;
 }
 
-// Draws the sprite at $1B88/$1B8A, tagging its OAM entries with scale f about that point.
-static bool add_sprite_scaled(TgRegs* r, const Variant* v, float f) {
+// Draws the sprite at $1B88/$1B8A (frame word $1B86) as the game does, and with smooth
+// scaling tags its OAM entries with the object's largest art (frame base 14) at the exact
+// size for its key, or its own frame shrunk from the size where the game starts using it.
+static bool add_sprite_smooth(TgRegs* r, const Variant* v, uint16_t key) {
   uint16_t y0 = ram16(0x1B92);
   float ax = (float) (int16_t) ram16(0x1B88), ay = (float) (int16_t) ram16(0x1B8A) + v->y_add;
+  uint16_t word = ram16(0x1B86);
   bool ok = add_sprite(r, v);
-  if(f != 0) {
-    uint16_t base = oam_base(r, v), id = g_next_scale;
-    g_next_scale = (uint16_t) (g_next_scale + 1 < 0x1000 ? g_next_scale + 1 : 1);
-    tg_port_obj_scales[id] = (PpuObjScale) { ax, ay, f };
-    for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) tg_port_obj_tags[(uint16_t) (base + y) & 0x1FFF] = id;
+  if(!tg_port_smooth_sprites || g_skip_scale || key < 0x80 || key >= 0x3F0 || ram16(0x1B92) == y0) return ok;
+  uint16_t id = g_next_scale;
+  PpuObjScale* rec = &tg_port_obj_scales[id];
+  uint16_t drawn_tiles = abs16(r, (uint16_t) (0xB245 + abs16(r, (uint16_t) (0xAE15 + word))));
+  uint16_t frame = word & 0x000F;
+  // The size each frame is drawn at: where the game starts using it, the nearest key.
+  uint16_t big = (uint16_t) ((word & ~0x000F) | 0x000E);
+  float f;
+  if(record_art(r, v, big, drawn_tiles, rec)) {
+    f = size_curve(key) / size_curve(0x80) * 1.16f;  // the original's size on average
+  } else if(record_art(r, v, word, drawn_tiles, rec)) {
+    uint16_t start = key;
+    while(start > 0x80 && abs8(r, (uint16_t) (0xA94D + start - 1)) == frame) start--;
+    f = size_curve(key) / size_curve(start);
+  } else {
+    return ok;
   }
+  if(!(f > 0.02f && f <= 1.2f)) return ok;
+  rec->ax = ax;
+  rec->ay = ay;
+  rec->f = f;
+  uint16_t bottom = v->bottom_dp ? ram16((uint16_t) (r->d + v->bottom_dp)) : 0x0068;
+  rec->clipTop = v->y_add;
+  rec->clipBottom = (int16_t) (bottom + v->y_add);
+  g_next_scale = (uint16_t) (g_next_scale + 1 < 0x1000 ? g_next_scale + 1 : 1);
+  uint16_t base = oam_base(r, v);
+  for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) tg_port_obj_tags[(uint16_t) (base + y) & 0x1FFF] = id;
   return ok;
 }
 
@@ -278,10 +310,7 @@ static bool add_sprite_scaled(TgRegs* r, const Variant* v, float f) {
 // also set, a routine that draws the object (SPECIAL: the caller runs it).
 static int draw_object(TgRegs* r, const Variant* v) {
   uint16_t key = ram16(0x1B7A);
-  uint16_t frame = abs8(r, (uint16_t) (0xA94D + key));
-  float f = tg_port_smooth_sprites && !g_skip_scale ? smooth_scale(r, key, &frame) : 0;
-  if(f == 0) frame = abs8(r, (uint16_t) (0xA94D + key));
-  ram16_set(0x1B7C, frame);
+  ram16_set(0x1B7C, abs8(r, (uint16_t) (0xA94D + key)));
   uint16_t size = abs8(r, (uint16_t) (0xA55B + key));
   if(size >= 0xC0) size = 0;
   ram16_set(0x1B7E, (uint16_t) (size + 9));
@@ -291,7 +320,7 @@ static int draw_object(TgRegs* r, const Variant* v) {
     uint16_t x = ram16(0x1B88);
     ram16_set(0x1B88, (word & 0x0100) ? (uint16_t) (x - d) : (uint16_t) (x + d));
     ram16_set(0x1B86, (uint16_t) ((((uint16_t) (swap16(word) << 3)) & 0x07F0) + ram16(0x1B7C)));
-    return add_sprite_scaled(r, v, f) ? DRAWN : FULL;
+    return add_sprite_smooth(r, v, key) ? DRAWN : FULL;
   }
   if((word & 0x7FFE) >= 0x4000) return SPECIAL;
   ram16_set(0x1B84, ram16(0x1B88));
@@ -306,7 +335,7 @@ static int draw_object(TgRegs* r, const Variant* v) {
     uint16_t base = ram16(0x1B84);
     ram16_set(0x1B88, (a & 0x8000) ? (uint16_t) (base - d) : (uint16_t) (base + d));
     ram16_set(0x1B86, (uint16_t) (abs16(r, (uint16_t) (0xAE07 + x)) + ram16(0x1B7C)));
-    if(!add_sprite_scaled(r, v, f)) return FULL_IN_GROUP;
+    if(!add_sprite_smooth(r, v, key)) return FULL_IN_GROUP;
     ram16_set(0x1B80, (uint16_t) (ram16(0x1B80) - 1));
   } while(ram16(0x1B80) != 0);
   return DRAWN;

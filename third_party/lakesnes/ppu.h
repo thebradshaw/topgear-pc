@@ -28,11 +28,29 @@ typedef struct Layer {
   bool subScreenWindowed;
 } Layer;
 
-// Top Gear port enhancement: sprites drawn scaled by f about the point (ax, ay), for
-// smooth scaling of objects (f == 0: drawn as usual).
+// Top Gear port enhancement: an object drawn smoothly scaled from its own art, filtered,
+// in place of the OAM entries tagged with it (ppu_smooth.c).
+#define PPU_OBJ_PARTS 32
+typedef struct PpuObjPart {
+  int16_t dx, dy;  // from the origin, in the art's pixels
+  uint16_t attr;   // tile, palette, priority and flips, as in OAM
+  uint8_t big;     // the large sprite size
+} PpuObjPart;
+
 typedef struct PpuObjScale {
-  float ax, ay, f;
+  float ax, ay, f;              // the art's origin on screen (OAM coordinates), and its scale
+  int16_t clipTop, clipBottom;  // the lines it may cover
+  uint8_t count;
+  PpuObjPart parts[PPU_OBJ_PARTS];  // the first on top
 } PpuObjScale;
+
+typedef struct PpuObjBitmap {
+  uint16_t tag;
+  uint32_t frame;
+  int x0, y0, w, h;
+  float a[96 * 96], r[96 * 96], g[96 * 96], b[96 * 96];
+  uint8_t index[96 * 96];
+} PpuObjBitmap;
 
 typedef struct WindowLayer {
   bool window1enabled;
@@ -70,11 +88,14 @@ struct Ppu {
   uint16_t objTileAdr1;
   uint16_t objTileAdr2;
   uint8_t objSize;
-  // when objScaleTags is set, each OAM entry DMA'd from low RAM takes the scale
-  // objScales[tag] for the tag at its source address (tag 0: not scaled)
+  // Top Gear port: when objScaleTags is set, each OAM entry DMA'd from low RAM takes the
+  // tag at its source address (0: drawn as usual); entries with a tag show the object
+  // objScales[tag] instead, drawn at the first of them
   const uint16_t* objScaleTags;
   const PpuObjScale* objScales;
-  PpuObjScale objScale[128];
+  uint16_t objTag[128];
+  float objAlpha[256], objR[256], objG[256], objB[256];  // filtered object pixels
+  PpuObjBitmap* objBitmaps;  // a small cache, allocated when first needed
   uint8_t objPixelBuffer[256]; // line buffers
   uint8_t objPriorityBuffer[256];
   bool timeOver;
@@ -157,5 +178,7 @@ void ppu_putPixels(Ppu* ppu, uint8_t* pixels);
 void ppu_setPixelOutputFormat(Ppu* ppu, int pixelOutputFormat);
 
 void ppu_tagObj(Ppu* ppu, uint8_t bank, uint16_t adr);
+int ppu_smoothOnLine(Ppu* ppu, uint8_t index, int line);
+void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line);
 
 #endif
