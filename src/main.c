@@ -89,41 +89,94 @@ static bool findRom(const char* romArg, TgRom* rom, char* message, size_t messag
   return false;
 }
 
-static uint16_t keyToButton(SDL_Keycode key) {
-  switch(key) {
-    case SDLK_UP: return TG_BTN_UP;
-    case SDLK_DOWN: return TG_BTN_DOWN;
-    case SDLK_LEFT: return TG_BTN_LEFT;
-    case SDLK_RIGHT: return TG_BTN_RIGHT;
-    case SDLK_Z: return TG_BTN_B;
-    case SDLK_X: return TG_BTN_A;
-    case SDLK_A: return TG_BTN_Y;
-    case SDLK_S: return TG_BTN_X;
-    case SDLK_Q: return TG_BTN_L;
-    case SDLK_W: return TG_BTN_R;
-    case SDLK_RETURN:
-    case SDLK_KP_ENTER: return TG_BTN_START;
-    case SDLK_RSHIFT: return TG_BTN_SELECT;
+// Controls: controls.txt next to topgear.exe maps keys and gamepad buttons to SNES
+// buttons (written with the defaults when missing).
+static const char* kButtonNames[12] = {"B", "Y", "SELECT", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "X", "L", "R"};
+
+typedef struct Binding {
+  bool pad;
+  int code;  // SDL_Keycode, or SDL_GamepadButton
+  uint16_t button;
+} Binding;
+
+static Binding bindings[96];
+static int bindingCount;
+
+static const char* kDefaultControls =
+  "# Top Gear controls: one binding per line, <SNES button> key <key name> or\n"
+  "# <SNES button> pad <gamepad button>. A button can have several bindings.\n"
+  "# SNES buttons: B Y SELECT START UP DOWN LEFT RIGHT A X L R\n"
+  "# Key names as SDL writes them (Z, Return, Right Shift, Keypad Enter, Space, ...).\n"
+  "# Gamepad buttons by position: a (bottom) b (right) x (left) y (top) back start\n"
+  "# leftshoulder rightshoulder dpup dpdown dpleft dpright. The left stick steers and the\n"
+  "# triggers work as L and R. Delete this file to get the defaults back.\n"
+  "UP key Up\nDOWN key Down\nLEFT key Left\nRIGHT key Right\n"
+  "B key Z\nA key X\nY key A\nX key S\nL key Q\nR key W\n"
+  "START key Return\nSTART key Keypad Enter\nSELECT key Right Shift\n"
+  "B pad a\nA pad b\nY pad x\nX pad y\nL pad leftshoulder\nR pad rightshoulder\n"
+  "START pad start\nSELECT pad back\nUP pad dpup\nDOWN pad dpdown\nLEFT pad dpleft\nRIGHT pad dpright\n";
+
+static void parseControls(const char* text) {
+  bindingCount = 0;
+  while(*text) {
+    const char* end = strchr(text, '\n');
+    size_t n = end ? (size_t) (end - text) : strlen(text);
+    char line[128];
+    if(n >= sizeof(line)) n = sizeof(line) - 1;
+    memcpy(line, text, n);
+    line[n] = 0;
+    text += end ? n + 1 : n;
+    while(n > 0 && (line[n - 1] == '\r' || line[n - 1] == ' ')) line[--n] = 0;
+    char name[16], device[8];
+    int used = 0;
+    if(line[0] == '#' || sscanf(line, "%15s %7s %n", name, device, &used) < 2 || used == 0) continue;
+    const char* what = line + used;
+    int b = -1;
+    for(int i = 0; i < 12; i++) if(SDL_strcasecmp(name, kButtonNames[i]) == 0) b = i;
+    if(b < 0 || bindingCount == SDL_arraysize(bindings)) continue;
+    Binding bind = {false, 0, (uint16_t) (1 << b)};
+    if(SDL_strcasecmp(device, "key") == 0) {
+      bind.code = (int) SDL_GetKeyFromName(what);
+      if(bind.code == SDLK_UNKNOWN) continue;
+    } else if(SDL_strcasecmp(device, "pad") == 0) {
+      bind.pad = true;
+      bind.code = SDL_GetGamepadButtonFromString(what);
+      if(bind.code == SDL_GAMEPAD_BUTTON_INVALID) continue;
+    } else {
+      continue;
+    }
+    bindings[bindingCount++] = bind;
   }
-  return 0;
+}
+
+static void loadControls(void) {
+  const char* base = SDL_GetBasePath();
+  char path[2048];
+  snprintf(path, sizeof(path), "%scontrols.txt", base ? base : "");
+  size_t size;
+  char* text = SDL_LoadFile(path, &size);
+  if(text) {
+    parseControls(text);
+    SDL_free(text);
+    if(bindingCount > 0) return;
+  } else {
+    SDL_SaveFile(path, kDefaultControls, strlen(kDefaultControls));
+  }
+  parseControls(kDefaultControls);
+}
+
+static uint16_t keyToButton(SDL_Keycode key) {
+  uint16_t b = 0;
+  for(int i = 0; i < bindingCount; i++) if(!bindings[i].pad && bindings[i].code == (int) key) b |= bindings[i].button;
+  return b;
 }
 
 static uint16_t padButtons(SDL_Gamepad* pad) {
   if(pad == NULL) return 0;
   uint16_t b = 0;
-  // Positional mapping: the SNES layout matches an Xbox/PlayStation pad by position.
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH)) b |= TG_BTN_B;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST)) b |= TG_BTN_A;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST)) b |= TG_BTN_Y;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH)) b |= TG_BTN_X;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)) b |= TG_BTN_L;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)) b |= TG_BTN_R;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_START)) b |= TG_BTN_START;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_BACK)) b |= TG_BTN_SELECT;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_UP)) b |= TG_BTN_UP;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) b |= TG_BTN_DOWN;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT)) b |= TG_BTN_LEFT;
-  if(SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) b |= TG_BTN_RIGHT;
+  for(int i = 0; i < bindingCount; i++) {
+    if(bindings[i].pad && SDL_GetGamepadButton(pad, (SDL_GamepadButton) bindings[i].code)) b |= bindings[i].button;
+  }
   const Sint16 dead = 16000;
   Sint16 x = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
   Sint16 y = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
@@ -375,6 +428,7 @@ int main(int argc, char** argv) {
   if(record) startRecording();
 
   app.aspect = ASPECT_4_3;
+  loadControls();
   if(!SDL_CreateWindowAndRenderer("Top Gear", 1024, 768, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &app.window, &app.renderer)) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", SDL_GetError(), NULL);
     return 1;

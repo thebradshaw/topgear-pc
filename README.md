@@ -24,7 +24,7 @@ Put `Top Gear (USA).sfc` next to `topgear.exe`, or drag the ROM onto `topgear.ex
 | L / R | Q / W | Shoulders or triggers |
 | Start / Select | Enter / Right Shift | Start / Back |
 
-The first gamepad is player 1 and the second is player 2.
+The first gamepad is player 1 and the second is player 2. To change the controls, edit `controls.txt` next to `topgear.exe` (written with these defaults on first run).
 
 | Key | Function |
 |---|---|
