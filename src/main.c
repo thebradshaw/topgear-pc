@@ -25,6 +25,10 @@
 
 typedef enum { ASPECT_4_3, ASPECT_8_7, ASPECT_COUNT } AspectMode;
 static const char* aspectNames[] = {"4:3 (TV)", "8:7 (square pixels)"};
+// Display filters (F4): sharp pixels, sharp-bilinear (pixels scaled up by a whole number,
+// then smoothly to the window, so they stay crisp without uneven widths), or scanlines.
+typedef enum { FILTER_SHARP, FILTER_SMOOTH, FILTER_SCANLINES, FILTER_COUNT } FilterMode;
+static const char* filterNames[] = {"sharp", "sharp-bilinear", "scanlines"};
 
 static struct {
   SDL_Window* window;
@@ -36,6 +40,9 @@ static struct {
   bool fullscreen;
   bool integerScale;
   AspectMode aspect;
+  FilterMode filter;
+  SDL_Texture* upscaled;  // sharp-bilinear's intermediate picture
+  int upscaledFactor;
   uint16_t keys[3];  // keyboard state per player
   uint32_t frame;  // frames run since power-on
   // recording
@@ -150,7 +157,8 @@ static void closePad(SDL_JoystickID id) {
 
 static void updateTitle(void) {
   char title[128];
-  snprintf(title, sizeof(title), "Top Gear  |  %s%s%s%s", aspectNames[app.aspect], app.integerScale ? ", integer scale" : "",
+  snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
+           app.integerScale ? ", integer scale" : "",
            app.smooth && !app.original ? ", smooth motion" : "", app.scaling ? ", smooth scaling" : "");
   SDL_SetWindowTitle(app.window, title);
 }
@@ -172,7 +180,38 @@ static void present(void) {
   SDL_FRect src = {0, 16, TG_FB_WIDTH, SNES_H * 2};
   SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
   SDL_RenderClear(app.renderer);
-  SDL_RenderTexture(app.renderer, app.texture, &src, &dst);
+  if(app.filter == FILTER_SMOOTH) {
+    int k = (int) SDL_ceil(SDL_max(dst.w / SNES_W, dst.h / SNES_H));
+    if(k < 1) k = 1;
+    if(k > 8) k = 8;
+    if(app.upscaled == NULL || app.upscaledFactor != k) {
+      if(app.upscaled) SDL_DestroyTexture(app.upscaled);
+      app.upscaled = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_TARGET, SNES_W * k, SNES_H * k);
+      if(app.upscaled) SDL_SetTextureScaleMode(app.upscaled, SDL_SCALEMODE_LINEAR);
+      app.upscaledFactor = k;
+    }
+    if(app.upscaled) {
+      SDL_SetRenderTarget(app.renderer, app.upscaled);
+      SDL_RenderTexture(app.renderer, app.texture, &src, NULL);
+      SDL_SetRenderTarget(app.renderer, NULL);
+      SDL_RenderTexture(app.renderer, app.upscaled, NULL, &dst);
+    } else {
+      SDL_RenderTexture(app.renderer, app.texture, &src, &dst);
+    }
+  } else {
+    SDL_RenderTexture(app.renderer, app.texture, &src, &dst);
+  }
+  if(app.filter == FILTER_SCANLINES && dst.h >= SNES_H * 2) {
+    // Darken the lower part of every line, as the gaps between a CRT's scanlines.
+    float line = dst.h / SNES_H;
+    SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 96);
+    for(int y = 0; y < SNES_H; y++) {
+      SDL_FRect r = {dst.x, dst.y + line * y + line * 0.6f, dst.w, line * 0.4f};
+      SDL_RenderFillRect(app.renderer, &r);
+    }
+    SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_NONE);
+  }
   SDL_RenderPresent(app.renderer);
 }
 
@@ -299,6 +338,10 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--original") == 0) original = true;
     else if(strcmp(argv[i], "--smooth") == 0) app.smooth = true;
     else if(strcmp(argv[i], "--smooth-scaling") == 0) app.scaling = true;
+    else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
+      i++;
+      for(int f = 0; f < FILTER_COUNT; f++) if(strcmp(argv[i], filterNames[f]) == 0) app.filter = f;
+    }
     else if(strcmp(argv[i], "--replay") == 0 && i + 1 < argc) replayPath = argv[++i];
     else romArg = argv[i];
   }
@@ -371,6 +414,7 @@ int main(int argc, char** argv) {
             }
             if(e.key.key == SDLK_F2) { app.aspect = (app.aspect + 1) % ASPECT_COUNT; updateTitle(); break; }
             if(e.key.key == SDLK_F3) { app.integerScale = !app.integerScale; updateTitle(); break; }
+            if(e.key.key == SDLK_F4) { app.filter = (app.filter + 1) % FILTER_COUNT; updateTitle(); break; }
             if(e.key.key == SDLK_F5) { app.resetRequested = true; break; }
             if(e.key.key == SDLK_F6 && !app.replaying) { app.smooth = !app.smooth; updateTitle(); break; }
             if(e.key.key == SDLK_F7 && !app.replaying) { app.scaling = !app.scaling; updateTitle(); break; }

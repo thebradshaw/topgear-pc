@@ -32,6 +32,7 @@ The first gamepad is player 1 and the second is player 2.
 | Esc | Leave fullscreen |
 | F2 | Aspect: 4:3 TV or 8:7 square pixels |
 | F3 | Integer scaling |
+| F4 | Display filter: sharp pixels, sharp-bilinear (smooth edges without uneven pixels) or scanlines (also `--filter sharp-bilinear` or `--filter scanlines`) |
 | F5 | Reset |
 | F6 | Smooth motion: the race updates every frame instead of every third (off by default; also `--smooth`) |
 | F7 | Smooth scaling: signs, trees and cars grow steadily as they approach instead of jumping between sprite sizes (off by default; also `--smooth-scaling`) |
