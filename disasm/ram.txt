@@ -13,10 +13,26 @@
 0016 RaceJoy2Pressed
 0023 DecompSrc ; 24-bit source pointer for DecompressBegin/Next
 0042 MenuInidispShadow ; written to INIDISP ($2100) every menu NMI
+0046 RaceView1Pos ; camera track position for the top view, eases toward RaceP1TrackPos
+0059 RaceView2Pos ; camera track position for the bottom view, eases toward RaceP2TrackPos
+0200 RaceCars ; car records, 18 bytes each, linked through the ROM table at $00:A3C6
 0424 MenuNmiDmaChannels ; DMA channel mask started by the menu NMI handler, then cleared
 0C12 RaceHdmaColorTable ; indirect HDMA table for CGRAM channels 0-4
 0E54 RaceHdmaWindowTable ; HDMA table for window edges WH0-WH3
+1E5A RaceP1Speed ; also the camera step during RaceIntro
+1E5C RaceP2Speed ; (inferred from symmetry with player 1)
+1E5E RaceP1Rpm
+1E60 RaceP2Rpm
+1E72 RaceP1Gear ; 0-4
+1E74 RaceP2Gear
+1E90 RaceFramesElapsed ; video frames since the last race update (normally 3)
+1ED7 RaceP1TrackPos ; high byte indexes per-segment tables at $7E:3E00/$7E:4000/$7E:4C00
+1EDA RaceP2TrackPos
+1EE8 RaceP1GearTableOffset ; selects the car's rows in the gear tables at $05:9597, $05:99DB, $05:9A15
 1F06 CarTypeIndex
+1F76 RaceP1AccelButton ; button mask from the control setup
+1F7A RaceP1ShiftUpButton
+1F7C RaceP1ShiftDownButton
 1F86 Player1Name ; 8 characters, blank = spaces
 1FA3 Player2Name
 1FF6 WarmBootFlag

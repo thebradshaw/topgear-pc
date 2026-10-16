@@ -46,3 +46,15 @@ A race advances once every three video frames (20 Hz). Tracing frames 5000-5060 
 So the road surface, verges and stripes are drawn with per-line window edges and palette changes rather than with tiles. The RAM routine at $7E:2000 does the perspective maths (using the PPU multiplier at $211B/$211C and the CPU divider at $4204-$4206) and writes these tables: it writes heavily to $7E:0600-$0EFF and $7E:1800-$1AFF and to its own operands.
 
 `tg_headless --trace-frame N --trace-count K --trace-out FILE` writes every instruction and bus write for those frames.
+
+## Race main loop and driving
+
+After `RaceSetup`, a race runs three stages, all paced by `RaceSyncWait`:
+
+1. `RaceIntro` ($00:8504): each view's camera position ($46 top, $59 bottom) eases toward its car's track position ($1ED7, $1EDA) in steps of at most 12, rendering a frame each time.
+2. `RaceCountdown` ($00:8636): four start-light steps of 60 frames. `RaceRevEngines` lets players rev (RPM in $1E5E/$1E60 rises by $80 per frame while accelerate is held, falls by $20 otherwise).
+3. `RaceMainLoop` ($00:86C3): per update, in order: `F00_DA75`, `F00_CE61`, `F00_90CC`, `RaceDrivePlayers` ($05:D2E0), camera follow, `RaceMoveCars` ($00:A175), `F00_ABFC`, then `jsl $7E2000` (render), `F00_9381`, `RaceViewPostProcess`, `F00_8910`, `F00_B33B`, `F00_B18C`.
+
+Every per-update step scales by `RaceFramesElapsed` ($1E90), the number of video frames since the previous update, so the game logic is written for a variable step even though in practice it is always 3. For the C port this means the step must be reproduced exactly; for the high-frame-rate option it means the logic is already structured around elapsed time, which helps interpolation.
+
+`RaceDrivePlayers` handles gears (manual buttons $1F7A/$1F7C, or automatic using per-car thresholds at $05:99DB/$05:9A15), speed ($1E5A/$1E5C) and the slope of the track under the car (table $7E:4000, indexed by the high byte of the track position). Per-car tables are selected by $1EE8. Cars live in 18-byte records at $0200, walked by `RaceMoveCars` with DP set to $0200.

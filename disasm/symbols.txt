@@ -18,3 +18,10 @@
 01:8000 RaceViewPostProcess ; called after each RaceRenderView (tentative)
 00:B639 RaceSetupHdma ; seven HDMA channels: CGRAM colours (0-4), BG3 scroll (5), window edges (6)
 00:EC0E RaceSyncWait ; sets $0C = ~A, then spins until a raster IRQ handler clears it; this paces the race to one update every three frames
+00:8504 RaceIntro ; waits for $51, then pans each view's camera onto its car
+00:8636 RaceCountdown ; start lights: four steps of 60 frames, players may rev engines
+00:86C3 RaceMainLoop ; one pass per race update (every three frames)
+00:88A1 RaceRevEngines ; raises RPM while the accelerate button is held, decays it otherwise
+00:A175 RaceMoveCars ; walks the car list at $0200 (DP=$0200), adds speed to track position
+05:D2E0 RaceDrivePlayers ; player 1 gears (manual or automatic), speed and hills from RaceJoy1, then player 2 from $05:DB52
+05:DB52 RaceDrivePlayer2 ; same for player 2; jumps to $05:ED92 when $1F04 is clear (computer-driven second car, tentative)
