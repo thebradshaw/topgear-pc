@@ -117,6 +117,7 @@ typedef struct Binding {
   bool pad;
   int code;  // SDL_Keycode, or SDL_GamepadButton
   uint16_t button;
+  int player;  // keys: 1 or 2 (gamepads: each pad is its own player)
 } Binding;
 
 static Binding bindings[96];
@@ -129,7 +130,8 @@ static const char* kDefaultControls =
   "# Key names as SDL writes them (Z, Return, Right Shift, Keypad Enter, Space, ...).\n"
   "# Gamepad buttons by position: a (bottom) b (right) x (left) y (top) back start\n"
   "# leftshoulder rightshoulder dpup dpdown dpleft dpright. The left stick steers and the\n"
-  "# triggers work as L and R. Delete this file to get the defaults back.\n"
+  "# triggers work as L and R. Start a line with P2 for player 2's keys (P2 B key N).\n"
+  "# Delete this file to get the defaults back.\n"
   "UP key Up\nDOWN key Down\nLEFT key Left\nRIGHT key Right\n"
   "B key Z\nA key X\nY key A\nX key S\nL key Q\nR key W\n"
   "START key Return\nSTART key Keypad Enter\nSELECT key Right Shift\n"
@@ -149,12 +151,18 @@ static void parseControls(const char* text) {
     while(n > 0 && (line[n - 1] == '\r' || line[n - 1] == ' ')) line[--n] = 0;
     char name[16], device[8];
     int used = 0;
-    if(line[0] == '#' || sscanf(line, "%15s %7s %n", name, device, &used) < 2 || used == 0) continue;
-    const char* what = line + used;
+    const char* start = line;
+    int player = 1;
+    if(SDL_strncasecmp(start, "P2 ", 3) == 0) {
+      player = 2;
+      start += 3;
+    }
+    if(line[0] == '#' || sscanf(start, "%15s %7s %n", name, device, &used) < 2 || used == 0) continue;
+    const char* what = start + used;
     int b = -1;
     for(int i = 0; i < 12; i++) if(SDL_strcasecmp(name, kButtonNames[i]) == 0) b = i;
     if(b < 0 || bindingCount == SDL_arraysize(bindings)) continue;
-    Binding bind = {false, 0, (uint16_t) (1 << b)};
+    Binding bind = {false, 0, (uint16_t) (1 << b), player};
     if(SDL_strcasecmp(device, "key") == 0) {
       bind.code = (int) SDL_GetKeyFromName(what);
       if(bind.code == SDLK_UNKNOWN) continue;
@@ -185,9 +193,9 @@ static void loadControls(void) {
   parseControls(kDefaultControls);
 }
 
-static uint16_t keyToButton(SDL_Keycode key) {
+static uint16_t keyToButton(SDL_Keycode key, int player) {
   uint16_t b = 0;
-  for(int i = 0; i < bindingCount; i++) if(!bindings[i].pad && bindings[i].code == (int) key) b |= bindings[i].button;
+  for(int i = 0; i < bindingCount; i++) if(!bindings[i].pad && bindings[i].player == player && bindings[i].code == (int) key) b |= bindings[i].button;
   return b;
 }
 
@@ -591,12 +599,12 @@ static void runFrame(int samples) {
 typedef enum {
   MI_RESUME, MI_ASPECT, MI_FILTER, MI_INTEGER, MI_FULLSCREEN, MI_WIDE, MI_FULLVIEW, MI_SIDE,
   MI_SMOOTH, MI_HIGHFPS, MI_SCALING, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
-  MI_PADS, MI_RESET, MI_QUIT, MI_COUNT
+  MI_KEYS2, MI_PADS, MI_RESET, MI_QUIT, MI_COUNT
 } MenuItem;
 
 static struct {
   bool open;
-  int page;    // 0 options, 1 keyboard controls, 2 gamepad controls
+  int page;    // 0 options, 1 player 1's keys, 2 gamepad controls, 3 player 2's keys
   int sel;
   int binding; // controls page: the SNES button waiting for a key or gamepad button, or -1
   bool quit;
@@ -640,11 +648,12 @@ static void setSmooth(bool on) {
   updateTitle();
 }
 
-// The names of a SNES button's keyboard or gamepad bindings.
-static void bindingNames(int button, bool pad, char* out, size_t size) {
+// The names of a SNES button's keyboard (player's) or gamepad bindings.
+static void bindingNames(int button, bool pad, int player, char* out, size_t size) {
   out[0] = 0;
   for(int i = 0; i < bindingCount; i++) {
     if(bindings[i].pad != pad || bindings[i].button != (uint16_t) (1 << button)) continue;
+    if(!pad && bindings[i].player != player) continue;
     const char* name = pad ? SDL_GetGamepadStringForButton((SDL_GamepadButton) bindings[i].code) : SDL_GetKeyName((SDL_Keycode) bindings[i].code);
     if(out[0]) SDL_strlcat(out, ", ", size);
     SDL_strlcat(out, name ? name : "?", size);
@@ -668,21 +677,22 @@ static void saveControls(void) {
     int b = 0;
     while(b < 12 && bindings[i].button != (uint16_t) (1 << b)) b++;
     if(bindings[i].pad) fprintf(f, "%s pad %s\n", kButtonNames[b], SDL_GetGamepadStringForButton((SDL_GamepadButton) bindings[i].code));
-    else fprintf(f, "%s key %s\n", kButtonNames[b], SDL_GetKeyName((SDL_Keycode) bindings[i].code));
+    else fprintf(f, "%s%s key %s\n", bindings[i].player == 2 ? "P2 " : "", kButtonNames[b], SDL_GetKeyName((SDL_Keycode) bindings[i].code));
   }
   fclose(f);
 }
 
-// Replaces a SNES button's keyboard (or gamepad) bindings with code.
-static void rebind(int button, bool pad, int code) {
+// Replaces a SNES button's keyboard (player's) or gamepad bindings with code.
+static void rebind(int button, bool pad, int player, int code) {
   int n = 0;
   for(int i = 0; i < bindingCount; i++) {
-    if(bindings[i].pad == pad && bindings[i].button == (uint16_t) (1 << button)) continue;
-    if(bindings[i].pad == pad && bindings[i].code == code) continue;  // the key moves here
+    bool same = bindings[i].pad == pad && (pad || bindings[i].player == player);
+    if(same && bindings[i].button == (uint16_t) (1 << button)) continue;
+    if(bindings[i].pad == pad && bindings[i].code == code) continue;  // the key or button moves here
     bindings[n++] = bindings[i];
   }
   bindingCount = n;
-  if(bindingCount < (int) SDL_arraysize(bindings)) bindings[bindingCount++] = (Binding) {pad, code, (uint16_t) (1 << button)};
+  if(bindingCount < (int) SDL_arraysize(bindings)) bindings[bindingCount++] = (Binding) {pad, code, (uint16_t) (1 << button), player};
   saveControls();
 }
 
@@ -705,7 +715,8 @@ static void menuItemText(int i, char* out, size_t size) {
     case MI_AUTOSAVE: snprintf(out, size, "Auto-save          %s", onOff(app.autoSave)); break;
     case MI_RUMBLE: snprintf(out, size, "Rumble             %s", onOff(app.rumble)); break;
     case MI_SWAP: snprintf(out, size, "Swap gamepads      P1: %s", app.pads[0] ? SDL_GetGamepadName(app.pads[0]) : "none"); break;
-    case MI_KEYS: snprintf(out, size, "Keyboard controls..."); break;
+    case MI_KEYS: snprintf(out, size, "Player 1 keys..."); break;
+    case MI_KEYS2: snprintf(out, size, "Player 2 keys..."); break;
     case MI_PADS: snprintf(out, size, "Gamepad controls..."); break;
     case MI_RESET: snprintf(out, size, "Reset the game"); break;
     case MI_QUIT: snprintf(out, size, "Quit"); break;
@@ -714,12 +725,13 @@ static void menuItemText(int i, char* out, size_t size) {
 
 static int menuCount(void) { return menu.page == 0 ? MI_COUNT : 13; }
 
+static void menuBack(void);
+
 // Changes the selected item (dir: -1 left, +1 right or select).
 static void menuActivate(int dir) {
   if(menu.page != 0) {
     if(menu.sel == 12) {
-      menu.page = 0;
-      menu.sel = MI_KEYS;
+      menuBack();
     } else {
       menu.binding = menu.sel;
     }
@@ -748,6 +760,7 @@ static void menuActivate(int dir) {
       break;
     }
     case MI_KEYS: menu.page = 1; menu.sel = 0; break;
+    case MI_KEYS2: menu.page = 3; menu.sel = 0; break;
     case MI_PADS: menu.page = 2; menu.sel = 0; break;
     case MI_RESET: app.resetRequested = true; menu.open = false; break;
     case MI_QUIT: menu.quit = true; break;
@@ -757,7 +770,7 @@ static void menuActivate(int dir) {
 static void menuBack(void) {
   if(menu.binding >= 0) menu.binding = -1;
   else if(menu.page != 0) {
-    menu.sel = menu.page == 1 ? MI_KEYS : MI_PADS;
+    menu.sel = menu.page == 1 ? MI_KEYS : menu.page == 3 ? MI_KEYS2 : MI_PADS;
     menu.page = 0;
   } else menu.open = false;
 }
@@ -779,8 +792,8 @@ static void openMenu(void) {
 static void menuKey(SDL_Keycode key) {
   if(menu.binding >= 0) {
     if(key == SDLK_ESCAPE) menu.binding = -1;
-    else if(menu.page == 1) {
-      rebind(menu.binding, false, (int) key);
+    else if(menu.page == 1 || menu.page == 3) {
+      rebind(menu.binding, false, menu.page == 3 ? 2 : 1, (int) key);
       menu.binding = -1;
     }
     return;
@@ -799,7 +812,7 @@ static void menuKey(SDL_Keycode key) {
 static void menuPadButton(SDL_GamepadButton b) {
   if(menu.binding >= 0) {
     if(menu.page == 2 && b != SDL_GAMEPAD_BUTTON_GUIDE) {
-      rebind(menu.binding, true, (int) b);
+      rebind(menu.binding, true, 1, (int) b);
       menu.binding = -1;
     }
     return;
@@ -829,7 +842,7 @@ static void drawMenu(void) {
   SDL_FRect box = {0, 0, w, h};
   SDL_RenderFillRect(app.renderer, &box);
   float x = SDL_max(8.0f, (w - 50 * 8) / 2), y = SDL_max(8.0f, (h - lines * 12) / 2);
-  const char* title = menu.page == 0 ? "OPTIONS" : menu.page == 1 ? "KEYBOARD CONTROLS (PLAYER 1)" : "GAMEPAD CONTROLS (BOTH PADS)";
+  const char* title = menu.page == 0 ? "OPTIONS" : menu.page == 1 ? "PLAYER 1 KEYS" : menu.page == 3 ? "PLAYER 2 KEYS" : "GAMEPAD CONTROLS (BOTH PADS)";
   SDL_SetRenderDrawColor(app.renderer, 255, 210, 80, 255);
   SDL_RenderDebugText(app.renderer, x, y, title);
   y += 20;
@@ -841,8 +854,8 @@ static void drawMenu(void) {
       snprintf(text, sizeof(text), "Back");
     } else {
       char names[96];
-      bindingNames(i, menu.page == 2, names, sizeof(names));
-      snprintf(text, sizeof(text), "%-7s %s", kButtonNames[i], menu.binding == i ? (menu.page == 1 ? "press a key (Esc: cancel)" : "press a button") : names);
+      bindingNames(i, menu.page == 2, menu.page == 3 ? 2 : 1, names, sizeof(names));
+      snprintf(text, sizeof(text), "%-7s %s", kButtonNames[i], menu.binding == i ? (menu.page != 2 ? "press a key (Esc: cancel)" : "press a button") : names);
     }
     bool sel = i == menu.sel;
     SDL_SetRenderDrawColor(app.renderer, sel ? 255 : 200, sel ? 255 : 200, sel ? 255 : 200, 255);
@@ -1029,10 +1042,12 @@ int main(int argc, char** argv) {
               break;
             }
           }
-          uint16_t button = keyToButton(e.key.key);
-          if(button && !(e.key.mod & SDL_KMOD_ALT)) {
-            if(down) app.keys[1] |= button;
-            else app.keys[1] &= ~button;
+          for(int p = 1; p <= 2; p++) {
+            uint16_t button = keyToButton(e.key.key, p);
+            if(button && !(e.key.mod & SDL_KMOD_ALT)) {
+              if(down) app.keys[p] |= button;
+              else app.keys[p] &= ~button;
+            }
           }
           break;
         }
