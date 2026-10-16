@@ -22,6 +22,16 @@
 
 #include "port.h"
 
+// Where a copy of the routine keeps its state: the bank $0F one (the menus) has its own
+// direct page variables and ring.
+typedef struct Layout {
+  uint16_t count, from, byte, to, pos, state, src, ring;
+} Layout;
+
+static const Layout kRace = { 0x1A, 0x1C, 0x1D, 0x1E, 0x20, 0x22, 0x23, 0x07B2 };
+static const Layout kMenu = { 0x2E, 0x30, 0x31, 0x32, 0x34, 0x36, 0x37, 0x044C };
+static const Layout* L = &kRace;
+
 typedef struct Decomp {
   TgRegs* r;
   uint16_t a;  // full 16-bit accumulator; the routine runs with 8-bit A most of the time
@@ -36,11 +46,11 @@ static void dp16_set(TgRegs* r, uint16_t o, uint16_t v) {
 }
 
 static uint8_t stream(TgRegs* r, uint16_t y) {
-  uint32_t base = (uint32_t) (dp8(r, 0x23) | dp8(r, 0x24) << 8 | dp8(r, 0x25) << 16);
+  uint32_t base = (uint32_t) (dp8(r, L->src) | dp8(r, (uint16_t) (L->src + 1)) << 8 | dp8(r, (uint16_t) (L->src + 2)) << 16);
   return tg_read8((base + y) & 0xffffff);
 }
 
-static uint32_t ring_adr(TgRegs* r, uint16_t i) { return (uint32_t) r->db << 16 | (uint16_t) (0x07B2 + i); }
+static uint32_t ring_adr(TgRegs* r, uint16_t i) { return (uint32_t) r->db << 16 | (uint16_t) (L->ring + i); }
 static uint8_t ring(TgRegs* r, uint16_t i) { return tg_read8(ring_adr(r, i)); }
 static void ring_set(TgRegs* r, uint16_t i, uint8_t v) { tg_bus_write8(ring_adr(r, i), v); }
 
@@ -60,7 +70,7 @@ static void literal(Decomp* s, uint16_t y) {
   TgRegs* r = s->r;
   set_lo(s, stream(r, y));
   y++;
-  dp16_set(r, 0x20, y);
+  dp16_set(r, L->pos, y);
   r->y = y;
   put_byte(s, (uint8_t) s->a);
 }
@@ -68,10 +78,10 @@ static void literal(Decomp* s, uint16_t y) {
 // $00:EB3F: writes the output byte into the ring and returns it with carry clear.
 static void put_byte(Decomp* s, uint8_t v) {
   TgRegs* r = s->r;
-  uint16_t x = dp16(r, 0x1E);
+  uint16_t x = dp16(r, L->to);
   ring_set(r, x, v);
   x = ring_prev(x);
-  dp16_set(r, 0x1E, x);
+  dp16_set(r, L->to, x);
   r->x = x;
   flags_nz16(r, x);
   r->c = false;
@@ -81,29 +91,29 @@ static void put_byte(Decomp* s, uint8_t v) {
 // returns its first byte; the following calls read the rest back out of the ring.
 static void copy(Decomp* s, uint16_t y, uint16_t distance) {
   TgRegs* r = s->r;
-  dp16_set(r, 0x20, y);
-  uint16_t a = adc(r, distance, dp16(r, 0x1A), true);
-  a = adc(r, a, dp16(r, 0x1E), false);
+  dp16_set(r, L->pos, y);
+  uint16_t a = adc(r, distance, dp16(r, L->count), true);
+  a = adc(r, a, dp16(r, L->to), false);
   a &= 0x07FF;
   uint16_t x = a;
-  y = dp16(r, 0x1E);
+  y = dp16(r, L->to);
   s->a = a;
   set_lo(s, ring(r, x));
   ring_set(r, y, (uint8_t) s->a);
-  dp8_set(r, 0x1D, (uint8_t) s->a);
+  dp8_set(r, L->byte, (uint8_t) s->a);
   for(;;) {
     x = ring_prev(x);
     y = ring_prev(y);
-    uint8_t left = (uint8_t) (dp8(r, 0x1A) - 1);  // 8-bit DEC
-    dp8_set(r, 0x1A, left);
+    uint8_t left = (uint8_t) (dp8(r, L->count) - 1);  // 8-bit DEC
+    dp8_set(r, L->count, left);
     if(left & 0x80) break;
     set_lo(s, ring(r, x));
     ring_set(r, y, (uint8_t) s->a);
   }
-  set_lo(s, dp8(r, 0x1D));
-  x = ring_prev(dp16(r, 0x1E));
-  dp16_set(r, 0x1C, x);
-  dp16_set(r, 0x1E, y);
+  set_lo(s, dp8(r, L->byte));
+  x = ring_prev(dp16(r, L->to));
+  dp16_set(r, L->from, x);
+  dp16_set(r, L->to, y);
   r->x = x;
   r->y = y;
   flags_nz16(r, x);
@@ -112,11 +122,11 @@ static void copy(Decomp* s, uint16_t y, uint16_t distance) {
 
 // $00:EA9B. Returns the next byte in A (8-bit; index registers 16-bit), carry set at the
 // end of the stream.
-void DecompressNext(TgRegs* r) {
+static void next(TgRegs* r) {
   Decomp s = { r, r->a };
-  uint8_t state = dp8(r, 0x22);
+  uint8_t state = dp8(r, L->state);
   if(state == 0) {
-    uint16_t y = dp16(r, 0x20);
+    uint16_t y = dp16(r, L->pos);
     uint8_t c = stream(r, y);
     set_lo(&s, c);
     r->y = y;
@@ -125,24 +135,24 @@ void DecompressNext(TgRegs* r) {
       r->z = true;
       r->c = true;
     } else if(c & 0x80) {
-      dp8_set(r, 0x22, 1);
+      dp8_set(r, L->state, 1);
       y++;
       uint16_t distance;
       if(c >= 0xC0) {
         uint8_t c2 = stream(r, y);
         y++;
         uint16_t w = (uint16_t) (c << 8 | c2);
-        dp16_set(r, 0x1A, adc(r, (c >> 2) & 0x000F, 0x0003, false));
+        dp16_set(r, L->count, adc(r, (c >> 2) & 0x000F, 0x0003, false));
         distance = w & 0x03FF;
       } else {
         uint16_t w = s.a;
-        dp16_set(r, 0x1A, (uint16_t) (((w << 3) >> 8 & 0x0001) + 1));
+        dp16_set(r, L->count, (uint16_t) (((w << 3) >> 8 & 0x0001) + 1));
         distance = w & 0x001F;
       }
       r->y = y;
       copy(&s, y, distance);
     } else {
-      dp8_set(r, 0x22, 0xFF);
+      dp8_set(r, L->state, 0xFF);
       y++;
       if(c >= 0x40) {
         uint16_t n;
@@ -154,53 +164,53 @@ void DecompressNext(TgRegs* r) {
           n = (uint16_t) ((s.a & 0x001F) + 1);
         }
         s.a = n;
-        dp16_set(r, 0x1A, n);
+        dp16_set(r, L->count, n);
         set_lo(&s, stream(r, y));
         y++;
-        dp16_set(r, 0x20, y);
+        dp16_set(r, L->pos, y);
         r->y = y;
-        dp8_set(r, 0x1D, (uint8_t) s.a);
+        dp8_set(r, L->byte, (uint8_t) s.a);
         put_byte(&s, (uint8_t) s.a);
       } else {
-        dp8_set(r, 0x22, 0xFE);
+        dp8_set(r, L->state, 0xFE);
         if(c >= 0x20) {
           s.a = (uint16_t) (c << 8 | stream(r, y));
           y++;
           s.a = adc(r, s.a & 0x1FFF, 0x001E, false);
-          dp16_set(r, 0x1A, s.a);
+          dp16_set(r, L->count, s.a);
         } else {
           s.a = (uint16_t) ((s.a & 0x001F) - 2);
-          if(s.a & 0x8000) dp8_set(r, 0x22, 0);
-          else dp16_set(r, 0x1A, s.a);
+          if(s.a & 0x8000) dp8_set(r, L->state, 0);
+          else dp16_set(r, L->count, s.a);
         }
         literal(&s, y);
       }
     }
   } else if(state & 0x80) {
     // In a run or a literal block.
-    uint16_t left = (uint16_t) (dp16(r, 0x1A) - 1);
-    dp16_set(r, 0x1A, left);
-    if(left & 0x8000) dp8_set(r, 0x22, 0);
+    uint16_t left = (uint16_t) (dp16(r, L->count) - 1);
+    dp16_set(r, L->count, left);
+    if(left & 0x8000) dp8_set(r, L->state, 0);
     set_lo(&s, (uint8_t) (state ^ 0xFF));
     if((uint8_t) s.a != 0) {
-      literal(&s, dp16(r, 0x20));
+      literal(&s, dp16(r, L->pos));
     } else {
-      set_lo(&s, dp8(r, 0x1D));
+      set_lo(&s, dp8(r, L->byte));
       put_byte(&s, (uint8_t) s.a);
     }
   } else {
     // Copying: the next byte of the match, already in the ring.
-    uint16_t x = dp16(r, 0x1C);
+    uint16_t x = dp16(r, L->from);
     set_lo(&s, ring(r, x));
     x = ring_prev(x);
     r->x = x;
-    uint16_t diff = (uint16_t) (x - dp16(r, 0x1E));
+    uint16_t diff = (uint16_t) (x - dp16(r, L->to));
     if(diff != 0) {
-      dp16_set(r, 0x1C, x);
+      dp16_set(r, L->from, x);
       r->n = diff >> 15;
       r->z = false;
     } else {
-      dp8_set(r, 0x22, 0);
+      dp8_set(r, L->state, 0);
       r->n = false;
       r->z = true;
     }
@@ -211,10 +221,18 @@ void DecompressNext(TgRegs* r) {
 
 // $00:EA8E. Starts decompressing the stream at DecompSrc and returns its first byte, as
 // DecompressNext.
-void DecompressBegin(TgRegs* r) {
-  dp16_set(r, 0x20, 0);
-  dp16_set(r, 0x1E, 0x07FF);
-  dp8_set(r, 0x22, 0);
+static void begin(TgRegs* r) {
+  dp16_set(r, L->pos, 0);
+  dp16_set(r, L->to, 0x07FF);
+  dp8_set(r, L->state, 0);
   r->a = 0x07FF;
-  DecompressNext(r);
+  next(r);
 }
+
+void DecompressNext(TgRegs* r) { L = &kRace; next(r); }
+void DecompressBegin(TgRegs* r) { L = &kRace; begin(r); }
+
+// $0F:B367 and $0F:B35A: the menus' copy, with its state at $2E-$39 and its ring at
+// $044C (over the palette buffer, which the menus reload afterwards).
+void MenuDecompressNext(TgRegs* r) { L = &kMenu; next(r); }
+void MenuDecompressBegin(TgRegs* r) { L = &kMenu; begin(r); }
