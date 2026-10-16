@@ -471,12 +471,12 @@ uint32_t tg_port_race_irqs;
 
 void RaceIrqTop(TgRegs* r) {
   tg_port_race_irqs++;
-  if(tg_port_full_view || tg_port_wide_margin) {
+  if(tg_port_full_view || tg_port_wide_margin || tg_port_interp) {
     bool full = tg_port_full_view && g_ram[0x1F04] == 0 && !(z(0x40) & 0x8000);
     bool side = tg_port_side_by_side && tg_port_wide_margin && g_ram[0x1F04] != 0 &&
       !(z(0x40) & 0x8000) && !(z(0x53) & 0x8000);
     tg_port_race_frame = full ? PPU_RACE_FRAME | PPU_FULL_VIEW : side ? PPU_RACE_FRAME | PPU_SIDE_BY_SIDE :
-      tg_port_wide_margin ? PPU_RACE_FRAME : 0;
+      tg_port_wide_margin || tg_port_interp ? PPU_RACE_FRAME : 0;
   }
   if(z(0xE3) & 0x8000) {
     z_set(0xE3, 0);

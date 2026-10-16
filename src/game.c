@@ -145,7 +145,7 @@ void tg_game_set_smooth_sprites(TgGame* game, bool on) {
 }
 
 static void updateRedraw(TgGame* game) {
-  bool on = tg_port_full_view || tg_port_wide_margin > 0;
+  bool on = tg_port_full_view || tg_port_wide_margin > 0 || tg_port_interp;
   tg_port_race_frame = 0;
   game->snes->ppu->objGrounds = on ? tg_port_obj_grounds : NULL;
   game->snes->ppu->raceFrame = on ? &tg_port_race_frame : NULL;
@@ -156,6 +156,21 @@ void tg_game_set_full_view(TgGame* game, bool on) {
   tg_port_full_view = on;
   updateRedraw(game);
 }
+
+void tg_game_set_interp(TgGame* game, bool on) {
+  Ppu* ppu = game->snes->ppu;
+  if(on && !tg_port_interp) for(int i = 0; i < 0x2000; i++) tg_port_line_depth[i] = PPU_NOT_ENTRY;
+  tg_port_interp = on;
+  ppu->interp = on;
+  ppu->objIdents = on ? tg_port_obj_idents : NULL;
+  ppu->objAnchorXs = tg_port_obj_ax;
+  ppu->objAnchorYs = tg_port_obj_ay;
+  ppu->lineDepths = on ? tg_port_line_depth : NULL;
+  ppu->lineCams = tg_port_line_cam;
+  updateRedraw(game);
+}
+
+bool tg_game_interp(TgGame* game, float t) { return ppu_interpCompose(game->snes->ppu, t); }
 
 void tg_game_set_tall_road(TgGame* game, bool on) { game->snes->ppu->roadScale = on ? 2.0f : 0; }
 

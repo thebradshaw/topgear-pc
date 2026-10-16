@@ -183,6 +183,22 @@ extern uint16_t tg_port_ghost_key, tg_port_ghost_word;
 extern uint8_t tg_port_obj_flags[0x2000];
 void tg_port_ghost_update(void);
 
+// High frame rate (an enhancement): in-between frames are drawn from the last two race
+// frames (LakeSnes ppu_full.c). The renderer records each road line's depth and camera
+// position by the address of its scroll entry, and each object list entry's object
+// (tg_port_list_ident, by list: 0 the top view's, and entry): 0x8000 + car for cars,
+// else 1 + segment x 2 (+1 for a window object). visible.c keeps which car each entry of
+// the visible car lists is (tg_port_view_car); the sprite builder marks each OAM entry
+// with its object, plus the view (0x4000 for the bottom one), and the object's position.
+extern bool tg_port_interp;
+extern int16_t tg_port_line_depth[0x2000];
+extern uint16_t tg_port_line_cam[0x2000];
+extern uint16_t tg_port_list_ident[2][0x40];
+extern uint8_t tg_port_view_car[2][0x14];
+extern uint16_t tg_port_obj_idents[0x2000];
+extern int16_t tg_port_obj_ax[0x2000], tg_port_obj_ay[0x2000];
+#define TG_GHOST_CAR 0x7F  // tg_port_view_car for the ghost
+
 // Connects the helpers above to the machine (port.c).
 typedef struct Snes Snes;
 void tg_port_bind(Snes* snes, const uint8_t* rom);

@@ -103,6 +103,13 @@ struct Ppu {
   uint16_t objTag[128];
   int16_t objGround[128];  // Top Gear port: the line each entry's object stands on, or PPU_NO_GROUND
   uint8_t objFlag[128];    // Top Gear port: PPU_OBJ_GHOST: drawn see-through
+  // Top Gear port, high frame rate: which object each entry belongs to (0: none) and that
+  // object's position, so in-between frames can move it; and the line's road depth (track
+  // units x 8 ahead of the camera, PPU_NO_DEPTH off the road) and camera position.
+  uint16_t objIdent[128];
+  int16_t objAnchorX[128], objAnchorY[128];
+  int16_t lineDepth;
+  uint16_t lineCam;
   PpuObjBitmap* objBitmaps;  // a small cache, allocated when first needed
   bool timeOver;
   bool rangeOver;
@@ -172,6 +179,12 @@ struct Ppu {
   // each line as it is drawn and redraws the screen from them at the start of vblank.
   const int16_t* objGrounds;  // by low RAM address of an OAM entry, like objScaleTags
   const uint8_t* objFlags;    // the same for objFlag
+  const uint16_t* objIdents;  // the same for objIdent, objAnchorX and objAnchorY
+  const int16_t* objAnchorXs;
+  const int16_t* objAnchorYs;
+  const int16_t* lineDepths;  // by low RAM address of a line's BG3 scroll entry
+  const uint16_t* lineCams;
+  bool interp;                // keep the last two race frames for ppu_interpCompose
   uint8_t* raceFrame;
   struct PpuFullView* full;
   uint8_t fullArmed;   // this frame's flags, latched at the last vblank
@@ -196,6 +209,8 @@ struct Ppu {
 #define PPU_SIDE_BY_SIDE 4  // 2 players: the two views side by side, each full height
 
 #define PPU_NO_GROUND (-32768)
+#define PPU_NO_DEPTH (-32767)  // a line's scroll entry off the road
+#define PPU_NOT_ENTRY (-32768) // not the start of a scroll entry
 #define PPU_OBJ_GHOST 1
 #define PPU_GHOST_ALPHA 0.45f
 
@@ -219,6 +234,10 @@ int ppu_smoothOnLine(Ppu* ppu, uint8_t index, int line);
 void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line);
 void ppu_fullCapture(Ppu* ppu, int line);
 void ppu_fullCompose(Ppu* ppu);
+void ppu_tagLine(Ppu* ppu, uint8_t bank, uint16_t adr);
+// High frame rate: redraws the last race frame as it would look t (0-1) of a frame after
+// the one before it. False when there are not two race frames to go between.
+bool ppu_interpCompose(Ppu* ppu, float t);
 int ppu_fullMapRow(Ppu* ppu, int row);
 int ppu_fullViewOff(Ppu* ppu);
 #define PPU_NO_HUD (-32768)

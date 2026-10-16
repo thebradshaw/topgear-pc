@@ -141,6 +141,14 @@ uint8_t tg_port_race_frame;
 int16_t tg_port_obj_grounds[0x2000];  // by low RAM address of an OAM buffer entry
 uint8_t tg_port_obj_flags[0x2000];  // PPU_OBJ_GHOST, by low RAM address
 static bool g_ghost;  // the object being drawn is the ghost car (ghost.c)
+// High frame rate: the object being drawn and its position (see port.h).
+bool tg_port_interp;
+uint16_t tg_port_obj_idents[0x2000];
+int16_t tg_port_obj_ax[0x2000], tg_port_obj_ay[0x2000];
+uint16_t tg_port_list_ident[2][0x40];
+uint8_t tg_port_view_car[2][0x14];
+static uint16_t g_ident;
+static int16_t g_ax, g_ay;
 
 static void mark_ground(TgRegs* r, const Variant* v, uint16_t from, int16_t ground) {
   uint16_t base = oam_base(r, v);
@@ -150,9 +158,18 @@ static void mark_ground(TgRegs* r, const Variant* v, uint16_t from, int16_t grou
 static bool add_parts_all(TgRegs* r, const Variant* v);
 
 static bool add_sprite(TgRegs* r, const Variant* v) {
-  if(!tg_port_full_view && !tg_port_wide_margin && !g_ghost) return add_parts_all(r, v);
+  if(!tg_port_full_view && !tg_port_wide_margin && !g_ghost && !tg_port_interp) return add_parts_all(r, v);
   uint16_t y0 = ram16(0x1B92);
   bool ok = add_parts_all(r, v);
+  if(tg_port_interp && g_ident) {
+    uint16_t base = oam_base(r, v);
+    for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) {
+      uint16_t a = (uint16_t) (base + y) & 0x1FFF;
+      tg_port_obj_idents[a] = g_ident;
+      tg_port_obj_ax[a] = g_ax;
+      tg_port_obj_ay[a] = g_ay;
+    }
+  }
   mark_ground(r, v, y0, (int16_t) (int16_t) (ram16(0x1B8A) + v->y_add));
   if(g_ghost) {
     uint16_t base = oam_base(r, v);
@@ -373,7 +390,17 @@ static int draw_object(TgRegs* r, const Variant* v) {
   return DRAWN;
 }
 
+// The object at record x of the view's list, for high frame rate.
+static void set_ident(const SpriteView* w, uint16_t x) {
+  int list = w == &kSpriteViews[0] ? 0 : 1;
+  g_ident = x < 0x200 ? tg_port_list_ident[list][x >> 3] : 0;
+  if(g_ident) g_ident = (uint16_t) (g_ident | (list ? 0x4000 : 0));
+  g_ax = (int16_t) rec(w, x, 4);
+  g_ay = (int16_t) rec(w, x, 6);
+}
+
 static void load_object(const SpriteView* w, uint16_t x) {
+  set_ident(w, x);
   g_ghost = w == &kSpriteViews[0] && rec(w, x, 0) == tg_port_ghost_key && rec(w, x, 2) == tg_port_ghost_word;
   ram16_set(0x1B86, rec(w, x, 2));
   ram16_set(0x1B88, rec(w, x, 4));
@@ -445,6 +472,7 @@ static int build_split_part(TgRegs* r, const SpriteView* w, uint16_t x) {
   dp16_set(r, 0x1A, x);
   uint16_t p = ram16(w->player);
   if(!(p & 0x8000)) {
+    set_ident(w, p);
     ram16_set(0x1B88, rec(w, p, 4));
     ram16_set(0x1B8A, rec(w, p, 6));
     if(!car_effects(r, w, v)) return END_HIDE;
@@ -484,6 +512,7 @@ static int build_objects(TgRegs* r, const SpriteView* w) {
     ram16_set(0x1B7A, rec(w, x, 0));
     g_ghost = false;
     if(x == ram16(w->player)) {
+      set_ident(w, x);
       ram16_set(0x1B88, rec(w, x, 4));
       ram16_set(0x1B8A, rec(w, x, 6));
       if(!car_effects(r, w, v)) return END_HIDE;
@@ -507,12 +536,14 @@ static int build_objects(TgRegs* r, const SpriteView* w) {
 static void build_view(TgRegs* r, const SpriteView* w) {
   const Variant* v = w->normal;
   if(dp16(r, w->off_dp) & 0x8000) return;
-  if(tg_port_smooth_sprites || tg_port_full_view || tg_port_wide_margin || tg_port_ghost) {
+  g_ident = 0;
+  if(tg_port_smooth_sprites || tg_port_full_view || tg_port_wide_margin || tg_port_ghost || tg_port_interp) {
     uint16_t base = oam_base(r, v);
     for(uint16_t y = 0; y < 0x200; y++) {
       tg_port_obj_tags[(uint16_t) (base + y) & 0x1FFF] = 0;
       tg_port_obj_grounds[(uint16_t) (base + y) & 0x1FFF] = PPU_NO_GROUND;
       tg_port_obj_flags[(uint16_t) (base + y) & 0x1FFF] = 0;
+      tg_port_obj_idents[(uint16_t) (base + y) & 0x1FFF] = 0;
     }
   }
   // Parts are kept from x = -15 to 255, or out to the edges of a wide screen.

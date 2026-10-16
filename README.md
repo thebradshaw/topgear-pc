@@ -35,6 +35,7 @@ The first gamepad is player 1 and the second is player 2. To change the controls
 | F4 | Display filter: sharp pixels, sharp-bilinear (smooth edges without uneven pixels) or scanlines (also `--filter sharp-bilinear` or `--filter scanlines`) |
 | F5 | Reset |
 | F6 | Smooth motion: the race updates every frame instead of every third (off by default; also `--smooth`) |
+| Shift+F6 | High frame rate: on a 120 Hz or faster display, extra pictures are drawn between the game's frames, so the road, cars and roadside objects move smoothly at the display's rate (the game itself still runs at 60 frames a second). Turns on smooth motion too, and waits for the display (vsync) (off by default; also `--high-fps`) |
 | F7 | Smooth scaling: signs, trees and cars grow steadily as they approach instead of jumping between sprite sizes (off by default; also `--smooth-scaling`) |
 | F8 | Controller rumble when your car hits something and when nitro fires (off by default; also `--rumble`) |
 | F9 | Full-screen view: in 1-player races your view fills the whole screen instead of sharing it with the computer's. The horizon stays low and the road flat, as in the original. Press F9 again for a tall road that fills more of the screen, and again to turn it off (off by default; also `--full-view`, `--tall-road`). The same road height is used by side by side |

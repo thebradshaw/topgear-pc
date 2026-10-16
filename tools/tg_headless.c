@@ -4,7 +4,7 @@
 //               [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]]
 //               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]
 //               [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native]
-//               [--frame-hashes FILE] [--race-frames N] [--ghosts FILE]
+//               [--frame-hashes FILE] [--race-frames N] [--ghosts FILE] [--interp-steps K]
 //
 // Prints the SHA-256 of work RAM and of the final frame so runs can be compared.
 // With --expect-*, exits non-zero when a hash differs (used by the regression tests).
@@ -15,6 +15,8 @@
 // for comparing runs whose timing differs (tools/shift_compare.py).
 // --race-frames sets the video frames per race update when the race loop runs in C
 // (native mode); the default is 3, the original's pace without its slowdown.
+// --interp-steps turns on high frame rate and, with --shots-every, also writes each shot's
+// in-between pictures from the frame before (frameNNNNNN_k.ppm, k of K of the way).
 // --ghosts loads ghost-car races from FILE and saves them back if a better race is driven.
 
 #include <stdbool.h>
@@ -84,6 +86,7 @@ int main(int argc, char** argv) {
   const char* dumpWram = NULL;
   const char* frameHashes = NULL;
   const char* ghostsPath = NULL;
+  int interpSteps = 0;
   const char* traceOut = NULL;
   long traceFrame = -1;
   long traceCount = 1;
@@ -109,6 +112,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--dump-wram") == 0 && next) dumpWram = argv[++i];
     else if(strcmp(argv[i], "--frame-hashes") == 0 && next) frameHashes = argv[++i];
     else if(strcmp(argv[i], "--ghosts") == 0 && next) ghostsPath = argv[++i];
+    else if(strcmp(argv[i], "--interp-steps") == 0 && next) interpSteps = (int) strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--race-frames") == 0 && next) tg_port_race_frames = (int) strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-frame") == 0 && next) traceFrame = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-out") == 0 && next) traceOut = argv[++i];
@@ -117,7 +121,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "verify") == 0) { portMode = TG_PORT_VERIFY; i++; }
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "native") == 0) { portMode = TG_PORT_NATIVE; i++; }
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N] [--ghosts FILE]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N] [--ghosts FILE] [--interp-steps K]\n", argv[0]);
       return 2;
     }
   }
@@ -145,6 +149,7 @@ int main(int argc, char** argv) {
 
   g_game = game;
   if(ghostsPath != NULL) tg_game_load_ghosts(game, ghostsPath);
+  if(interpSteps > 0) tg_game_set_interp(game, true);
   if(game == NULL) {
     fprintf(stderr, "failed to start game\n");
     return 1;
@@ -201,6 +206,12 @@ int main(int argc, char** argv) {
       snprintf(path, sizeof(path), "%s/frame%06ld.ppm", shotsDir, frame + 1);
       tg_game_get_pixels(game, pixels);
       writePpm(path, pixels);
+      for(int k = 1; k < interpSteps; k++) {
+        if(!tg_game_interp(game, (float) k / interpSteps)) break;
+        snprintf(path, sizeof(path), "%s/frame%06ld_%d.ppm", shotsDir, frame + 1, k);
+        tg_game_get_pixels(game, pixels);
+        writePpm(path, pixels);
+      }
     }
   }
   if(hashes) fclose(hashes);

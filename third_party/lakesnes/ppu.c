@@ -85,6 +85,18 @@ Ppu* ppu_init(Snes* snes) {
   ppu->full = NULL;
   ppu->fullComposing = false;
   ppu->fullArmed = 0;
+  ppu->roadScale = 0;
+  ppu->objIdents = NULL;
+  ppu->objAnchorXs = NULL;
+  ppu->objAnchorYs = NULL;
+  ppu->lineDepths = NULL;
+  ppu->lineCams = NULL;
+  ppu->interp = false;
+  memset(ppu->objIdent, 0, sizeof(ppu->objIdent));
+  memset(ppu->objAnchorX, 0, sizeof(ppu->objAnchorX));
+  memset(ppu->objAnchorY, 0, sizeof(ppu->objAnchorY));
+  ppu->lineDepth = PPU_NO_DEPTH;
+  ppu->lineCam = 0;
   ppu->wideMargin = 0;
   ppu->wideBuffer = NULL;
   ppu->lineLeft = 0;
@@ -655,6 +667,19 @@ void ppu_tagObj(Ppu* ppu, uint8_t bank, uint16_t adr) {
   ppu->objTag[ppu->oamAdr >> 1] = tag;
   ppu->objGround[ppu->oamAdr >> 1] = lowRam && ppu->objGrounds ? ppu->objGrounds[adr] : PPU_NO_GROUND;
   ppu->objFlag[ppu->oamAdr >> 1] = lowRam && ppu->objFlags ? ppu->objFlags[adr] : 0;
+  bool ident = lowRam && ppu->objIdents;
+  ppu->objIdent[ppu->oamAdr >> 1] = ident ? ppu->objIdents[adr] : 0;
+  ppu->objAnchorX[ppu->oamAdr >> 1] = ident ? ppu->objAnchorXs[adr] : 0;
+  ppu->objAnchorY[ppu->oamAdr >> 1] = ident ? ppu->objAnchorYs[adr] : 0;
+}
+
+// A byte of a BG3 horizontal scroll about to be written by HDMA from bank:adr: at the
+// start of a line's scroll entry, the line takes that entry's road depth.
+void ppu_tagLine(Ppu* ppu, uint8_t bank, uint16_t adr) {
+  bool lowRam = (bank == 0x7e || ((bank & 0x40) == 0 && (bank & 0x7f) < 0x40)) && adr < 0x2000;
+  if(!lowRam || ppu->lineDepths[adr] == PPU_NOT_ENTRY) return;
+  ppu->lineDepth = ppu->lineDepths[adr];
+  ppu->lineCam = ppu->lineCams[adr];
 }
 
 // Top Gear port: a sprite's x. On a wide line, x up to its right edge counts as on the

@@ -65,6 +65,11 @@ void tg_game_set_full_view(TgGame* game, bool on);
 // Full view and side by side draw the road 1.3 times taller, with the horizon low as in the
 // original; tall road draws it twice as tall, filling the screen.
 void tg_game_set_tall_road(TgGame* game, bool on);
+// High frame rate: keeps what is needed to draw in-between race frames; tg_game_interp
+// then redraws the picture (pixels or wide pixels) t (0-1) of the way from the frame
+// before the last to the last. False (picture unchanged) outside races.
+void tg_game_set_interp(TgGame* game, bool on);
+bool tg_game_interp(TgGame* game, float t);
 // Auto-save: the countries open at each skill level (0-7), and opening them up to the
 // given ones (never closing any).
 void tg_game_progress(TgGame* game, uint8_t open[3]);

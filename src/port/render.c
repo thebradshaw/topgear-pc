@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "port.h"
+#include "ppu.h"
 #include "variables.h"
 
 // What differs between the bottom view (player 2, run first) and the top view (player 1).
@@ -165,8 +166,23 @@ static void step_camera(void) {
   z_set(0x7A, (uint16_t) (z(0x7A) + z(0x76) + (lo > 0xFFFF)));
 }
 
-// One object entry: kind word, line ($8E - $20), x, y.
-static void add_object(const RenderView* v, uint16_t x, uint16_t kind) {
+// High frame rate: which list an object entry goes in (0 the top view's), and each line's
+// road depth, recorded by the address of its scroll entry.
+int16_t tg_port_line_depth[0x2000];
+uint16_t tg_port_line_cam[0x2000];
+
+static int list_of(const RenderView* v) { return v->object_dst == 0x1836 ? 0 : 1; }
+
+static void line_depth(const RenderView* v, uint16_t ly, int16_t depth) {
+  uint16_t a = (uint16_t) ((ram16(v->sm_scroll_lo) + ly) & 0x1FFF);
+  tg_port_line_depth[a] = depth;
+  tg_port_line_cam[a] = z(v->pos);
+}
+
+// One object entry: kind word, line ($8E - $20), x, y. ident: the object, for high frame
+// rate (see tg_port_list_ident).
+static void add_object(const RenderView* v, uint16_t x, uint16_t kind, uint16_t ident) {
+  if(x < 0x200) tg_port_list_ident[list_of(v)][x >> 3] = ident;
   ram16_set((uint16_t) (v->object_dst + 2 + x), kind);
   ram16_set((uint16_t) (v->object_dst + x), (uint16_t) (z(0x8E) - 0x20));
   ram16_set((uint16_t) (v->object_dst + 4 + x), (uint16_t) (0x0200 - z(0x7A)));
@@ -181,6 +197,7 @@ static void add_cars(const RenderView* v, uint16_t* xp, uint16_t* yp, bool first
     uint16_t a = ram16((uint16_t) (v->object_src + y));
     if(a >= z(0x8E)) break;
     ram16_set((uint16_t) (v->object_dst + x), a);
+    if(x < 0x200 && y < 0x50) tg_port_list_ident[list_of(v)][x >> 3] = (uint16_t) (0x8000 | tg_port_view_car[v->object_src == 0x178A ? 0 : 1][y >> 2]);
     a = ram16((uint16_t) (v->object_src + 2 + y));
     uint16_t sm_b = first ? v->sm_obj_b : v->sm_obj2_b;
     if(a & 0x8000) {  // the player's own car
@@ -257,6 +274,10 @@ static void render_view(const RenderView* v) {
   ram16_set(v->sm_colour_hi, z(0xE9));
   ram16_set(v->sm_colour_lo, (uint16_t) (z(0xE9) - 1));
   uint16_t s = (uint16_t) (z(0xE7) + v->scroll_add);
+  if(tg_port_interp) {
+    for(uint16_t i = 0; i < 0x1A0; i++) tg_port_line_depth[(s + i) & 0x1FFF] = PPU_NOT_ENTRY;
+    for(uint16_t i = 0; i < 0x1A0; i += 4) tg_port_line_depth[(s + i) & 0x1FFF] = PPU_NO_DEPTH;
+  }
   ram16_set(v->sm_scroll_lo, s);
   ram16_set(v->sm_scroll_hi, (uint16_t) (s + 2));
   // The first, partial segment.
@@ -339,6 +360,7 @@ static void render_view(const RenderView* v) {
       goto next_segment;
     }
     // $2753: lines to draw for this segment.
+    uint16_t lines = x, line = 0;  // high frame rate: this segment's lines, the one drawn next
     z_set(0x70, z(0x78));
     z_set(0x72, z(0x7A));
     step_camera();
@@ -370,6 +392,7 @@ static void render_view(const RenderView* v) {
       step_scroll();
       z_set(0x98, (uint16_t) (z(0x98) - 1));
       x--;
+      line++;
     }
     {
       // A colour-pointer run: x lines of segment $9E.
@@ -396,6 +419,11 @@ static void render_view(const RenderView* v) {
         ram16_set((uint16_t) (ram16(v->sm_scroll_hi) + ly), a);
         step_scroll();
         ram16_set((uint16_t) (ram16(v->sm_scroll_lo) + ly), z(0x72));
+        if(tg_port_interp && lines) {
+          // Depth: through the segment from its near end to its far end ($8E).
+          line_depth(v, ly, (int16_t) ((int16_t) (z(0x8E) - 0x20) * 8 + (256 * line + 128) / lines));
+          line++;
+        }
         ly = (uint16_t) (ly - 4);
         if(ly & 0x8000) {
           // $284D: every line is drawn.
@@ -488,7 +516,7 @@ next_segment:
       }
       if(kind != 0) {
         x = z(v->objects);
-        add_object(v, x, kind);
+        add_object(v, x, kind, (uint16_t) (((z(0x9A) << 1) | 1) + 1));
         z_set(v->objects, (uint16_t) (x + 8));
       }
     }
@@ -498,7 +526,7 @@ next_segment:
     if(a != 0) {
       if(a == 0xC004) z_set(0xF5, 0xFFFF);
       else if(a == 0xC006) z_set(0xF5, 0);
-      add_object(v, x, a);
+      add_object(v, x, a, (uint16_t) ((z(0x9A) << 1) + 1));
       x = (uint16_t) (x + 8);
     }
     y = z(0x68);

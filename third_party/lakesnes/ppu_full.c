@@ -50,6 +50,13 @@ typedef struct PpuFullView {
   float outRoad;   // where ROAD_ROW is on the screen
   uint8_t* lines;  // SCREEN_LINES copies of the line state
   uint8_t* live;
+  // High frame rate: the line states of the last two race frames, and the in-between ones.
+  uint8_t* cur;
+  uint8_t* prev;
+  uint8_t* blend;
+  bool haveCur, havePrev;
+  uint8_t curFlags;  // how the last race frame was composed
+  int curMargin;
 } PpuFullView;
 
 // The part of the PPU that decides how a line looks, apart from VRAM.
@@ -248,25 +255,176 @@ static void pillarbox(Ppu* ppu) {
   }
 }
 
-void ppu_fullCompose(Ppu* ppu) {
+static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m);
+
+// High frame rate: keeps this race frame's line states, and the last one's.
+static void keepFrame(PpuFullView* f, uint8_t flags, int m) {
+  size_t size = SCREEN_LINES * stateSize();
+  if(f->cur == NULL) {
+    f->cur = malloc(size);
+    f->prev = malloc(size);
+    f->blend = malloc(size);
+    if(f->cur == NULL || f->prev == NULL || f->blend == NULL) {
+      free(f->cur);
+      free(f->prev);
+      free(f->blend);
+      f->cur = f->prev = f->blend = NULL;
+      return;
+    }
+  }
+  uint8_t* t = f->prev;
+  f->prev = f->cur;
+  f->cur = t;
+  memcpy(f->cur, f->lines, size);
+  f->havePrev = f->haveCur && f->curFlags == flags && f->curMargin == m;
+  f->haveCur = true;
+  f->curFlags = flags;
+  f->curMargin = m;
+}
+
+static Ppu* blendRow(PpuFullView* f, int row) { return (Ppu*) (f->blend + (size_t) row * stateSize() - stateStart()); }
+static const Ppu* rowOf(const uint8_t* lines, int row) { return asPpu(lines + (size_t) row * stateSize()); }
+
+static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
+static uint16_t lerpScroll(int a, int b, float t) { return (uint16_t) ((a + (int) floorf(wrap10(b - a) * t + 0.5f)) & 0x3ff); }
+
+// In the rows first..last of a frame, the fractional row where the road is depth d ahead
+// (depth grows up the screen), or -1 when no road row is that far. Clamped to the nearest
+// road row below.
+static float rowAtDepth(const uint8_t* lines, int first, int last, float d) {
+  int below = -1;  // the lowest road row
+  for(int y = last; y >= first; y--) {
+    int dy = rowOf(lines, y)->lineDepth;
+    if(dy == PPU_NO_DEPTH) continue;
+    if(below < 0) {
+      below = y;
+      if(d <= dy) return (float) y;
+      continue;
+    }
+    int dn = rowOf(lines, y + 1)->lineDepth;
+    if(dn != PPU_NO_DEPTH && d >= dn && d <= dy) return dy == dn ? (float) y : y + 1 - (d - dn) / (float) (dy - dn);
+  }
+  return -1;
+}
+
+// The rows of one view for t of a frame after the last: each road row shows the row of
+// the last frame that will be at its depth by then, its sideways scroll between the two
+// frames; the sky and scenery scroll between the two frames.
+static void blendView(PpuFullView* f, int first, int last, float t) {
+  // How far the camera moved (track units).
+  int moved = 0;
+  for(int y = last; y >= first; y--) {
+    const Ppu* c = rowOf(f->cur, y);
+    const Ppu* p = rowOf(f->prev, y);
+    if(c->lineDepth == PPU_NO_DEPTH || p->lineDepth == PPU_NO_DEPTH) continue;
+    moved = (int16_t) (c->lineCam - p->lineCam);
+    break;
+  }
+  if(moved < -0x80 || moved > 0x80) moved = 0;  // over the line, or a restart
+  for(int y = first; y <= last; y++) {
+    Ppu* b = blendRow(f, y);
+    const Ppu* c = rowOf(f->cur, y);
+    const Ppu* p = rowOf(f->prev, y);
+    if(c->lineDepth == PPU_NO_DEPTH) {
+      b->bgLayer[1].hScroll = lerpScroll(p->bgLayer[1].hScroll, c->bgLayer[1].hScroll, t);
+      b->bgLayer[1].vScroll = lerpScroll(p->bgLayer[1].vScroll, c->bgLayer[1].vScroll, t);
+      continue;
+    }
+    float d = c->lineDepth;
+    float sc = rowAtDepth(f->cur, first, last, d - (1 - t) * moved * 8);
+    float sp = rowAtDepth(f->prev, first, last, d + t * moved * 8);
+    if(sc < 0) continue;
+    int a = (int) floorf(sc);
+    float u = sc - a;
+    if(a >= last) {
+      a = last;
+      u = 0;
+    }
+    int use = u >= 0.5f ? a + 1 : a;
+    memcpy(f->blend + (size_t) y * stateSize(), f->cur + (size_t) use * stateSize(), stateSize());
+    b = blendRow(f, y);
+    // The road's row of art and sideways scroll, between the rows either side.
+    const Ppu* ca = rowOf(f->cur, a);
+    const Ppu* cb = rowOf(f->cur, u > 0 ? a + 1 : a);
+    int ra = (ca->bgLayer[2].vScroll + a + 1) & 0x3ff, rb = (cb->bgLayer[2].vScroll + (u > 0 ? a + 2 : a + 1)) & 0x3ff;
+    int dr = wrap10(rb - ra);
+    int row = dr >= -16 && dr <= 16 ? ra + (int) floorf(dr * u + 0.5f) : (use == a ? ra : rb);
+    b->bgLayer[2].vScroll = (uint16_t) ((row - (y + 1)) & 0x3ff);
+    float hc = ca->bgLayer[2].hScroll + wrap10(cb->bgLayer[2].hScroll - ca->bgLayer[2].hScroll) * u;
+    float hp = hc;
+    if(sp >= 0) {
+      int pa = (int) floorf(sp);
+      float pu = sp - pa;
+      if(pa >= last) {
+        pa = last;
+        pu = 0;
+      }
+      const Ppu* qa = rowOf(f->prev, pa);
+      const Ppu* qb = rowOf(f->prev, pu > 0 ? pa + 1 : pa);
+      hp = qa->bgLayer[2].hScroll + wrap10(qb->bgLayer[2].hScroll - qa->bgLayer[2].hScroll) * pu;
+      hp = hc + wrap10((int) floorf(hp - hc + 0.5f));
+    }
+    b->bgLayer[2].hScroll = (uint16_t) ((int) floorf(lerpf(hp, hc, t) + 0.5f) & 0x3ff);
+    // Keep the HUD and the scenery of the row itself.
+    b->bgLayer[0] = c->bgLayer[0];
+    b->bgLayer[1].hScroll = lerpScroll(p->bgLayer[1].hScroll, c->bgLayer[1].hScroll, t);
+    b->bgLayer[1].vScroll = c->bgLayer[1].vScroll;
+  }
+}
+
+// Moves each object back toward where it was in the last frame: (1 - t) of the way.
+static void blendObjects(PpuFullView* f, float t, int16_t dx[128], int16_t dy[128]) {
+  const Ppu* c = rowOf(f->cur, 0);
+  const Ppu* p = rowOf(f->prev, 0);
+  for(int i = 0; i < 128; i++) {
+    dx[i] = dy[i] = 0;
+    uint16_t id = c->objIdent[i];
+    if(id == 0) continue;
+    int j = 0;
+    while(j < 128 && p->objIdent[j] != id) j++;
+    if(j == 128) continue;
+    int mx = c->objAnchorX[i] - p->objAnchorX[j], my = c->objAnchorY[i] - p->objAnchorY[j];
+    if(mx < -64 || mx > 64 || my < -64 || my > 64) continue;
+    dx[i] = (int16_t) -floorf((1 - t) * mx + 0.5f);
+    dy[i] = (int16_t) -floorf((1 - t) * my + 0.5f);
+  }
+}
+
+static void moveObjects(Ppu* b, const int16_t dx[128], const int16_t dy[128]) {
+  for(int i = 0; i < 128; i++) {
+    if(dx[i] == 0 && dy[i] == 0) continue;
+    int x = (b->oam[i * 2] & 0xff) | ((b->highOam[i >> 2] >> ((i & 3) * 2)) & 1) << 8;
+    int y = b->oam[i * 2] >> 8;
+    if(y >= 224 + 16 && y < 256) continue;  // hidden
+    x = (x + dx[i]) & 0x1ff;
+    y = (y + dy[i]) & 0xff;
+    b->oam[i * 2] = (uint16_t) ((x & 0xff) | y << 8);
+    uint8_t bit = (uint8_t) (1 << ((i & 3) * 2));
+    b->highOam[i >> 2] = (uint8_t) ((b->highOam[i >> 2] & ~bit) | (x & 0x100 ? bit : 0));
+    if(b->objGround[i] != PPU_NO_GROUND) b->objGround[i] = (int16_t) (b->objGround[i] + dy[i]);
+  }
+}
+
+bool ppu_interpCompose(Ppu* ppu, float t) {
   PpuFullView* f = ppu->full;
-  uint8_t flags = ppu->fullArmed;
-  ppu->fullArmed = *ppu->raceFrame;
-  *ppu->raceFrame = 0;
-  int m = ppu->wideMargin;
-  if(m > PPU_WIDE_MAX) m = PPU_WIDE_MAX;
-  if(m > 0 && ppu->wideBuffer == NULL) {
-    ppu->wideBuffer = calloc((size_t) PPU_LINE_BUF * SCREEN_LINES, sizeof(uint32_t));
-    if(ppu->wideBuffer == NULL) return;
-  }
-  bool all = f != NULL && (flags & PPU_RACE_FRAME);
-  int need = (flags & PPU_FULL_VIEW) && m == 0 ? VIEW_LINES : SCREEN_LINES;
-  for(int i = 0; all && i < need; i++) all = f->got[i];
-  if(f != NULL) memset(f->got, 0, sizeof(f->got));
-  if(!all) {
-    if(m > 0) pillarbox(ppu);
-    return;
-  }
+  if(f == NULL || !f->haveCur || !f->havePrev || f->blend == NULL) return false;
+  if(t < 0) t = 0;
+  if(t > 1) t = 1;
+  memcpy(f->blend, f->cur, SCREEN_LINES * stateSize());
+  blendView(f, VIEW_TOP, VIEW_LINES - 1, t);
+  blendView(f, VIEW_STEP + VIEW_TOP, VIEW_STEP + VIEW_LINES - 1, t);
+  int16_t dx[128], dy[128];
+  blendObjects(f, t, dx, dy);
+  for(int y = 0; y < SCREEN_LINES; y++) moveObjects(blendRow(f, y), dx, dy);
+  uint8_t* lines = f->lines;
+  f->lines = f->blend;
+  composeFrame(ppu, f, f->curFlags, f->curMargin);
+  f->lines = lines;
+  return true;
+}
+
+// Redraws the screen from the line states in f->lines.
+static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
   bool side = (flags & PPU_SIDE_BY_SIDE) && m > 0;
   bool full = (flags & PPU_FULL_VIEW) || side;
   memcpy(f->live, (uint8_t*) ppu + stateStart(), stateSize());
@@ -321,4 +479,28 @@ void ppu_fullCompose(Ppu* ppu) {
   ppu->hudClamp = false;
   ppu->lineOut = NULL;
   loadState(ppu, f->live);
+}
+
+void ppu_fullCompose(Ppu* ppu) {
+  PpuFullView* f = ppu->full;
+  uint8_t flags = ppu->fullArmed;
+  ppu->fullArmed = *ppu->raceFrame;
+  *ppu->raceFrame = 0;
+  int m = ppu->wideMargin;
+  if(m > PPU_WIDE_MAX) m = PPU_WIDE_MAX;
+  if(m > 0 && ppu->wideBuffer == NULL) {
+    ppu->wideBuffer = calloc((size_t) PPU_LINE_BUF * SCREEN_LINES, sizeof(uint32_t));
+    if(ppu->wideBuffer == NULL) return;
+  }
+  bool all = f != NULL && (flags & PPU_RACE_FRAME);
+  int need = (flags & PPU_FULL_VIEW) && m == 0 ? VIEW_LINES : SCREEN_LINES;
+  for(int i = 0; all && i < need; i++) all = f->got[i];
+  if(f != NULL) memset(f->got, 0, sizeof(f->got));
+  if(!all) {
+    if(f != NULL) f->haveCur = f->havePrev = false;
+    if(m > 0) pillarbox(ppu);
+    return;
+  }
+  if(ppu->interp) keepFrame(f, flags, m);
+  composeFrame(ppu, f, flags, m);
 }

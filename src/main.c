@@ -60,6 +60,8 @@ static struct {
   bool original;  // the game's own code throughout (--original)
   bool smooth;  // enhancement: race logic every frame instead of every third (F6, --smooth)
   bool recordedSmooth;
+  bool highFps;  // enhancement: in-between frames at the display's rate (Shift+F6, --high-fps)
+  bool vsync;
   bool scaling;  // enhancement: race objects grow smoothly (F7, --smooth-scaling)
   bool recordedScaling;
   bool fullView;  // enhancement: 1-player races fill the whole screen (F9, --full-view)
@@ -236,7 +238,7 @@ static const Setting kSettings[] = {
   {"fullscreen", &app.fullscreen}, {"integer_scale", &app.integerScale}, {"rumble", &app.rumble},
   {"smooth", &app.smooth}, {"smooth_scaling", &app.scaling}, {"full_view", &app.fullView},
   {"tall_road", &app.tallRoad}, {"wide", &app.wide}, {"side_by_side", &app.sideBySide},
-  {"ghost", &app.ghost}, {"auto_save", &app.autoSave},
+  {"ghost", &app.ghost}, {"auto_save", &app.autoSave}, {"high_fps", &app.highFps},
 };
 
 static void loadSettings(void) {
@@ -296,6 +298,7 @@ static void updateTitle(void) {
   if(app.sideBySide && !app.original) SDL_strlcat(title, ", side by side", sizeof(title));
   if(app.ghost && !app.original) SDL_strlcat(title, ", ghost car", sizeof(title));
   if(app.autoSave) SDL_strlcat(title, ", auto-save", sizeof(title));
+  if(app.highFps && !app.original) SDL_strlcat(title, ", high frame rate", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
 
@@ -439,6 +442,27 @@ static int wantedMargin(void) {
   return m < 0 ? 0 : m > 96 ? 96 : m;
 }
 
+// The game's picture into the textures.
+static void uploadPicture(void) {
+  void* pixels;
+  int pitch;
+  if(SDL_LockTexture(app.texture, NULL, &pixels, &pitch)) {
+    tg_game_get_pixels(app.game, pixels);
+    SDL_UnlockTexture(app.texture);
+  }
+  const uint32_t* wide = tg_game_wide_pixels(app.game);
+  if(wide) {
+    int w = SNES_W + 2 * tg_port_wide_margin;
+    if(app.wideTexture == NULL || app.wideTextureW != w) {
+      if(app.wideTexture) SDL_DestroyTexture(app.wideTexture);
+      app.wideTexture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, w, SNES_H);
+      if(app.wideTexture) SDL_SetTextureScaleMode(app.wideTexture, SDL_SCALEMODE_NEAREST);
+      app.wideTextureW = w;
+    }
+    if(app.wideTexture) SDL_UpdateTexture(app.wideTexture, NULL, wide, w * 4);
+  }
+}
+
 static void runFrame(int samples) {
   uint16_t input[3] = {0, app.keys[1] | padButtons(app.pads[0]), app.keys[2] | padButtons(app.pads[1])};
   bool reset = app.resetRequested;
@@ -467,6 +491,7 @@ static void runFrame(int samples) {
   if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
   if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
   if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
+  if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
   if(app.record) {
     if(reset) fprintf(app.record, "%u reset\n", app.frame);
     if(app.smooth != app.recordedSmooth) {
@@ -544,23 +569,7 @@ static void runFrame(int samples) {
   }
   rumble();
 
-  void* pixels;
-  int pitch;
-  if(SDL_LockTexture(app.texture, NULL, &pixels, &pitch)) {
-    tg_game_get_pixels(app.game, pixels);
-    SDL_UnlockTexture(app.texture);
-  }
-  const uint32_t* wide = tg_game_wide_pixels(app.game);
-  if(wide) {
-    int w = SNES_W + 2 * tg_port_wide_margin;
-    if(app.wideTexture == NULL || app.wideTextureW != w) {
-      if(app.wideTexture) SDL_DestroyTexture(app.wideTexture);
-      app.wideTexture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, w, SNES_H);
-      if(app.wideTexture) SDL_SetTextureScaleMode(app.wideTexture, SDL_SCALEMODE_NEAREST);
-      app.wideTextureW = w;
-    }
-    if(app.wideTexture) SDL_UpdateTexture(app.wideTexture, NULL, wide, w * 4);
-  }
+  uploadPicture();
 
   static int16_t buffer[2048 * 2];
   tg_game_get_samples(app.game, buffer, samples);
@@ -603,6 +612,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--side-by-side") == 0) app.sideBySide = true;
     else if(strcmp(argv[i], "--ghost") == 0) app.ghost = true;
     else if(strcmp(argv[i], "--auto-save") == 0) app.autoSave = true;
+    else if(strcmp(argv[i], "--high-fps") == 0) app.highFps = app.smooth = true;
     else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       i++;
       for(int f = 0; f < FILTER_COUNT; f++) if(strcmp(argv[i], filterNames[f]) == 0) app.filter = f;
@@ -691,7 +701,19 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F3) { app.integerScale = !app.integerScale; updateTitle(); break; }
             if(e.key.key == SDLK_F4) { app.filter = (app.filter + 1) % FILTER_COUNT; updateTitle(); break; }
             if(e.key.key == SDLK_F5) { app.resetRequested = true; break; }
-            if(e.key.key == SDLK_F6 && !app.replaying) { app.smooth = !app.smooth; updateTitle(); break; }
+            if(e.key.key == SDLK_F6 && (e.key.mod & SDL_KMOD_SHIFT)) {
+              // In-between frames need the race to move every frame: smooth motion comes on too.
+              app.highFps = !app.highFps;
+              if(app.highFps && !app.replaying) app.smooth = true;
+              updateTitle();
+              break;
+            }
+            if(e.key.key == SDLK_F6 && !app.replaying) {
+              app.smooth = !app.smooth;
+              if(!app.smooth) app.highFps = false;
+              updateTitle();
+              break;
+            }
             if(e.key.key == SDLK_F7 && !app.replaying) { app.scaling = !app.scaling; updateTitle(); break; }
             if(e.key.key == SDLK_F8) { app.rumble = !app.rumble; updateTitle(); break; }
             if(e.key.key == SDLK_F9 && !app.replaying) {
@@ -729,7 +751,26 @@ int main(int argc, char** argv) {
 
     Uint64 now = SDL_GetTicksNS();
     if(now - next > (Uint64) (FRAME_NS * 8) && now > next) next = now;  // resync after a stall
-    if(now >= next) {
+    bool highFps = app.highFps && !app.original;
+    if(highFps != app.vsync) {
+      // High frame rate shows a picture every refresh of the display, waiting for it.
+      SDL_SetRenderVSync(app.renderer, highFps ? 1 : 0);
+      app.vsync = highFps;
+    }
+    if(highFps) {
+      if(now >= next) {
+        sampleAcc += AUDIO_RATE * FRAME_NS / 1e9;
+        int samples = (int) sampleAcc;
+        sampleAcc -= samples;
+        runFrame(samples);
+        next += (Uint64) FRAME_NS;
+        now = SDL_GetTicksNS();
+      }
+      // The picture between the last two frames, as far on as the time since the last.
+      double t = 1.0 - (double) (next > now ? next - now : 0) / FRAME_NS;
+      if(tg_game_interp(app.game, (float) t)) uploadPicture();
+      present();
+    } else if(now >= next) {
       sampleAcc += AUDIO_RATE * FRAME_NS / 1e9;
       int samples = (int) sampleAcc;
       sampleAcc -= samples;

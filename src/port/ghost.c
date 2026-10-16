@@ -102,7 +102,9 @@ static void show(uint16_t time) {
   for(uint16_t i = (uint16_t) (end + 4); i >= y + 4; i -= 4) {
     ram16_set((uint16_t) (RaceView1Cars + i), ram16((uint16_t) (RaceView1Cars + i - 4)));
     ram16_set((uint16_t) (RaceView1Cars + i + 2), ram16((uint16_t) (RaceView1Cars + i - 2)));
+    if(i < 0x50) tg_port_view_car[0][i >> 2] = tg_port_view_car[0][(i >> 2) - 1];
   }
+  tg_port_view_car[0][y >> 2] = TG_GHOST_CAR;
   ram16_set((uint16_t) (RaceView1Cars + y), key);
   ram16_set((uint16_t) (RaceView1Cars + y + 2), w);
   tg_port_ghost_key = key;
