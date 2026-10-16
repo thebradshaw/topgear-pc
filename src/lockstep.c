@@ -28,8 +28,10 @@ typedef struct Result {
 } Result;
 
 typedef struct FuncStats {
-  uint32_t calls, verified, interrupted, crossedFrame, wrongMode, mismatches;
+  uint32_t calls, verified, verifiedInterrupted, interrupted, crossedFrame, wrongMode, mismatches;
 } FuncStats;
+
+enum { kMaxHandlerWrites = 1024 };
 
 struct TgLockstep {
   Snes* snes;
@@ -45,6 +47,11 @@ struct TgLockstep {
   int stateSize;
   uint8_t* after;  // machine state after the original returned
   int afterSize;
+  // Work RAM written by interrupt handlers while the original ran; not compared.
+  uint8_t baseDepth;
+  uint32_t handlerWrites[kMaxHandlerWrites];
+  int handlerWriteCount;
+  bool handlerTouchedPpu;  // a handler wrote PPU memory or started DMA: can't compare
   char* details;   // text of the first mismatches
   size_t detailsLen;
 };
@@ -99,9 +106,28 @@ static bool isLoggedIo(uint32_t adr) {
   return (a >= 0x2100 && a < 0x2200) || (a >= 0x4200 && a < 0x4400);
 }
 
+static int32_t wramIndex(uint32_t adr) {
+  uint8_t bank = (uint8_t) (adr >> 16);
+  if(bank == 0x7e || bank == 0x7f) return (int32_t) (adr & 0x1ffff);
+  if((bank < 0x40 || (bank >= 0x80 && bank < 0xc0)) && (adr & 0xffff) < 0x2000) return (int32_t) (adr & 0x1fff);
+  return -1;
+}
+
 void tg_lockstep_on_write(TgLockstep* ls, uint32_t adr, uint8_t val) {
   Result* r = ls->logTarget;
-  if(r == NULL || !isLoggedIo(adr)) return;
+  if(r == NULL) return;
+  if(r == ls->orig && ls->snes->cpu->intDepth > ls->baseDepth) {
+    // An interrupt handler, not the routine.
+    int32_t i = wramIndex(adr);
+    if(i >= 0) {
+      if(ls->handlerWriteCount < kMaxHandlerWrites) ls->handlerWrites[ls->handlerWriteCount] = (uint32_t) i;
+      ls->handlerWriteCount++;
+    }
+    uint16_t a = (uint16_t) adr;
+    if(a == 0x2104 || a == 0x2118 || a == 0x2119 || a == 0x2122 || a == 0x420b) ls->handlerTouchedPpu = true;
+    return;
+  }
+  if(!isLoggedIo(adr)) return;
   if(r->logCount < kMaxLog) r->log[r->logCount] = (IoWrite) { (uint16_t) adr, val };
   r->logCount++;
 }
@@ -286,6 +312,9 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   unsigned entryLine = snes->vPos;
   Result* o = ls->orig;
   o->logCount = o->hdmaCount = 0;
+  ls->baseDepth = cpu->intDepth;
+  ls->handlerWriteCount = 0;
+  ls->handlerTouchedPpu = false;
   ls->logTarget = o;
   ls->inOriginal = true;
   // Running on past the end of vblank is fine. Reaching the start of the next vblank is
@@ -304,20 +333,24 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
     if(getenv("TG_LOCKSTEP_DEBUG")) fprintf(stderr, "%s: abandoned at frame %u line %u -> frame %u line %u, %d steps\n", f->name, entryFrame, entryLine, snes->frames, snes->vPos, steps);
     // It ran into the next frame: run it again normally instead.
     snes_loadState(snes, ls->state, ls->stateSize);
+    cpu->intDepth = ls->baseDepth;  // not part of the saved state
     st->crossedFrame++;
     st->calls--;  // counted again when it runs
     ls->skipOnce = adr;
     return false;
   }
-  if(cpu->interrupts != ints) {
+  bool interrupted = cpu->interrupts != ints;
+  if(interrupted && (ls->handlerTouchedPpu || ls->handlerWriteCount > kMaxHandlerWrites)) {
     st->interrupted++;
     return true;
   }
+  uint8_t depthAfter = cpu->intDepth;
   capture(ls, o);
   ls->afterSize = snes_saveState(snes, ls->after);
 
   // Then the C version from the same state, plus the HDMA writes that happened meanwhile.
   snes_loadState(snes, ls->state, ls->stateSize);
+  cpu->intDepth = ls->baseDepth;
   Result* c = ls->c;
   c->logCount = c->hdmaCount = 0;
   ls->logTarget = c;
@@ -334,12 +367,26 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
     }
   }
 
+  // RAM that interrupt handlers wrote isn't the routine's doing.
+  for(int i = 0; i < ls->handlerWriteCount; i++) c->ram[ls->handlerWrites[i]] = o->ram[ls->handlerWrites[i]];
+
   // The game continues from the original's result, with junk in the registers no caller
   // should read, so the recording tests catch a wrong TG_DEAD_* declaration.
   snes_loadState(snes, ls->after, ls->afterSize);
+  cpu->intDepth = depthAfter;
   poisonDead(f, cpu);
   if(compare(ls, f, false)) {
-    st->verified++;
+    if(interrupted) st->verifiedInterrupted++; else st->verified++;
+  } else if(interrupted) {
+    // The handler may have changed something the routine read: not a fair comparison.
+    if(getenv("TG_LOCKSTEP_DEBUG") && st->interrupted < 3) {
+      compare(ls, f, true);
+      fputs(ls->details, stderr);
+      free(ls->details);
+      ls->details = NULL;
+      ls->detailsLen = 0;
+    }
+    st->interrupted++;
   } else {
     if(st->mismatches < kMaxDetails) compare(ls, f, true);
     st->mismatches++;
@@ -354,9 +401,9 @@ int tg_lockstep_report(const TgLockstep* ls, FILE* f) {
   for(int i = 0; i < tg_port_func_count; i++) {
     const FuncStats* s = &ls->stats[i];
     if(ls->mode == TG_PORT_VERIFY) {
-      fprintf(f, "  %-24s calls %u, matched %u, mismatched %u, skipped (interrupted %u, reached next frame %u, "
-        "wrong width %u)\n", tg_port_funcs[i].name, s->calls, s->verified, s->mismatches, s->interrupted,
-        s->crossedFrame, s->wrongMode);
+      fprintf(f, "  %-24s calls %u, matched %u (%u interrupted), mismatched %u, skipped (interrupted %u, "
+        "reached next frame %u, wrong width %u)\n", tg_port_funcs[i].name, s->calls, s->verified + s->verifiedInterrupted,
+        s->verifiedInterrupted, s->mismatches, s->interrupted, s->crossedFrame, s->wrongMode);
     } else {
       fprintf(f, "  %-24s calls %u, wrong width %u\n", tg_port_funcs[i].name, s->calls, s->wrongMode);
     }

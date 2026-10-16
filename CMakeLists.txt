@@ -34,6 +34,7 @@ add_library(tgcore STATIC
   src/input_script.c
   src/lockstep.c
   src/port/port.c
+  src/port/cars.c
   src/port/hud.c
   src/port/messages.c
   src/port/race.c

@@ -5,12 +5,16 @@ void RaceDrawHud(TgRegs* r);
 void RaceBuildWindowTable(TgRegs* r);
 void RaceUpdateSegmentValues(TgRegs* r);
 void RaceUpdateMessages(TgRegs* r);
+void RaceMoveCars(TgRegs* r);
+void RaceSortCars(TgRegs* r);
 
 // Every translated routine, sorted by address.
 const TgPortFunc tg_port_funcs[] = {
   { 0x0088A1, "RaceRevEngines", RaceRevEngines, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, 0 },
   { 0x008910, "RaceUpdateSegmentValues", RaceUpdateSegmentValues, TG_CALL_JSR, TG_MX_I16, TG_MX_16, 0 },
   { 0x009381, "RaceBuildWindowTable", RaceBuildWindowTable, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x00A175, "RaceMoveCars", RaceMoveCars, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, TG_DEAD_FLAGS },
+  { 0x00A1BD, "RaceSortCars", RaceSortCars, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, TG_DEAD_FLAGS },
   { 0x00CE61, "RaceDrawHud", RaceDrawHud, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00DA75, "RaceUpdateMessages", RaceUpdateMessages, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
 };

@@ -23,8 +23,11 @@ signatures become ordinary C parameters.
   original's result, so the recording hashes still apply. All ROM tests run this way.
 - `native`: only the C version runs.
 
-A call isn't compared when an interrupt lands inside the original, or when it runs on
-into the next frame's vblank; the report counts these as skipped. The stack below SP is
+A call isn't compared when the original runs on into the next frame's vblank. When an
+interrupt lands inside the original, the work RAM the handler wrote isn't compared, and
+a difference then counts as skipped rather than a mismatch, since the handler may have
+changed something the routine read; calls whose handler wrote PPU memory or started DMA
+are skipped outright. The stack below SP is
 free space, so leftover bytes from the original's pushes there aren't compared. Writes that HDMA makes while the
 original runs (the race's per-line colours) are replayed after the C version, since they
 come from the clock and not from the routine. Writes to the multiply/divide registers
@@ -51,10 +54,12 @@ aren't compared: C does that arithmetic directly.
 
 ## Translated so far
 
-| Routine | Address | Checked calls (all recordings) |
+| Routine | Address | Matching calls in a full test run |
 |---|---|---|
 | RaceRevEngines | $00:88A1 | 5,414 per full test run. Chris's session revs player 1 on the start line; no recording revs player 2 yet |
-| RaceUpdateSegmentValues | $00:8910 | 30,129 |
-| RaceBuildWindowTable | $00:9381 | 32,674; only Chris's session reaches the 1-player window shapes |
-| RaceDrawHud | $00:CE61 | 37,099 |
+| RaceUpdateSegmentValues | $00:8910 | 31,337 |
+| RaceBuildWindowTable | $00:9381 | 32,889; only Chris's session reaches the 1-player window shapes |
+| RaceMoveCars | $00:A175 | 31,624, including RaceSortCars, which it runs into; no recording bumps a car that is already being pushed |
+| RaceSortCars | $00:A1BD | only through RaceMoveCars so far; no recording wraps a car backwards past the line or has two cars finish on the same frame |
+| RaceDrawHud | $00:CE61 | 37,120 |
 | RaceUpdateMessages | $00:DA75 | 37,120; no recording shows the wrap at the track start or the dropped low-fuel flag |

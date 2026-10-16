@@ -15,8 +15,10 @@
 // The game always continues from the original's result, so verify mode never changes
 // what the game does, and the recording tests' hashes still apply.
 //
-// A call is only compared when the original returns within the same frame and without
-// being interrupted; otherwise it counts as skipped. The C version runs in zero emulated
+// A call is only compared when the original returns before the next frame's vblank.
+// When an interrupt lands inside it, the work RAM the handler wrote isn't compared, and
+// a difference counts as skipped rather than as a mismatch (the handler may have changed
+// what the routine read); calls whose handler wrote PPU memory are skipped outright. The C version runs in zero emulated
 // cycles, so native mode shifts the timing of everything after it until the frame loop
 // itself is translated.
 

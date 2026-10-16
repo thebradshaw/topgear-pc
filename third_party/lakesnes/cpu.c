@@ -41,6 +41,7 @@ Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHand
   cpu->callHook = NULL;
   cpu->callCtx = NULL;
   cpu->interrupts = 0;
+  cpu->intDepth = 0;
   return cpu;
 }
 
@@ -273,6 +274,7 @@ static void cpu_doInterrupt(Cpu* cpu) {
   cpu->k = 0;
   cpu->intWanted = false;
   cpu->interrupts++;
+  cpu->intDepth++;
   if(cpu->nmiWanted) {
     cpu->nmiWanted = false;
     cpu->pc = cpu_readWord(cpu, 0xffea, 0xffeb, false);
@@ -1218,6 +1220,7 @@ static void cpu_doOpcode(Cpu* cpu, uint8_t opcode) {
       break;
     }
     case 0x40: { // rti imp
+      if(cpu->intDepth) cpu->intDepth--;  // topgear-pc
       cpu_idle(cpu);
       cpu_idle(cpu);
       cpu_setFlags(cpu, cpu_pullByte(cpu));

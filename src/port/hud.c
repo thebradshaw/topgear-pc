@@ -91,7 +91,8 @@ static void draw_position(uint16_t top, uint16_t shown_adr, uint16_t actual_adr)
   vram_write(rom16(0x00CC8D + suffix));
 }
 
-// Lap time m'ss"hh from a count of frames.
+// m'ss"hh from a count of frames: the player's finishing time, or the race clock while
+// it's still negative.
 static void draw_time(TgRegs* r, uint16_t left, uint16_t frames_adr) {
   uint16_t t = ram16(frames_adr);
   if(t & 0x8000) t = ram16(RaceTime);
@@ -189,8 +190,8 @@ void RaceDrawHud(TgRegs* r) {
   draw_nitros(0x0F03, ram16(RaceP2Nitros));
   draw_position(0x0D79, RaceP1PositionShown, RaceP1Position);
   draw_position(0x0F39, RaceP2PositionShown, RaceP2Position);
-  draw_time(r, 0x0C98, RaceP1LapTime);
-  draw_time(r, 0x0E58, RaceP2LapTime);
+  draw_time(r, 0x0C98, RaceP1FinishTime);
+  draw_time(r, 0x0E58, RaceP2FinishTime);
   draw_fuel(RaceP1FuelBar, ram16(RaceP1Fuel));
   draw_fuel(RaceP2FuelBar, ram16(RaceP2Fuel));
   draw_rpm(RaceP1RpmBar, ram16(RaceP1Rpm));

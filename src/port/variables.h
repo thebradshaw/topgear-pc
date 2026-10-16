@@ -16,6 +16,8 @@
 #define RaceWindowHidden2 0x1EDC
 #define RaceCars 0x0200  // car records, 18 bytes each
 #define RaceCarSize 0x12
+#define RaceP1Car 0x0204  // offset of player 1's record in RaceCars
+#define RaceP2Car 0x0206
 #define RaceSegmentTable 0x3E00  // $7E:3E00, one word per track segment
 #define RaceP1Messages 0x0118  // HUD message state, 18 bytes per player (see messages.c)
 #define RaceP2Messages 0x012A
@@ -39,12 +41,17 @@
 #define RacePitEntry 0x1EF0  // track position the pit message is keyed to (tentative)
 #define RaceP1PitFlags 0x1EF4  // word; $4000 = pit message shown (P2's word overlaps at $1EF5)
 #define RaceP2PitFlags 0x1EF5
+#define RaceP1Bumped 0x1EF5  // bit 7: player 1 bumped a car (byte inside the pit flag words)
+#define RaceP2Bumped 0x1EF6
 #define RaceFramesElapsed 0x1E90  // video frames since the last race update (normally 3)
-#define RaceTime 0x1EAE  // shown as the lap time when a player's own is negative (tentative)
+#define RaceTime 0x1EAE  // race clock in frames
+#define RaceFinishCount 0x1EB0  // byte: cars finished so far
 #define RaceP1PositionShown 0x1F00  // shown instead of RaceP1Position when not negative (tentative)
 #define RaceP2PositionShown 0x1F02
-#define RaceP1LapTime 0x1F26  // in frames (tentative)
-#define RaceP2LapTime 0x1F28
+#define RaceFinishOrder 0x1F12  // bytes: car ids in finishing order
+#define RaceFinishTimes 0x1F26  // words by car id; negative until the car finishes
+#define RaceP1FinishTime 0x1F26  // player 1 is car 0
+#define RaceP2FinishTime 0x1F28
 #define RaceP1AccelButton 0x1F76  // button mask from the control setup
 #define RaceP2AccelButton 0x1F93  // as read by RaceRevEngines (tentative)
 #define RaceP1SpeedKph 0x1FB0  // byte: nonzero shows km/h, zero mph
