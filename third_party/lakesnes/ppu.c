@@ -107,6 +107,8 @@ Ppu* ppu_init(Snes* snes) {
   memset(ppu->objTag, 0, sizeof(ppu->objTag));
   for(int i = 0; i < 128; i++) ppu->objGround[i] = PPU_NO_GROUND;
   memset(ppu->objShift, 0, sizeof(ppu->objShift));
+  memset(ppu->objInterpX, 0, sizeof(ppu->objInterpX));
+  memset(ppu->objInterpY, 0, sizeof(ppu->objInterpY));
   memset(ppu->objAlpha, 0, sizeof(ppu->objAlpha));
   ppu_setPixelOutputFormat(ppu, ppu_pixelOutputFormatBGRX);
   return ppu;

@@ -389,10 +389,12 @@ static void blendObjects(PpuFullView* f, float t, int16_t dx[128], int16_t dy[12
     dx[i] = dy[i] = 0;
     uint16_t id = c->objIdent[i];
     if(id == 0) continue;
-    int j = 0;
+    // The object's first sprite in each frame.
+    int k = 0, j = 0;
+    while(c->objIdent[k] != id) k++;
     while(j < 128 && p->objIdent[j] != id) j++;
     if(j == 128) continue;
-    int mx = c->objAnchorX[i] - p->objAnchorX[j], my = c->objAnchorY[i] - p->objAnchorY[j];
+    int mx = c->objAnchorX[k] - p->objAnchorX[j], my = c->objAnchorY[k] - p->objAnchorY[j];
     if(mx < -64 || mx > 64 || my < -64 || my > 64) continue;
     dx[i] = (int16_t) -floorf((1 - t) * mx + 0.5f);
     dy[i] = (int16_t) -floorf((1 - t) * my + 0.5f);
@@ -425,10 +427,14 @@ bool ppu_interpCompose(Ppu* ppu, float t) {
   int16_t dx[128], dy[128];
   blendObjects(f, t, dx, dy);
   for(int y = 0; y < SCREEN_LINES; y++) moveObjects(blendRow(f, y), dx, dy);
+  memcpy(ppu->objInterpX, dx, sizeof(dx));
+  memcpy(ppu->objInterpY, dy, sizeof(dy));
   uint8_t* lines = f->lines;
   f->lines = f->blend;
   composeFrame(ppu, f, f->curFlags, f->curMargin);
   f->lines = lines;
+  memset(ppu->objInterpX, 0, sizeof(ppu->objInterpX));
+  memset(ppu->objInterpY, 0, sizeof(ppu->objInterpY));
   return true;
 }
 

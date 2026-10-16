@@ -160,8 +160,12 @@ static bool add_parts_all(TgRegs* r, const Variant* v);
 static bool add_sprite(TgRegs* r, const Variant* v) {
   if(!tg_port_full_view && !tg_port_wide_margin && !g_ghost && !tg_port_interp) return add_parts_all(r, v);
   uint16_t y0 = ram16(0x1B92);
+  // Where this sprite is drawn: an object's first sprite gives its movement.
+  int16_t sx = (int16_t) ram16(0x1B88), sy = (int16_t) ram16(0x1B8A);
   bool ok = add_parts_all(r, v);
   if(tg_port_interp && g_ident) {
+    g_ax = sx;
+    g_ay = sy;
     uint16_t base = oam_base(r, v);
     for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) {
       uint16_t a = (uint16_t) (base + y) & 0x1FFF;

@@ -142,8 +142,10 @@ static void clipLines(Ppu* ppu, const PpuObjScale* s, int* top, int* bottom) {
 }
 
 static int shiftOf(Ppu* ppu, uint8_t index) {
-  return ppu->fullComposing ? ppu->objShift[index >> 1] : 0;
+  return ppu->fullComposing ? ppu->objShift[index >> 1] + ppu->objInterpY[index >> 1] : 0;
 }
+
+static int shiftXOf(Ppu* ppu, uint8_t index) { return ppu->fullComposing ? ppu->objInterpX[index >> 1] : 0; }
 
 int ppu_smoothOnLine(Ppu* ppu, uint8_t index, int line) {
   if(!isAnchor(ppu, index)) return -1;
@@ -153,8 +155,8 @@ int ppu_smoothOnLine(Ppu* ppu, uint8_t index, int line) {
   if(line < top || line >= bottom || s->count == 0) return 0;
   int x0, y0, x1, y1;
   objectBox(ppu, s, &x0, &y0, &x1, &y1);
-  int dy = shiftOf(ppu, index);
-  return line >= y0 + dy && line < y1 + dy && x1 > ppu->lineLeft && x0 < ppu->lineRight;
+  int dy = shiftOf(ppu, index), dx = shiftXOf(ppu, index);
+  return line >= y0 + dy && line < y1 + dy && x1 + dx > ppu->lineLeft && x0 + dx < ppu->lineRight;
 }
 
 void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line) {
@@ -165,8 +167,9 @@ void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line) {
   int j = line - shiftOf(ppu, index) - bm->y0;
   if(j < 0 || j >= bm->h) return;
   int priority = (s->parts[0].attr & 0x3000) >> 12;
+  int dx = shiftXOf(ppu, index);
   for(int i = 0; i < bm->w; i++) {
-    int x = bm->x0 + i;
+    int x = bm->x0 + i + dx;
     if(x < ppu->lineLeft || x >= ppu->lineRight) continue;
     int k = j * bm->w + i;
     int ox = PPU_OBJX(x);

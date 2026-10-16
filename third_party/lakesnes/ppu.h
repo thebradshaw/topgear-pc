@@ -190,6 +190,7 @@ struct Ppu {
   uint8_t fullArmed;   // this frame's flags, latched at the last vblank
   bool fullComposing;
   int16_t objShift[128];      // while composing: how far each entry moves down
+  int16_t objInterpX[128], objInterpY[128];  // in-between frames: how far each object moves
   float roadScale;            // full view: how much taller the road is drawn (0: 1.3, horizon low as in the original)
   int wideMargin;             // widescreen: extra pixels on each side (0: off)
   uint32_t* wideBuffer;       // the wide picture, XRGB, (256 + 2 * wideMargin) x 224
