@@ -28,7 +28,7 @@ The first gamepad is player 1 and the second is player 2 (the options menu can s
 
 | Key | Function |
 |---|---|
-| Tab (or a gamepad's guide button) | Options menu: every option below, controls for both players on the keyboard and for gamepads (press the new key or button), swapping which gamepad is player 1, reset and quit. The game waits while it is open |
+| Tab (or a gamepad's guide button) | Options menu: every option below, controls for both players on the keyboard and for gamepads (press the new key or button), swapping which gamepad is player 1, colours as a TV showed them instead of exact (also `--tv-colour`), reset and quit. The game waits while it is open |
 | F11 or Alt+Enter | Fullscreen |
 | Esc | Leave fullscreen |
 | F2 | Aspect: 4:3 TV or 8:7 square pixels |

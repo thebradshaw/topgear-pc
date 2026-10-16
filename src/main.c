@@ -42,6 +42,7 @@ static struct {
   AspectMode aspect;
   FilterMode filter;
   bool rumble;  // controller rumble in races (F8, --rumble)
+  bool tvColour;  // colours as a TV showed them (a CRT's deeper gamma, a little more saturation) rather than exact
   SDL_Texture* upscaled;  // sharp-bilinear's intermediate picture
   int upscaledFactor, upscaledW;
   SDL_Texture* wideTexture;  // the widescreen picture, wideTextureW x 224
@@ -246,7 +247,7 @@ static const Setting kSettings[] = {
   {"fullscreen", &app.fullscreen}, {"integer_scale", &app.integerScale}, {"rumble", &app.rumble},
   {"smooth", &app.smooth}, {"smooth_scaling", &app.scaling}, {"full_view", &app.fullView},
   {"tall_road", &app.tallRoad}, {"wide", &app.wide}, {"side_by_side", &app.sideBySide},
-  {"ghost", &app.ghost}, {"auto_save", &app.autoSave}, {"high_fps", &app.highFps},
+  {"ghost", &app.ghost}, {"auto_save", &app.autoSave}, {"high_fps", &app.highFps}, {"tv_colour", &app.tvColour},
 };
 
 static void loadSettings(void) {
@@ -455,14 +456,45 @@ static int wantedMargin(void) {
 }
 
 // The game's picture into the textures.
+// TV colours: a CRT's gamma (about 2.5 against a PC screen's 2.2) and 10% more saturation.
+static void tvColours(uint32_t* p, size_t n) {
+  static uint8_t lut[256];
+  static bool ready;
+  if(!ready) {
+    for(int i = 0; i < 256; i++) lut[i] = (uint8_t) SDL_lroundf(255.0f * SDL_powf(i / 255.0f, 2.5f / 2.2f));
+    ready = true;
+  }
+  for(size_t i = 0; i < n; i++) {
+    int r = lut[(p[i] >> 16) & 0xff], g = lut[(p[i] >> 8) & 0xff], b = lut[p[i] & 0xff];
+    int y = (r * 77 + g * 150 + b * 29) >> 8;
+    r = y + (r - y) * 11 / 10;
+    g = y + (g - y) * 11 / 10;
+    b = y + (b - y) * 11 / 10;
+    r = r < 0 ? 0 : r > 255 ? 255 : r;
+    g = g < 0 ? 0 : g > 255 ? 255 : g;
+    b = b < 0 ? 0 : b > 255 ? 255 : b;
+    p[i] = (uint32_t) (r << 16 | g << 8 | b);
+  }
+}
+
 static void uploadPicture(void) {
   void* pixels;
   int pitch;
   if(SDL_LockTexture(app.texture, NULL, &pixels, &pitch)) {
     tg_game_get_pixels(app.game, pixels);
+    if(app.tvColour) tvColours(pixels, (size_t) TG_FB_WIDTH * TG_FB_HEIGHT);
     SDL_UnlockTexture(app.texture);
   }
   const uint32_t* wide = tg_game_wide_pixels(app.game);
+  static uint32_t wideTv[(SNES_W + 2 * 96) * SNES_H];
+  if(wide && app.tvColour) {
+    size_t n = (size_t) (SNES_W + 2 * tg_port_wide_margin) * SNES_H;
+    if(n <= SDL_arraysize(wideTv)) {
+      memcpy(wideTv, wide, n * 4);
+      tvColours(wideTv, n);
+      wide = wideTv;
+    }
+  }
   if(wide) {
     int w = SNES_W + 2 * tg_port_wide_margin;
     if(app.wideTexture == NULL || app.wideTextureW != w) {
@@ -598,7 +630,7 @@ static void runFrame(int samples) {
 
 typedef enum {
   MI_RESUME, MI_ASPECT, MI_FILTER, MI_INTEGER, MI_FULLSCREEN, MI_WIDE, MI_FULLVIEW, MI_SIDE,
-  MI_SMOOTH, MI_HIGHFPS, MI_SCALING, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
+  MI_COLOUR, MI_SMOOTH, MI_HIGHFPS, MI_SCALING, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
   MI_KEYS2, MI_PADS, MI_RESET, MI_QUIT, MI_COUNT
 } MenuItem;
 
@@ -713,6 +745,7 @@ static void menuItemText(int i, char* out, size_t size) {
     case MI_SCALING: snprintf(out, size, "Smooth scaling     %s", onOff(app.scaling)); break;
     case MI_GHOST: snprintf(out, size, "Ghost car          %s", onOff(app.ghost)); break;
     case MI_AUTOSAVE: snprintf(out, size, "Auto-save          %s", onOff(app.autoSave)); break;
+    case MI_COLOUR: snprintf(out, size, "Colours            %s", app.tvColour ? "as on a TV" : "exact"); break;
     case MI_RUMBLE: snprintf(out, size, "Rumble             %s", onOff(app.rumble)); break;
     case MI_SWAP: snprintf(out, size, "Swap gamepads      P1: %s", app.pads[0] ? SDL_GetGamepadName(app.pads[0]) : "none"); break;
     case MI_KEYS: snprintf(out, size, "Player 1 keys..."); break;
@@ -753,6 +786,7 @@ static void menuActivate(int dir) {
     case MI_GHOST: if(!locked) { app.ghost = !app.ghost; updateTitle(); } break;
     case MI_AUTOSAVE: app.autoSave = !app.autoSave; updateTitle(); break;
     case MI_RUMBLE: app.rumble = !app.rumble; updateTitle(); break;
+    case MI_COLOUR: app.tvColour = !app.tvColour; uploadPicture(); updateTitle(); break;
     case MI_SWAP: {
       SDL_Gamepad* t = app.pads[0];
       app.pads[0] = app.pads[1];
@@ -903,6 +937,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--side-by-side") == 0) app.sideBySide = true;
     else if(strcmp(argv[i], "--ghost") == 0) app.ghost = true;
     else if(strcmp(argv[i], "--auto-save") == 0) app.autoSave = true;
+    else if(strcmp(argv[i], "--tv-colour") == 0) app.tvColour = true;
     else if(strcmp(argv[i], "--high-fps") == 0) app.highFps = app.smooth = true;
     else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       i++;
