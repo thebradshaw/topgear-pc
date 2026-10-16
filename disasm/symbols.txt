@@ -25,3 +25,6 @@
 00:A175 RaceMoveCars ; walks the car list at $0200 (DP=$0200), adds speed to track position
 05:D2E0 RaceDrivePlayers ; player 1 gears (manual or automatic), speed and hills from RaceJoy1, then player 2 from $05:DB52
 05:DB52 RaceDrivePlayer2 ; same for player 2; jumps to $05:ED92 when $1F04 is clear (computer-driven second car, tentative)
+00:CE61 RaceDrawSpeedometer ; speed x unit factor ($0F or $18, by $1FB0) / 10, digits written to the BG1 map at VRAM $0C5B
+00:9381 RaceBuildWindowTable ; writes the channel 6 window table through the pointer at $EB (tentative)
+00:ABFC RaceFindNearbyCars ; scans the car list for cars just behind each view's camera (tentative)

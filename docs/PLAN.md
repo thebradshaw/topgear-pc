@@ -46,6 +46,7 @@ snesrecomp can be used as an accelerator in step 3 to produce a first-draft C tr
 - Export assembly that rebuilds a byte-identical ROM; CI checks the hash.
 - Build a RAM map and label functions (car physics, road renderer, AI, HUD, menus, sound driver).
 - Done when: the rebuilt ROM matches byte for byte and the main loop, NMI handler and road renderer are labelled.
+- Status (2026-10-16): done. Round trip is byte-identical (`disasm_roundtrip` test); boot, both NMI handlers, the race main loop, driving code, road renderer and sprite builder are named. Findings in `docs/notes/engine.md`.
 
 **Phase 2. Input recordings as the test suite**
 - Record input movies covering every track, both players, pit stops, nitro, crashes, passwords, every menu, attract mode.
