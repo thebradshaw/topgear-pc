@@ -176,3 +176,44 @@ void RaceMoveCars(TgRegs* r) {
   } while(x != 0);
   RaceSortCars(r);
 }
+
+// $00:AB7A. Once both players have finished: runs the other cars on at 8x speed, 8
+// frames of race clock per step, until ten cars have finished, recording their order
+// and times. Leaves A = 0, X = 0; Y and N/V/Z/C are don't-care.
+void RaceFinishOthers(TgRegs* r) {
+  ram16_set(0x001A, ram16(RaceTime));
+  uint16_t x = 0x168;
+  do {
+    ram16_set(CAR(x, 0x0A), (uint16_t) (ram16(CAR(x, 0x0A)) << 3));
+    x = next_car(x);
+  } while(x != 0);
+  ram16_set(0x000C, 0);
+  do {
+    x = 0x168;
+    do {
+      uint16_t speed = ram16(CAR(x, 0x0A));
+      if(speed != 0) {
+        uint32_t sum = (uint32_t) speed + ram16(CAR(x, 0x06));
+        ram16_set(CAR(x, 0x06), (uint16_t) sum);
+        if(sum > 0xFFFF) g_ram[CAR(x, 0x08)]++;
+        uint16_t pos = ram16(CAR(x, 0x07));
+        if(pos >= ram16(RaceCars)) {
+          ram16_set(CAR(x, 0x07), (uint16_t) (pos - ram16(RaceCars)));
+          uint8_t old_lap = g_ram[CAR(x, 0x09)]++;
+          if(old_lap == g_ram[RaceLaps]) {
+            uint8_t id = g_ram[CAR(x, 0x00)] & 0x1F;
+            uint16_t y = ram16(RaceFinishCount);
+            g_ram[RaceFinishOrder + y] = id;
+            ram16_set(RaceFinishCount, (uint16_t) (y + 1));
+            ram16_set((uint16_t) (RaceFinishTimes + ((id << 1) & 0xFF)), ram16(0x001A));
+          }
+        }
+      }
+      x = next_car(x);
+    } while(x != 0);
+    ram16_set(0x001A, (uint16_t) (ram16(0x001A) + 8));
+  } while(ram16(RaceFinishCount) < 10);
+  r->a = 0;
+  r->x = 0;
+  r->d = 0;
+}

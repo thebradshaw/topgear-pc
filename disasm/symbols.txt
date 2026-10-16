@@ -27,10 +27,12 @@
 05:DB52 RaceDrivePlayer2 ; same for player 2; jumps to $05:ED92 when $1F04 is clear (computer-driven second car, tentative)
 00:CE61 RaceDrawHud ; once per race update: speedometers, gears, nitros, positions and lap times into VRAM, fuel and RPM bars into RAM buffers (src/port/hud.c)
 00:9381 RaceBuildWindowTable ; channel 6 window HDMA table through the pointer at $EB; per-view shapes in 1-player races (src/port/race.c)
-00:ABFC RaceFindNearbyCars ; scans the car list for cars just behind each view's camera (tentative)
+00:ABFC RaceListVisibleCars ; per view, the cars up to $400 ahead of the camera with sprite words ($178A, $17DC); drifts computer cars side to side (src/port/visible.c)
 00:8910 RaceUpdateSegmentValues ; $7E:3E00 per-segment table entries for each view and for the leading car (src/port/race.c)
 00:DA75 RaceUpdateMessages ; HUD lap, position, fuel and pit messages for both players, tables in bank $06 (src/port/messages.c)
 00:A1BD RaceSortCars ; wraps cars onto the next lap (finish order and times), bubbles the car list into track order, sets both players' positions (src/port/cars.c)
 00:A30C RaceBumpCarP1 ; player 1 ran into car X: the car is pushed, the player takes its speed (src/port/cars.c)
 00:A372 RaceBumpCarP2
 00:AA79 RacePosition ; Y = 1 + cars ahead of car X (src/port/cars.c)
+00:AB7A RaceFinishOthers ; after both players finish: runs the other cars at 8x until ten have finished (src/port/cars.c)
+00:B18C RaceBuildSplitWindowTable ; 2-player channel 6 window table from the band heights at $0151-$0179; hangs if $1EC0 >= 9 (src/port/race.c)

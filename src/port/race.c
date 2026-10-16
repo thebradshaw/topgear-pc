@@ -129,3 +129,86 @@ void RaceUpdateSegmentValues(TgRegs* r) {
   r->c = false;
   r->v = false;
 }
+
+// A 5-byte window table entry: a line count, then the window words for the two windows.
+// Written as three overlapping 16-bit stores, as in the original.
+static uint16_t window_entry5(uint32_t table, uint16_t y, uint16_t count, uint16_t w1, uint16_t w2) {
+  tg_bus_write16((table + y) & 0xffffff, count);
+  tg_bus_write16((table + y + 1) & 0xffffff, w1);
+  tg_bus_write16((table + y + 3) & 0xffffff, w2);
+  return (uint16_t) (y + 5);
+}
+
+// One view's part of the 2-player window table (see RaceBuildSplitWindowTable).
+typedef struct SplitWindowView {
+  uint16_t top, bottom_left;  // heights of the bands before the road (fully closed, open)
+  uint16_t road;           // height of the road band
+  uint16_t extra;          // height added to the current slot
+  uint16_t edges;          // window word for the road bands
+  uint16_t slot;           // index of the current slot (words)
+  uint16_t heights;        // per-slot band heights, minus 2
+  uint16_t counts;         // per-slot band heights
+  uint16_t words;          // per-slot window words
+  uint16_t total;          // lines the view covers
+  bool last_count_one;     // player 2's closing band is written as 1 line
+} SplitWindowView;
+
+static const SplitWindowView kSplitViews[2] = {
+  { 0x0169, 0x016B, 0x016D, 0x016F, 0x0167, 0x1EC0, 0x0151, 0x0153, 0x015D, 0x70, false },
+  { 0x0173, 0x0175, 0x0177, 0x0179, 0x0171, 0x1EC2, 0x013D, 0x013F, 0x0149, 0x68, true },
+};
+
+static uint16_t split_view(TgRegs* r, uint32_t table, uint16_t y, const SplitWindowView* v, uint16_t* x_out) {
+  uint16_t n = ram16(v->top);
+  if(n != 0) y = window_entry5(table, y, n, 0xFF00, 0xFF00);
+  n = ram16(v->bottom_left);
+  if(n != 0) y = window_entry5(table, y, n, 0x00FF, 0x00FF);
+  uint16_t x = ram16(v->slot);
+  ram16_set((uint16_t) (v->counts + x), ram16(v->extra));
+  ram16_set((uint16_t) (v->words + x), 0x00FF);
+  if(x != 0) {
+    uint16_t h = (uint16_t) (ram16((uint16_t) (v->heights + x)) - ram16(v->bottom_left) - ram16(v->top) - ram16(v->extra));
+    ram16_set((uint16_t) (v->heights + x), (h & 0x8000) ? 0 : h);
+  }
+  uint16_t scratch = (uint16_t) (r->d + 0x1A);
+  ram16_set(scratch, ram16(v->road));
+  for(;;) {
+    uint16_t left = ram16(scratch), count = ram16((uint16_t) (v->counts + x));
+    if(left <= count) {
+      if(left != 0) y = window_entry5(table, y, left, ram16(v->edges), ram16((uint16_t) (v->words + x)));
+      break;
+    }
+    ram16_set(scratch, (uint16_t) (left - count));
+    if(count != 0) y = window_entry5(table, y, count, ram16(v->edges), ram16((uint16_t) (v->words + x)));
+    x = (uint16_t) (x - 2);
+    if(x & 0x8000) {
+      left = ram16(scratch);
+      if(left != 0) y = window_entry5(table, y, left, ram16(v->edges), ram16(v->edges));
+      break;
+    }
+  }
+  uint16_t rest = (uint16_t) (v->total - ram16(v->top) - ram16(v->bottom_left) - ram16(v->road));
+  if(rest != 0) y = window_entry5(table, y, v->last_count_one ? 1 : rest, 0xFF00, 0xFF00);
+  *x_out = x;
+  return y;
+}
+
+// $00:B18C. In 2-player races, builds the channel 6 window table through the pointer at
+// direct page $EB from the band heights RaceBuildSprites leaves at $0151-$0179. The
+// original hangs if RaceSplitSlot1 reaches 9; that call runs emulated. Leaves A = 0;
+// N/V/Z/C are don't-care.
+void RaceBuildSplitWindowTable(TgRegs* r) {
+  if(ram16(kSplitViews[0].slot) >= 9) {
+    tg_port_decline();
+    return;
+  }
+  uint32_t table = (uint32_t) r->db << 16 | ram16((uint16_t) (r->d + RaceWindowTablePtr));
+  uint16_t x = 0;
+  uint16_t y = window_entry5(table, 0, 4, 0xFF00, 0xFF00);
+  y = split_view(r, table, y, &kSplitViews[0], &x);
+  y = split_view(r, table, y, &kSplitViews[1], &x);
+  tg_bus_write16((table + y) & 0xffffff, 0x0000);
+  r->a = 0;
+  r->x = x;
+  r->y = y;
+}

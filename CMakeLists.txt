@@ -39,6 +39,7 @@ add_library(tgcore STATIC
   src/port/messages.c
   src/port/race.c
   src/port/registry.c
+  src/port/visible.c
   src/rom.c
   src/sha256.c
 )

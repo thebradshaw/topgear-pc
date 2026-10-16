@@ -16,6 +16,7 @@
 #define RaceWindowHidden2 0x1EDC
 #define RaceCars 0x0200  // car records, 18 bytes each
 #define RaceCarSize 0x12
+#define RaceViewStart 0x0202  // track position a view's car list starts from
 #define RaceP1Car 0x0204  // offset of player 1's record in RaceCars
 #define RaceP2Car 0x0206
 #define RaceSegmentTable 0x3E00  // $7E:3E00, one word per track segment
@@ -57,6 +58,9 @@
 #define RaceP1SpeedKph 0x1FB0  // byte: nonzero shows km/h, zero mph
 #define RaceP2SpeedKph 0x1FB1
 #define WarmBootFlag 0x1FF6
+
+#define RaceView1Cars 0x178A  // [distance + $80, sprite word] per visible car, ended by $7FFF
+#define RaceView2Cars 0x17DC
 
 // Race HUD tile buffers in low RAM, copied to VRAM elsewhere (tentative)
 #define RaceP1RpmBar 0x03BA

@@ -4,6 +4,15 @@
 #include "snes.h"
 
 uint8_t* g_ram;
+static bool g_declined;
+
+void tg_port_decline(void) { g_declined = true; }
+
+bool tg_port_take_declined(void) {
+  bool d = g_declined;
+  g_declined = false;
+  return d;
+}
 static Snes* g_snes;
 static const uint8_t* g_rom;
 

@@ -28,7 +28,7 @@ typedef struct Result {
 } Result;
 
 typedef struct FuncStats {
-  uint32_t calls, verified, verifiedInterrupted, interrupted, crossedFrame, wrongMode, mismatches;
+  uint32_t calls, verified, verifiedInterrupted, interrupted, crossedFrame, wrongMode, mismatches, declined;
 } FuncStats;
 
 enum { kMaxHandlerWrites = 1024 };
@@ -228,12 +228,14 @@ static bool mxMatches(const TgPortFunc* f, const Cpu* cpu) {
   }
 }
 
-// Runs the C version on the live machine, including the return to the caller.
-static void runC(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu) {
+// Runs the C version on the live machine, including the return to the caller. False if
+// the routine declined the call (see tg_port_decline), leaving the machine as it was.
+static bool runC(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu) {
   TgRegs r = { cpu->a, cpu->x, cpu->y, cpu->dp, cpu->db, cpu->n, cpu->v, cpu->z, cpu->c };
   ls->inC = true;
   f->fn(&r);
   ls->inC = false;
+  if(tg_port_take_declined()) return false;
   cpu->a = cpu->mf ? (uint16_t) ((cpu->a & 0xff00) | (r.a & 0xff)) : r.a;
   cpu->x = cpu->xf ? (r.x & 0xff) : r.x;
   cpu->y = cpu->xf ? (r.y & 0xff) : r.y;
@@ -260,6 +262,7 @@ static void runC(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu) {
   }
   cpu->sp = cpu->e ? (uint16_t) (0x100 | (sp & 0xff)) : sp;
   cpu->pc = (uint16_t) (ret + 1);
+  return true;
 }
 
 static void poisonDead(const TgPortFunc* f, Cpu* cpu) {
@@ -295,8 +298,10 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
     return false;
   }
   if(ls->mode == TG_PORT_NATIVE) {
-    runC(ls, f, cpu);
-    return true;
+    if(runC(ls, f, cpu)) return true;
+    st->declined++;
+    ls->skipOnce = adr;
+    return false;
   }
 
   // The original first, from a saved state, until it returns to the same caller.
@@ -354,8 +359,16 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   Result* c = ls->c;
   c->logCount = c->hdmaCount = 0;
   ls->logTarget = c;
-  runC(ls, f, cpu);
+  bool ran = runC(ls, f, cpu);
   ls->logTarget = NULL;
+  if(!ran) {
+    // The original returned, so the C version shouldn't have declined.
+    if(st->mismatches < kMaxDetails) addDetail(ls, "%s declined a call the original returned from\n", f->name);
+    st->mismatches++;
+    snes_loadState(snes, ls->after, ls->afterSize);
+    cpu->intDepth = depthAfter;
+    return true;
+  }
   for(int i = 0; i < o->hdmaCount && i < kMaxLog; i++) snes_writeBBus(snes, (uint8_t) o->hdma[i].adr, o->hdma[i].val);
   capture(ls, c);
   // The stack below SP is free space: the original's pushes and pulls leave bytes there

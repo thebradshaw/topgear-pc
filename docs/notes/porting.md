@@ -43,12 +43,14 @@ aren't compared: C does that arithmetic directly.
 2. Write it in `src/port/`, keeping the original's behaviour exactly, including quirks;
    comment anything that looks like a bug rather than fixing it. Add RAM names to
    `src/port/variables.h`.
-3. Register it with its entry point, JSR or JSL, the M/X widths it's entered with and
+3. If the original deliberately hangs on some input, call `tg_port_decline()` before
+   changing anything; that call then runs emulated.
+4. Register it with its entry point, JSR or JSL, the M/X widths it's entered with and
    leaves with, and which registers no caller reads afterwards (`TG_DEAD_*`). Dead
    registers aren't compared, and in verify mode they're filled with junk after every
    call, so the recording hashes fail if a caller did read one. That saves reproducing
    the exact leftovers of long routines.
-4. Run the tests: `ctest --test-dir build -L long` runs every recording. The report shows
+5. Run the tests: `ctest --test-dir build -L long` runs every recording. The report shows
    how many calls matched; check that the recordings actually reach the routine's
    branches (a routine that only ever sees zeros proves little).
 
@@ -60,6 +62,9 @@ aren't compared: C does that arithmetic directly.
 | RaceUpdateSegmentValues | $00:8910 | 31,337 |
 | RaceBuildWindowTable | $00:9381 | 32,889; only Chris's session reaches the 1-player window shapes |
 | RaceMoveCars | $00:A175 | 31,624, including RaceSortCars, which it runs into; no recording bumps a car that is already being pushed |
+| RaceFinishOthers | $00:AB7A | none yet: no recording has both players finish before ten cars have |
+| RaceListVisibleCars | $00:ABFC | 31,320 |
+| RaceBuildSplitWindowTable | $00:B18C | 29,579; player 1's view never needed the extra bands in the recordings |
 | RaceSortCars | $00:A1BD | only through RaceMoveCars so far; no recording wraps a car backwards past the line or has two cars finish on the same frame |
 | RaceDrawHud | $00:CE61 | 37,120 |
 | RaceUpdateMessages | $00:DA75 | 37,120; no recording shows the wrap at the track start or the dropped low-fuel flag |

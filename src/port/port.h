@@ -23,6 +23,11 @@ typedef struct TgRegs {
 
 typedef void TgPortFn(TgRegs* r);
 
+// Called by a translated routine, before it changes anything, when the original would
+// never return (a deliberate hang): the call then runs emulated instead.
+void tg_port_decline(void);
+bool tg_port_take_declined(void);
+
 enum {
   TG_CALL_JSR = 0,  // returns with RTS
   TG_CALL_JSL = 1,  // returns with RTL
