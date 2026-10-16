@@ -246,6 +246,17 @@ static uint16_t computer_steer(const Driver* d, uint16_t* x_out) {
   return y;
 }
 
+// Smooth motion (an enhancement) runs three race updates where the original runs one, so
+// each burns a third of the fuel, the remainder carrying over.
+static uint16_t smooth_fuel(const Driver* d, uint16_t a) {
+  if(tg_port_race_frames != 1) return a;
+  static uint16_t carry[2];
+  uint16_t* k = &carry[d == &kDrivers[0] ? 0 : 1];
+  uint16_t total = (uint16_t) (a + *k);
+  *k = (uint16_t) (total % 3);
+  return (uint16_t) (total / 3);
+}
+
 // Engine and speed: gears, revs on the start line, nitro, acceleration, braking, fuel.
 // Returns y, the gear's table offset that later steps use.
 static uint16_t drive_engine(const Driver* d, bool* c_out) {
@@ -421,6 +432,7 @@ static uint16_t drive_engine(const Driver* d, bool* c_out) {
         a = (uint16_t) ((a << 1) | (a >> 15));
         a = (uint16_t) ((a << 1) | (a >> 15));
         a = (uint16_t) ((a & 0x03FF) + 1);
+        a = smooth_fuel(d, a);
         uint16_t fuel = ram16(d->fuel);
         if(fuel <= a) {
           trb16(0x1EB4, d->running_bit);
@@ -901,6 +913,7 @@ static void drive_rival(void) {
     a = swap(mpy_mh());
     a = (uint16_t) (a << 2 | a >> 14);
     a = (uint16_t) ((a & 0x03FF) + 1);
+    a = smooth_fuel(d, a);
     uint16_t fuel = ram16(d->fuel);
     if(fuel <= a) {
       trb16(0x1EB4, d->running_bit);

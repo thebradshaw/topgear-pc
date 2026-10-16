@@ -466,7 +466,10 @@ static void pit_lane(TgRegs* r, uint16_t state, uint16_t speed, uint8_t scroll, 
 // the pit lane; the palette; then the tile streaming and uploads, and the first raster
 // stage of the frame ($AC). After a race update ($E3 negative), the views' new buffers
 // and HDMA tables come in first.
+uint32_t tg_port_race_irqs;
+
 void RaceIrqTop(TgRegs* r) {
+  tg_port_race_irqs++;
   if(z(0xE3) & 0x8000) {
     z_set(0xE3, 0);
     if(ram16(0x0106) == 0) ram16_set(0x0106, 1);

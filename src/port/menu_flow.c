@@ -114,6 +114,10 @@ static void MenuFadeRun(TgRegs* r) {
       r->a = r->x = rom16(0x0DC5F8 + x);
       MenuFadeStep(r);
     }
+    // The NMI's palette upload replaces any DMA queued in $0424. The original's fade steps
+    // take long enough that a queued screen goes out first; ours take no time, so wait for
+    // it here.
+    while(g_ram[0x0424] != 0) tg_port_wait();
     r->a = 0x004C;
     ram16_set(0x90, r->a);
     while(ram16(0x90) != 0) tg_port_wait();

@@ -126,6 +126,17 @@ int tg_game_port_report(TgGame* game, FILE* f) {
   return game->lockstep ? tg_lockstep_report(game->lockstep, f) : 0;
 }
 
+void tg_game_dump_ppu(TgGame* game, const char* path) {
+  FILE* f = fopen(path, "wb");
+  if(f == NULL) return;
+  Ppu* ppu = game->snes->ppu;
+  fwrite(ppu->vram, sizeof(ppu->vram), 1, f);
+  fwrite(ppu->cgram, sizeof(ppu->cgram), 1, f);
+  fwrite(ppu->oam, sizeof(ppu->oam), 1, f);
+  fwrite(ppu->highOam, sizeof(ppu->highOam), 1, f);
+  fclose(f);
+}
+
 void tg_game_set_smooth_sprites(TgGame* game, bool on) {
   extern PpuObjScale tg_port_obj_scales[];
   tg_port_smooth_sprites = on;

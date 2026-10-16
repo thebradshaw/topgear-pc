@@ -507,6 +507,15 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   }
   const TgPortFunc* f = tg_port_find(adr);
   if(f == NULL) return false;
+  {  // debugging aid: TG_PORT_SKIP=lo-hi runs the routines in that address range emulated
+    static long skipLo = -2, skipHi = -1;
+    if(skipLo == -2) {
+      const char* e = getenv("TG_PORT_SKIP");
+      skipLo = -1;
+      if(e) sscanf(e, "%lx-%lx", &skipLo, &skipHi);
+    }
+    if((long) adr >= skipLo && (long) adr <= skipHi) return false;
+  }
   FuncStats* st = &ls->stats[f - tg_port_funcs];
   st->calls++;
   if(!mxMatches(f, cpu) || cpu->e) {

@@ -147,6 +147,8 @@ extern int tg_port_race_frames;
 // tags each object's OAM entries in tg_port_obj_tags with a scale in tg_port_obj_scales,
 // which the PPU applies (tg_game_set_smooth_sprites connects them).
 extern bool tg_port_smooth_sprites;
+// Counts the race's top-of-frame interrupts (RaceIrqTop): changes every frame of a race.
+extern uint32_t tg_port_race_irqs;
 extern uint16_t tg_port_obj_tags[0x2000];
 
 // Connects the helpers above to the machine (port.c).

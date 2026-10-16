@@ -41,6 +41,7 @@ static struct {
   bool integerScale;
   AspectMode aspect;
   FilterMode filter;
+  bool rumble;  // controller rumble in races (F8, --rumble)
   SDL_Texture* upscaled;  // sharp-bilinear's intermediate picture
   int upscaledFactor;
   uint16_t keys[3];  // keyboard state per player
@@ -210,9 +211,9 @@ static void closePad(SDL_JoystickID id) {
 
 static void updateTitle(void) {
   char title[128];
-  snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
+  snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
            app.integerScale ? ", integer scale" : "",
-           app.smooth && !app.original ? ", smooth motion" : "", app.scaling ? ", smooth scaling" : "");
+           app.smooth && !app.original ? ", smooth motion" : "", app.scaling ? ", smooth scaling" : "", app.rumble ? ", rumble" : "");
   SDL_SetWindowTitle(app.window, title);
 }
 
@@ -318,6 +319,27 @@ static void stopRecording(void) {
   }
 }
 
+// Controller rumble in races: a knock when a car bumps something ($1EF5/$1EF6 bit 7) and
+// a long light rumble when its nitro fires ($1E6C/$1E6E bit 15). Pad 1 drives the first
+// car, pad 2 the second.
+static void rumble(void) {
+  static uint32_t lastIrqs;
+  static uint8_t lastBump[2], lastNitro[2];
+  bool inRace = tg_port_race_irqs != lastIrqs;
+  lastIrqs = tg_port_race_irqs;
+  const uint8_t* ram = tg_game_wram(app.game);
+  for(int p = 0; p < 2; p++) {
+    uint8_t bump = inRace ? ram[0x1EF5 + p] & 0x80 : 0;
+    uint8_t nitro = inRace ? ram[0x1E6D + 2 * p] & 0x80 : 0;
+    if(app.rumble && app.pads[p] && ram[0x1FF6] == 0) {  // not in the attract demo
+      if(bump && !lastBump[p]) SDL_RumbleGamepad(app.pads[p], 0xC000, 0xFFFF, 200);
+      else if(nitro && !lastNitro[p]) SDL_RumbleGamepad(app.pads[p], 0x3000, 0x8000, 800);
+    }
+    lastBump[p] = bump;
+    lastNitro[p] = nitro;
+  }
+}
+
 static void runFrame(int samples) {
   uint16_t input[3] = {0, app.keys[1] | padButtons(app.pads[0]), app.keys[2] | padButtons(app.pads[1])};
   bool reset = app.resetRequested;
@@ -359,6 +381,7 @@ static void runFrame(int samples) {
   tg_game_set_input(app.game, 2, input[2]);
   tg_game_run_frame(app.game);
   app.frame++;
+  rumble();
 
   void* pixels;
   int pitch;
@@ -390,6 +413,7 @@ int main(int argc, char** argv) {
     if(strcmp(argv[i], "--no-record") == 0) record = false;
     else if(strcmp(argv[i], "--original") == 0) original = true;
     else if(strcmp(argv[i], "--smooth") == 0) app.smooth = true;
+    else if(strcmp(argv[i], "--rumble") == 0) app.rumble = true;
     else if(strcmp(argv[i], "--smooth-scaling") == 0) app.scaling = true;
     else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       i++;
@@ -472,6 +496,7 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F5) { app.resetRequested = true; break; }
             if(e.key.key == SDLK_F6 && !app.replaying) { app.smooth = !app.smooth; updateTitle(); break; }
             if(e.key.key == SDLK_F7 && !app.replaying) { app.scaling = !app.scaling; updateTitle(); break; }
+            if(e.key.key == SDLK_F8) { app.rumble = !app.rumble; updateTitle(); break; }
           }
           uint16_t button = keyToButton(e.key.key);
           if(button && !(e.key.mod & SDL_KMOD_ALT)) {

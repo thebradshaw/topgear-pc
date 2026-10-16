@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
   long frames = 600;
   long shotsEvery = 0;
   long shotsFrom = 0;
+  const char* dumpPpu = NULL;
   TgPortMode portMode = TG_PORT_OFF;
   for(int i = 1; i < argc; i++) {
     const char* next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -84,6 +85,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--screenshot") == 0 && next) screenshot = argv[++i];
     else if(strcmp(argv[i], "--shots-every") == 0 && next) shotsEvery = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--shots-dir") == 0 && next) shotsDir = argv[++i];
+    else if(strcmp(argv[i], "--dump-ppu") == 0 && next) dumpPpu = argv[++i];
     else if(strcmp(argv[i], "--shots-from") == 0 && next) shotsFrom = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--expect-wram") == 0 && next) expectWram = argv[++i];
     else if(strcmp(argv[i], "--expect-frame") == 0 && next) expectFrame = argv[++i];
@@ -174,6 +176,7 @@ int main(int argc, char** argv) {
   if(hashes) fclose(hashes);
   tg_game_get_pixels(game, pixels);
   if(screenshot) writePpm(screenshot, pixels);
+  if(dumpPpu) tg_game_dump_ppu(game, dumpPpu);
   if(dumpWram) {
     FILE* f = fopen(dumpWram, "wb");
     if(f == NULL || fwrite(tg_game_wram(game), 1, 0x20000, f) != 0x20000) fprintf(stderr, "cannot write %s\n", dumpWram);
