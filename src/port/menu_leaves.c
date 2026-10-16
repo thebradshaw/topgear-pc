@@ -396,16 +396,17 @@ void MenuUnmarkNameEnds(TgRegs* r) {
 }
 
 // $0F:86E7: each player's place in the standings ($1F62, by driver) at $1FF8 / $1FFA,
-// counting from 1. The index uses A's high byte as it came in (TAX with 8-bit A).
+// counting from 1. The index uses A's high byte as it came in (TAX with 8-bit A); X is
+// left as the last index used.
 void MenuRecordPlayerPlaces(TgRegs* r) {
   uint8_t hi = (uint8_t) (r->a >> 8);
   uint8_t a = (uint8_t) r->a;
   for(int y = 0x13; y >= 0; y--) {
     a = g_ram[0x1F62 + y];
     if(a < 2) {
-      uint16_t x = (uint16_t) (hi << 8 | (uint8_t) (a << 1));
+      r->x = (uint16_t) (hi << 8 | (uint8_t) (a << 1));
       a = (uint8_t) y;
-      g_ram[(uint16_t) (0x1FF8 + x)] = a;
+      g_ram[(uint16_t) (0x1FF8 + r->x)] = a;
     }
   }
   g_ram[0x1FF8]++;
