@@ -33,9 +33,13 @@
 1E72 RaceP1Gear ; 0-4
 1E74 RaceP2Gear
 1E90 RaceFramesElapsed ; video frames since the last race update (normally 3)
+1EC4 RaceP2ComputerGap ; computer steering for player 2's car: the gap it aims for, two words (upper and lower side bound); $1EC7 bit 15 set: it passes on the lower side
+1EC9 RaceP1ComputerGap ; same for player 1's car, flag at $1ECC
 1ED7 RaceP1TrackPos ; high byte indexes per-segment tables at $7E:3E00/$7E:4000/$7E:4C00
 1EDA RaceP2TrackPos
+1EE2 RaceRivalTopSpeed ; the computer-driven second car's top speed this update
 1EE8 RaceP1GearTableOffset ; selects the car's rows in the gear tables at $05:9597, $05:99DB, $05:9A15
+1EF0 RaceRivalCourseStart ; track position where the second car's fixed course starts ($1EF2 bit 0 on, bit 1 mirrored, bit 2 the other course)
 1F06 CarTypeIndex
 1F76 RaceP1AccelButton ; button mask from the control setup
 1F7A RaceP1ShiftUpButton
@@ -44,3 +48,15 @@
 1FA3 Player2Name
 1FF6 WarmBootFlag
 1FFC FrameCounter16 ; incremented every menu NMI, survives soft reset
+1E7E RaceP1Steer ; steering angle word; high byte scales the sideways move (RaceDrivePlayers)
+1E80 RaceP2Steer
+1E82 RaceP1Drift ; the turn the car keeps; settles towards 0 by the gear's grip
+1E84 RaceP2Drift
+1E8A RaceP1Side ; side-to-side position on the road
+1E8C RaceP2Side
+1E8E RaceDistance ; scratch: distance moved this update, speed / 2 x frames
+1EEC RaceP1Skid ; sideways push after a bump, counts down; the steering can't turn meanwhile
+1EEE RaceP2Skid
+1EF5 RaceP1DriveFlags ; $01 pushed past the grip, $04 finished, $10 revs settling at the start, $20 out of fuel, $80 bumped
+1EF6 RaceP2DriveFlags
+1FF4 RaceRandomSeed

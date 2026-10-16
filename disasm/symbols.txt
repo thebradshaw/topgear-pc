@@ -2,7 +2,7 @@
 # Addresses are CPU addresses in the LoROM map (banks 00-0F, $8000-$FFFF).
 
 00:8000 Reset ; power-on: decompress RAM code from $0D:E000 to $7E:2000, upload the sound driver, warm-boot check, then GameInit
-00:EA8E DecompressBegin ; byte-stream decompressor used for the RAM code at boot (source pointer in $23-$25)
+00:EA8E DecompressBegin ; LZ decompressor with a 2 KiB ring at $07B2, one byte per call (source pointer in $23-$25; src/port/decompress.c)
 00:EA9B DecompressNext ; next decompressed byte in A; carry set at end of stream
 00:EC7D UnusedInterrupt ; COP, BRK, ABORT and emulation-mode NMI/IRQ all point here
 00:FFC0 RomHeader ; internal header: title, map mode, checksum
@@ -15,7 +15,13 @@
 00:81B8 RaceSetup ; installs the race NMI/IRQ trampolines; continues into PPU setup, enables NMI + H/V IRQ (NMITIMEN $B1 at $00:8467) and renders both views once
 00:EC1A RaceNmiHandler ; races: reads both joypads only
 00:EC5B RaceIrqHandler ; races: raster IRQ, dispatches through JSR ($000A)
-01:8000 RaceBuildSprites ; fills the next OAM buffer ($0F0A/$112A/$134A/$156A) with cars and roadside objects for one view
+01:8000 RaceBuildSprites ; fills both views' OAM buffers (through $CC and $D8) from their object lists at $1836 and $19D6 (src/port/sprites.c)
+01:8A87 RaceAddSprite ; adds a sprite definition's parts to player 1's OAM buffer; carry set when full
+01:8C5C RaceAddSpriteSplit ; same, for the split part of player 1's view (bottom line in $4E)
+01:8E33 RaceAddSpriteP2 ; same, player 2's buffer at $D8
+01:9008 RaceAddSpriteP2Split ; same, split part of player 2's view (bottom line in $61)
+00:8FC0 RaceUploadBank3Tiles ; while $1E86 = -3, streams 4 KiB of tiles from bank $03 to VRAM $3000, 1 KiB per vblank (src/port/uploads.c)
+00:D86A RaceUploadMessageTiles ; one 64-byte block of a player's message tiles per vblank
 00:B639 RaceSetupHdma ; seven HDMA channels: CGRAM colours (0-4), BG3 scroll (5), window edges (6)
 00:EC0E RaceSyncWait ; sets $0C = ~A, then spins until a raster IRQ handler clears it; this paces the race to one update every three frames
 00:8504 RaceIntro ; waits for $51, then pans each view's camera onto its car
@@ -23,8 +29,18 @@
 00:86C3 RaceMainLoop ; one pass per race update (every three frames)
 00:88A1 RaceRevEngines ; raises RPM while the accelerate button is held, decays it otherwise
 00:A175 RaceMoveCars ; moves every car by speed x frames elapsed, bumps cars a player catches, then falls into RaceSortCars (src/port/cars.c)
-05:D2E0 RaceDrivePlayers ; player 1 gears (manual or automatic), speed and hills from RaceJoy1, then player 2 from $05:DB52
-05:DB52 RaceDrivePlayer2 ; same for player 2; jumps to $05:ED92 when $1F04 is clear (computer-driven second car, tentative)
+05:D2E0 RaceDrivePlayers ; both players' driving: gears, speed, fuel, track objects, steering, bumping cars, laps (src/port/drive.c)
+05:DB52 RaceDrivePlayer2 ; player 2's copy; jumps to RaceDriveComputerP2 when $1F04 is clear and $1EF3 bit 7 is clear
+05:ED92 RaceDriveComputerP2 ; the computer drives the second car (1-player races); jumps back to $05:E3B9
+05:F79F RaceRivalFuelShort ; carry set when X times the distance left is at least the second car's fuel
+05:E8E9 RacePushCarP1 ; player 1 ran into computer car X: the car is pushed, the player takes its speed
+05:E944 RacePushCarP2
+05:E99F RaceBumpSound ; X = random 0-15, index into the bump sound tables at $05:E1CA / $05:E1CE
+00:A89A RaceRandom ; JSL; A = 0: next random byte (seed $1FF4, also in $1EF7); else a random value below A + 1
+05:E9AF RaceDriveComputerP1 ; the computer steers player 1's car (attract mode, after finishing): aims for a gap in the road, passing the car ahead
+05:EB58 RaceDriveComputerP2Car ; same for player 2's car
+05:ED3A RaceHitObjectP1 ; track object with bit 15 set at the car's segment; carry set when it's solid
+05:ED01 RaceHitObjectP2
 00:CE61 RaceDrawHud ; once per race update: speedometers, gears, nitros, positions and lap times into VRAM, fuel and RPM bars into RAM buffers (src/port/hud.c)
 00:9381 RaceBuildWindowTable ; channel 6 window HDMA table through the pointer at $EB; per-view shapes in 1-player races (src/port/race.c)
 00:ABFC RaceListVisibleCars ; per view, the cars up to $400 ahead of the camera with sprite words ($178A, $17DC); drifts computer cars side to side (src/port/visible.c)

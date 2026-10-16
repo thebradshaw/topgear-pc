@@ -47,6 +47,7 @@ uint8_t dma_read(Dma* dma, uint16_t adr); // 43x0-43xf
 void dma_write(Dma* dma, uint16_t adr, uint8_t val); // 43x0-43xf
 void dma_handleDma(Dma* dma, int cpuCycles);
 void dma_startDma(Dma* dma, uint8_t val, bool hdma);
+void dma_runPending(Dma* dma); // topgear-pc
 
 
 #endif

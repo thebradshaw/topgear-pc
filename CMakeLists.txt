@@ -35,10 +35,14 @@ add_library(tgcore STATIC
   src/lockstep.c
   src/port/port.c
   src/port/cars.c
+  src/port/decompress.c
+  src/port/drive.c
   src/port/hud.c
   src/port/messages.c
   src/port/race.c
   src/port/registry.c
+  src/port/sprites.c
+  src/port/uploads.c
   src/port/visible.c
   src/rom.c
   src/sha256.c
@@ -99,6 +103,16 @@ if(TG_TEST_ROM)
     --input ${CMAKE_SOURCE_DIR}/tests/inputs/chris_session_01.txt
     --expect-wram 4ff4ffc25d58655992eaa28e1c404ff7f3a73e815903af5e62361bd135f76cd8)
   set_tests_properties(chris_session_01 PROPERTIES LABELS long TIMEOUT 1800)
+  # Chris's later sessions, recorded on Windows: a 5-minute one with a race, and an
+  # 85-minute one with about twenty races.
+  add_test(NAME chris_session_02 COMMAND tg_headless --rom ${TG_TEST_ROM} --port verify --frames 17047
+    --input ${CMAKE_SOURCE_DIR}/tests/inputs/chris_session_02.txt
+    --expect-wram a7367821082e64bf84eee43439ddcc1dc23bea23a99d868e25e1acecd714b908)
+  add_test(NAME chris_session_03 COMMAND tg_headless --rom ${TG_TEST_ROM} --port verify --frames 304552
+    --input ${CMAKE_SOURCE_DIR}/tests/inputs/chris_session_03.txt
+    --expect-wram bc050a7e61dd3e96502383ceb71374eba269ceea30be1c99ccbc89c726722056)
+  set_tests_properties(chris_session_02 PROPERTIES LABELS long TIMEOUT 1800)
+  set_tests_properties(chris_session_03 PROPERTIES LABELS long TIMEOUT 7200)
   # Scripted recordings that reach the other game modes: a 2-player race, and the first
   # race of each country unlocked with its password, and a race on each harder skill level. Each takes a while, so labelled "long".
   foreach(rec IN ITEMS

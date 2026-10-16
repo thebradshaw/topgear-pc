@@ -28,6 +28,17 @@ typedef void TgPortFn(TgRegs* r);
 void tg_port_decline(void);
 bool tg_port_take_declined(void);
 
+// Runs original code from a translated routine: a JSR to target in the routine's bank,
+// returning to ret (the address after the original's JSR), with the registers in r and
+// the given M/X widths (TG_MX_*). r holds the registers it returns with. Translated
+// routines reached inside run emulated too.
+void tg_call_jsr(TgRegs* r, uint16_t target, uint16_t ret, uint8_t mx);
+// The same for original code reached by a JMP that comes back by jumping to stop.
+void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx);
+bool tg_port_in_emulated_call(void);
+// Lowest stack pointer reached in original code run from C since the last call.
+uint16_t tg_port_take_min_sp(void);
+
 enum {
   TG_CALL_JSR = 0,  // returns with RTS
   TG_CALL_JSL = 1,  // returns with RTL
@@ -51,6 +62,7 @@ enum {
   TG_DEAD_Y = 4,
   TG_DEAD_FLAGS = 8,  // N, V, Z and C
   TG_DEAD_AXY_FLAGS = 15,
+  TG_DEAD_NVZ = 16,   // N, V and Z only: callers test the carry
 };
 
 typedef struct TgPortFunc {
@@ -61,6 +73,8 @@ typedef struct TgPortFunc {
   uint8_t mx;        // TG_MX_*: widths required on entry
   uint8_t mx_out;    // TG_MX_*: widths on return (TG_MX_ANY: as on entry)
   uint8_t dead;      // TG_DEAD_*
+  uint16_t bus_noise; // a low-RAM byte the original fills from open bus, where HDMA can leave
+                      // a byte mid-instruction; not compared (0: none)
 } TgPortFunc;
 
 // All translated routines (registry.c).

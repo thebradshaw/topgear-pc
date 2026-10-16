@@ -59,6 +59,9 @@ struct Cpu {
   // topgear-pc: interrupt handlers running (taken minus RTIs), so writes made by a
   // handler can be told apart from the routine it interrupted
   uint8_t intDepth;
+  // topgear-pc: while set, NMIs and IRQs wait (the lockstep checker runs a routine on its
+  // own with this)
+  bool blockInterrupts;
 };
 
 Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHandler idle);

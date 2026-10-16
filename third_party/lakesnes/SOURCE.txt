@@ -5,6 +5,9 @@ MIT licensed; see LICENSE.txt.
 Local changes (marked "topgear-pc" in the source):
 - cpu.h/cpu.c: optional traceHook called before each opcode fetch; optional callHook
   there that can run a translated routine in place of the code at PC; a count of
-  interrupts taken and of handlers still running (intDepth, lowered by RTI).
+  interrupts taken and of handlers still running (intDepth, lowered by RTI); a flag that
+  holds interrupts off (blockInterrupts).
 - snes.h/snes.c: optional readHook and writeHook called for every A-bus read and write;
   optional hdmaWriteHook called for every B-bus write made by HDMA (dma.c sets inHdma).
+- statehandler.c: byte and word arrays saved and loaded in one pass instead of per byte.
+- dma.c/dma.h: dma_runPending, to run a started DMA at once.

@@ -372,6 +372,16 @@ void dma_handleDma(Dma* dma, int cpuCycles) {
   }
 }
 
+// topgear-pc: runs a DMA started by a $420B write now, for code that writes the hardware
+// registers without CPU cycles passing (translated routines).
+void dma_runPending(Dma* dma) {
+  if(dma->dmaState == 0) return;
+  if(dma->hdmaInitRequested) dma_initHdma(dma, true, 8);
+  if(dma->hdmaRunRequested) dma_doHdma(dma, true, 8);
+  dma_doDma(dma, 8);
+  dma->dmaState = 0;
+}
+
 void dma_startDma(Dma* dma, uint8_t val, bool hdma) {
   for(int i = 0; i < 8; i++) {
     if(hdma) {

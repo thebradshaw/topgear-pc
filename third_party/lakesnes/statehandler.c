@@ -227,22 +227,43 @@ void sh_handleDoubles(StateHandler* sh, ...) {
   va_end(args);
 }
 
+// topgear-pc: arrays are copied in one go (lockstep checking saves and loads state for
+// every call it checks).
+static void sh_reserve(StateHandler* sh, int size) {
+  while(sh->offset + size > sh->allocSize) {
+    sh->data = realloc(sh->data, sh->allocSize * 2);
+    sh->allocSize *= 2;
+  }
+}
+
 void sh_handleByteArray(StateHandler* sh, uint8_t* data, int size) {
-  for(int i = 0; i < size; i++) {
-    if(sh->saving) {
-      sh_writeByte(sh, data[i]);
-    } else {
-      data[i] = sh_readByte(sh);
-    }
+  if(sh->saving) {
+    sh_reserve(sh, size);
+    memcpy(sh->data + sh->offset, data, size);
+    sh->offset += size;
+  } else if(sh->offset + size <= sh->allocSize) {
+    memcpy(data, sh->data + sh->offset, size);
+    sh->offset += size;
+  } else {
+    for(int i = 0; i < size; i++) data[i] = sh_readByte(sh);
   }
 }
 
 void sh_handleWordArray(StateHandler* sh, uint16_t* data, int size) {
-  for(int i = 0; i < size; i++) {
-    if(sh->saving) {
-      sh_writeByte(sh, data[i] & 0xff);
-      sh_writeByte(sh, (data[i] >> 8) & 0xff);
-    } else {
+  if(sh->saving) {
+    sh_reserve(sh, size * 2);
+    uint8_t* out = sh->data + sh->offset;
+    for(int i = 0; i < size; i++) {
+      out[i * 2] = data[i] & 0xff;
+      out[i * 2 + 1] = (data[i] >> 8) & 0xff;
+    }
+    sh->offset += size * 2;
+  } else if(sh->offset + size * 2 <= sh->allocSize) {
+    const uint8_t* in = sh->data + sh->offset;
+    for(int i = 0; i < size; i++) data[i] = in[i * 2] | in[i * 2 + 1] << 8;
+    sh->offset += size * 2;
+  } else {
+    for(int i = 0; i < size; i++) {
       data[i] = sh_readByte(sh);
       data[i] |= sh_readByte(sh) << 8;
     }

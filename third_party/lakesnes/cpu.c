@@ -42,6 +42,7 @@ Cpu* cpu_init(void* mem, CpuReadHandler read, CpuWriteHandler write, CpuIdleHand
   cpu->callCtx = NULL;
   cpu->interrupts = 0;
   cpu->intDepth = 0;
+  cpu->blockInterrupts = false;  // topgear-pc
   return cpu;
 }
 
@@ -121,7 +122,7 @@ void cpu_runOpcode(Cpu* cpu) {
     }
   }
   // not stopped or waiting, execute a opcode or go to interrupt
-  if(cpu->intWanted) {
+  if(cpu->intWanted && !cpu->blockInterrupts) {  // topgear-pc: blockInterrupts
     cpu_read(cpu, (cpu->k << 16) | cpu->pc);
     cpu_doInterrupt(cpu);
   } else {
