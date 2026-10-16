@@ -143,8 +143,10 @@ static void addDetail(TgLockstep* ls, const char* fmt, ...) {
 static bool compare(TgLockstep* ls, const TgPortFunc* f, bool detailed) {
   const Result* c = ls->c;
   const Result* o = ls->orig;
-  bool regs = c->a == o->a && c->x == o->x && c->y == o->y && c->sp == o->sp && c->pc == o->pc &&
-    c->dp == o->dp && c->k == o->k && c->db == o->db && c->flags == o->flags;
+  uint8_t flagMask = (f->dead & TG_DEAD_FLAGS) ? 0x3c : 0xff;  // keep M, X, D, I
+  bool regs = ((f->dead & TG_DEAD_A) || c->a == o->a) && ((f->dead & TG_DEAD_X) || c->x == o->x) &&
+    ((f->dead & TG_DEAD_Y) || c->y == o->y) && c->sp == o->sp && c->pc == o->pc &&
+    c->dp == o->dp && c->k == o->k && c->db == o->db && (c->flags & flagMask) == (o->flags & flagMask);
   bool ram = memcmp(c->ram, o->ram, sizeof(c->ram)) == 0;
   bool vram = memcmp(c->vram, o->vram, sizeof(c->vram)) == 0;
   bool other = memcmp(c->cgram, o->cgram, sizeof(c->cgram)) == 0 && memcmp(c->oam, o->oam, sizeof(c->oam)) == 0 &&
@@ -205,6 +207,14 @@ static void runC(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu) {
   cpu->dp = r.d;
   cpu->db = r.db;
   cpu->n = r.n; cpu->v = r.v; cpu->z = r.z; cpu->c = r.c;
+  if(f->mx_out != TG_MX_ANY) {
+    cpu->mf = f->mx_out == TG_MX_8 || f->mx_out == TG_MX_A8_I16;
+    cpu->xf = f->mx_out == TG_MX_8;
+    if(cpu->xf) {
+      cpu->x &= 0xff;
+      cpu->y &= 0xff;
+    }
+  }
   // RTS / RTL: the stack is in bank 0 low RAM
   uint8_t* ram = ls->snes->ram;
   uint16_t sp = cpu->sp;
@@ -217,6 +227,15 @@ static void runC(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu) {
   }
   cpu->sp = cpu->e ? (uint16_t) (0x100 | (sp & 0xff)) : sp;
   cpu->pc = (uint16_t) (ret + 1);
+}
+
+static void poisonDead(const TgPortFunc* f, Cpu* cpu) {
+  if(f->dead & TG_DEAD_A) cpu->a ^= 0xa5c3;
+  if(f->dead & TG_DEAD_X) cpu->x = (cpu->x ^ 0x5a3c) & (cpu->xf ? 0xff : 0xffff);
+  if(f->dead & TG_DEAD_Y) cpu->y = (cpu->y ^ 0x3c5a) & (cpu->xf ? 0xff : 0xffff);
+  if(f->dead & TG_DEAD_FLAGS) {
+    cpu->n = !cpu->n; cpu->v = !cpu->v; cpu->z = !cpu->z; cpu->c = !cpu->c;
+  }
 }
 
 bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
@@ -249,21 +268,28 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   uint16_t retPc = (uint16_t) ((ram[(uint16_t) (cpu->sp + 1) & 0x1fff] | ram[(uint16_t) (cpu->sp + 2) & 0x1fff] << 8) + 1);
   uint8_t retK = f->call == TG_CALL_JSL ? ram[(uint16_t) (cpu->sp + 3) & 0x1fff] : cpu->k;
   if(cpu->e) retSp = (uint16_t) (0x100 | (retSp & 0xff));
-  uint32_t ints = cpu->interrupts, frames = snes->frames;
+  uint32_t ints = cpu->interrupts, entryFrame = snes->frames;
   bool vblank = snes->inVblank;
+  unsigned entryLine = snes->vPos;
   Result* o = ls->orig;
   o->logCount = o->hdmaCount = 0;
   ls->logTarget = o;
   ls->inOriginal = true;
+  // Running on past the end of vblank is fine. Reaching the start of the next vblank is
+  // not: the frame would end inside the call, out of step with the frontend.
   int steps = 0;
+  bool sawActive = !vblank, reachedVblank = false;
   while(!(cpu->sp == retSp && cpu->pc == retPc && cpu->k == retK)) {
     cpu_runOpcode(cpu);
-    if(snes->frames != frames || snes->inVblank != vblank || ++steps > kMaxSteps) break;
+    if(!snes->inVblank) sawActive = true;
+    else if(sawActive) reachedVblank = true;
+    if(reachedVblank || ++steps > kMaxSteps) break;
   }
   ls->inOriginal = false;
   ls->logTarget = NULL;
   if(!(cpu->sp == retSp && cpu->pc == retPc && cpu->k == retK)) {
-    // It ran into the next part of the frame: run it again normally instead.
+    if(getenv("TG_LOCKSTEP_DEBUG")) fprintf(stderr, "%s: abandoned at frame %u line %u -> frame %u line %u, %d steps\n", f->name, entryFrame, entryLine, snes->frames, snes->vPos, steps);
+    // It ran into the next frame: run it again normally instead.
     snes_loadState(snes, ls->state, ls->stateSize);
     st->crossedFrame++;
     st->calls--;  // counted again when it runs
@@ -286,9 +312,19 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   ls->logTarget = NULL;
   for(int i = 0; i < o->hdmaCount && i < kMaxLog; i++) snes_writeBBus(snes, (uint8_t) o->hdma[i].adr, o->hdma[i].val);
   capture(ls, c);
+  // The stack below SP is free space: the original's pushes and pulls leave bytes there
+  // that C has no reason to write.
+  if(!cpu->e) {
+    for(int i = 0; i < 256; i++) {
+      uint16_t a = (uint16_t) (o->sp - i);
+      if(a < 0x2000) c->ram[a] = o->ram[a];
+    }
+  }
 
-  // The game continues from the original's result.
+  // The game continues from the original's result, with junk in the registers no caller
+  // should read, so the recording tests catch a wrong TG_DEAD_* declaration.
   snes_loadState(snes, ls->after, ls->afterSize);
+  poisonDead(f, cpu);
   if(compare(ls, f, false)) {
     st->verified++;
   } else {
@@ -305,7 +341,7 @@ int tg_lockstep_report(const TgLockstep* ls, FILE* f) {
   for(int i = 0; i < tg_port_func_count; i++) {
     const FuncStats* s = &ls->stats[i];
     if(ls->mode == TG_PORT_VERIFY) {
-      fprintf(f, "  %-24s calls %u, matched %u, mismatched %u, skipped (interrupted %u, crossed frame %u, "
+      fprintf(f, "  %-24s calls %u, matched %u, mismatched %u, skipped (interrupted %u, reached next frame %u, "
         "wrong width %u)\n", tg_port_funcs[i].name, s->calls, s->verified, s->mismatches, s->interrupted,
         s->crossedFrame, s->wrongMode);
     } else {

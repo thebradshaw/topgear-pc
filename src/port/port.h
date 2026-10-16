@@ -36,12 +36,25 @@ enum {
   TG_MX_A8_I16 = 3, // M=1, X=0
 };
 
+// Registers the callers never read after the routine returns. They aren't compared, and in
+// verify mode they're overwritten with junk after each call, so the recording tests prove
+// nothing reads them.
+enum {
+  TG_DEAD_A = 1,
+  TG_DEAD_X = 2,
+  TG_DEAD_Y = 4,
+  TG_DEAD_FLAGS = 8,  // N, V, Z and C
+  TG_DEAD_AXY_FLAGS = 15,
+};
+
 typedef struct TgPortFunc {
   uint32_t addr;     // entry point, bank:address
   const char* name;  // as in disasm/symbols.txt
   TgPortFn* fn;
   uint8_t call;      // TG_CALL_*
-  uint8_t mx;        // TG_MX_*
+  uint8_t mx;        // TG_MX_*: widths required on entry
+  uint8_t mx_out;    // TG_MX_*: widths on return (TG_MX_ANY: as on entry)
+  uint8_t dead;      // TG_DEAD_*
 } TgPortFunc;
 
 // All translated routines (registry.c).

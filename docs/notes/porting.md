@@ -23,8 +23,9 @@ signatures become ordinary C parameters.
   original's result, so the recording hashes still apply. All ROM tests run this way.
 - `native`: only the C version runs.
 
-A call isn't compared when an interrupt lands inside the original, or when it runs into
-the next frame; the report counts these as skipped. Writes that HDMA makes while the
+A call isn't compared when an interrupt lands inside the original, or when it runs on
+into the next frame's vblank; the report counts these as skipped. The stack below SP is
+free space, so leftover bytes from the original's pushes there aren't compared. Writes that HDMA makes while the
 original runs (the race's per-line colours) are replayed after the C version, since they
 come from the clock and not from the routine. Writes to the multiply/divide registers
 aren't compared: C does that arithmetic directly.
@@ -37,7 +38,11 @@ aren't compared: C does that arithmetic directly.
 2. Write it in `src/port/`, keeping the original's behaviour exactly, including quirks;
    comment anything that looks like a bug rather than fixing it. Add RAM names to
    `src/port/variables.h`.
-3. Register it with its entry point, JSR or JSL, and the M/X widths it's entered with.
+3. Register it with its entry point, JSR or JSL, the M/X widths it's entered with and
+   leaves with, and which registers no caller reads afterwards (`TG_DEAD_*`). Dead
+   registers aren't compared, and in verify mode they're filled with junk after every
+   call, so the recording hashes fail if a caller did read one. That saves reproducing
+   the exact leftovers of long routines.
 4. Run the tests: `ctest --test-dir build -L long` runs every recording. The report shows
    how many calls matched; check that the recordings actually reach the routine's
    branches (a routine that only ever sees zeros proves little).
@@ -46,4 +51,5 @@ aren't compared: C does that arithmetic directly.
 
 | Routine | Address | Checked calls (all recordings) |
 |---|---|---|
-| RaceRevEngines | $00:88A1 | about 5,400 per full test run. Chris's session revs player 1 on the start line; no recording revs player 2 yet |
+| RaceRevEngines | $00:88A1 | 5,414 per full test run. Chris's session revs player 1 on the start line; no recording revs player 2 yet |
+| RaceDrawHud | $00:CE61 | 37,099 per full test run |
