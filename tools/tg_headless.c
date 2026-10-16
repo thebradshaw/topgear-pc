@@ -1,7 +1,7 @@
 // Runs the game without a window, for tests and investigation.
 //
 //   tg_headless --rom <file> [--frames N] [--input script.txt]
-//               [--screenshot out.ppm] [--shots-every N --shots-dir DIR]
+//               [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]]
 //               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]
 //               [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native]
 //               [--frame-hashes FILE] [--race-frames N]
@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
   FILE* trace = NULL;
   long frames = 600;
   long shotsEvery = 0;
+  long shotsFrom = 0;
   TgPortMode portMode = TG_PORT_OFF;
   for(int i = 1; i < argc; i++) {
     const char* next = i + 1 < argc ? argv[i + 1] : NULL;
@@ -83,6 +84,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--screenshot") == 0 && next) screenshot = argv[++i];
     else if(strcmp(argv[i], "--shots-every") == 0 && next) shotsEvery = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--shots-dir") == 0 && next) shotsDir = argv[++i];
+    else if(strcmp(argv[i], "--shots-from") == 0 && next) shotsFrom = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--expect-wram") == 0 && next) expectWram = argv[++i];
     else if(strcmp(argv[i], "--expect-frame") == 0 && next) expectFrame = argv[++i];
     else if(strcmp(argv[i], "--coverage") == 0 && next) coveragePath = argv[++i];
@@ -96,7 +98,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "verify") == 0) { portMode = TG_PORT_VERIFY; i++; }
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "native") == 0) { portMode = TG_PORT_NATIVE; i++; }
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N]\n", argv[0]);
       return 2;
     }
   }
@@ -142,6 +144,7 @@ int main(int argc, char** argv) {
       script.resetPending = false;
     }
     tg_port_race_frames = script.smooth ? 1 : raceFrames;
+    if(script.scaling != tg_port_smooth_sprites) tg_game_set_smooth_sprites(game, script.scaling);
     tg_game_set_input(game, 1, script.state[1]);
     tg_game_set_input(game, 2, script.state[2]);
     if(frame == traceFrame && traceOut) {
@@ -161,7 +164,7 @@ int main(int argc, char** argv) {
       for(size_t j = 0; j < (size_t) TG_FB_WIDTH * TG_FB_HEIGHT * 4; j++) h = (h ^ pixels[j]) * 0x100000001b3ull;
       fprintf(hashes, "%016llx\n", (unsigned long long) h);
     }
-    if(shotsEvery > 0 && shotsDir && (frame + 1) % shotsEvery == 0) {
+    if(shotsEvery > 0 && shotsDir && frame + 1 >= shotsFrom && (frame + 1) % shotsEvery == 0) {
       char path[1024];
       snprintf(path, sizeof(path), "%s/frame%06ld.ppm", shotsDir, frame + 1);
       tg_game_get_pixels(game, pixels);

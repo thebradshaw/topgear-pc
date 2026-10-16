@@ -8,6 +8,20 @@
 //   $1B96  which 2-bit pair of that byte (0-3)
 
 #include "port.h"
+#include "ppu.h"
+
+// Smooth scaling (an enhancement, off by default): each object's sprites are tagged with
+// a scale about the object's position, and the PPU draws them scaled (ppu.h), so objects
+// grow smoothly instead of jumping between frames (smooth_scale below). Only drawing
+// changes: the OAM buffers hold other frames, but nothing in the game reads them.
+bool tg_port_smooth_sprites;
+uint16_t tg_port_obj_tags[0x2000];  // by low RAM address of an OAM buffer entry
+PpuObjScale tg_port_obj_scales[0x1000];
+static uint16_t g_next_scale = 1;
+static bool g_skip_scale;  // the player's own car keeps its size
+
+// The size factor the original uses for a key ($01:A55B), as a smooth curve.
+static float size_curve(uint16_t key) { return 27650.0f / key - 16.5f; }
 
 // The four copies of the sprite adder differ only in these.
 typedef struct Variant {
@@ -220,6 +234,43 @@ static bool car_effects(TgRegs* r, const SpriteView* w, const Variant* v) {
 
 enum { DRAWN, FULL, FULL_IN_GROUP, SPECIAL };
 
+static uint16_t oam_base(TgRegs* r, const Variant* v) { return (uint16_t) oam_adr(r, v, 0); }
+
+// Smooth scaling draws each object with the next smaller frame than the original's,
+// enlarged by up to about 1.35 so it grows continuously and reaches the original frame's
+// size where the original switches to it. Enlarging keeps every pixel of the art, where
+// shrinking would drop rows and columns. Sets *frame to the frame base to use; returns the
+// scale, or 0 to draw as usual.
+static float smooth_scale(TgRegs* r, uint16_t key, uint16_t* frame) {
+  *frame = abs8(r, (uint16_t) (0xA94D + key));
+  if(key < 0x80 || key >= 0x3F0) return 0;
+  uint16_t start = key;  // the nearest key drawn with the frame used
+  if(*frame >= 2) {
+    *frame = (uint16_t) (*frame - 2);
+    while(start < 0x3F0 && abs8(r, (uint16_t) (0xA94D + start)) != *frame) start++;
+  } else {
+    while(start > 0x80 && abs8(r, (uint16_t) (0xA94D + start - 1)) == *frame) start--;
+  }
+  // Times the square root of the step between frames (about 1.35), so objects keep the
+  // original's size on average rather than its smallest.
+  float f = size_curve(key) / size_curve(start) * 1.16f;
+  return f > 0.2f && f < 1.8f ? f : 0;
+}
+
+// Draws the sprite at $1B88/$1B8A, tagging its OAM entries with scale f about that point.
+static bool add_sprite_scaled(TgRegs* r, const Variant* v, float f) {
+  uint16_t y0 = ram16(0x1B92);
+  float ax = (float) (int16_t) ram16(0x1B88), ay = (float) (int16_t) ram16(0x1B8A) + v->y_add;
+  bool ok = add_sprite(r, v);
+  if(f != 0) {
+    uint16_t base = oam_base(r, v), id = g_next_scale;
+    g_next_scale = (uint16_t) (g_next_scale + 1 < 0x1000 ? g_next_scale + 1 : 1);
+    tg_port_obj_scales[id] = (PpuObjScale) { ax, ay, f };
+    for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) tg_port_obj_tags[(uint16_t) (base + y) & 0x1FFF] = id;
+  }
+  return ok;
+}
+
 // One object: $1B7A key, $1B86 sprite word, $1B88/$1B8A position. The key gives a size
 // ($A55B, used to scale x offsets) and a frame base ($A94D). Sprite words with bit 15
 // clear are one sprite (bits 9-14 frame, bit 8 offset to the left, bits 0-7 x offset);
@@ -227,7 +278,10 @@ enum { DRAWN, FULL, FULL_IN_GROUP, SPECIAL };
 // also set, a routine that draws the object (SPECIAL: the caller runs it).
 static int draw_object(TgRegs* r, const Variant* v) {
   uint16_t key = ram16(0x1B7A);
-  ram16_set(0x1B7C, abs8(r, (uint16_t) (0xA94D + key)));
+  uint16_t frame = abs8(r, (uint16_t) (0xA94D + key));
+  float f = tg_port_smooth_sprites && !g_skip_scale ? smooth_scale(r, key, &frame) : 0;
+  if(f == 0) frame = abs8(r, (uint16_t) (0xA94D + key));
+  ram16_set(0x1B7C, frame);
   uint16_t size = abs8(r, (uint16_t) (0xA55B + key));
   if(size >= 0xC0) size = 0;
   ram16_set(0x1B7E, (uint16_t) (size + 9));
@@ -237,7 +291,7 @@ static int draw_object(TgRegs* r, const Variant* v) {
     uint16_t x = ram16(0x1B88);
     ram16_set(0x1B88, (word & 0x0100) ? (uint16_t) (x - d) : (uint16_t) (x + d));
     ram16_set(0x1B86, (uint16_t) ((((uint16_t) (swap16(word) << 3)) & 0x07F0) + ram16(0x1B7C)));
-    return add_sprite(r, v) ? DRAWN : FULL;
+    return add_sprite_scaled(r, v, f) ? DRAWN : FULL;
   }
   if((word & 0x7FFE) >= 0x4000) return SPECIAL;
   ram16_set(0x1B84, ram16(0x1B88));
@@ -252,7 +306,7 @@ static int draw_object(TgRegs* r, const Variant* v) {
     uint16_t base = ram16(0x1B84);
     ram16_set(0x1B88, (a & 0x8000) ? (uint16_t) (base - d) : (uint16_t) (base + d));
     ram16_set(0x1B86, (uint16_t) (abs16(r, (uint16_t) (0xAE07 + x)) + ram16(0x1B7C)));
-    if(!add_sprite(r, v)) return FULL_IN_GROUP;
+    if(!add_sprite_scaled(r, v, f)) return FULL_IN_GROUP;
     ram16_set(0x1B80, (uint16_t) (ram16(0x1B80) - 1));
   } while(ram16(0x1B80) != 0);
   return DRAWN;
@@ -321,6 +375,7 @@ enum { END_HIDE, END_KEEP, BACK_TO_NORMAL };
 // the split point. A special object here sends the original back to the normal loop.
 static int build_split_part(TgRegs* r, const SpriteView* w, uint16_t x) {
   const Variant* v = w->normal;  // the player's car still goes in the normal part
+  g_skip_scale = false;
   dp16_set(r, w->half_dp, (uint16_t) (ram16(0x1B92) >> 1));
   dp16_set(r, 0x1A, x);
   uint16_t p = ram16(w->player);
@@ -367,6 +422,7 @@ static int build_objects(TgRegs* r, const SpriteView* w) {
       ram16_set(0x1B8A, rec(w, x, 6));
       if(!car_effects(r, w, v)) return END_HIDE;
     }
+    g_skip_scale = x == ram16(w->player);
     if(ram16(0x1B7A) >= dp16(r, w->split_dp)) {
       int res = build_split_part(r, w, x);
       if(res != BACK_TO_NORMAL) return res;
@@ -385,6 +441,10 @@ static int build_objects(TgRegs* r, const SpriteView* w) {
 static void build_view(TgRegs* r, const SpriteView* w) {
   const Variant* v = w->normal;
   if(dp16(r, w->off_dp) & 0x8000) return;
+  if(tg_port_smooth_sprites) {
+    uint16_t base = oam_base(r, v);
+    for(uint16_t y = 0; y < 0x200; y++) tg_port_obj_tags[(uint16_t) (base + y) & 0x1FFF] = 0;
+  }
   dp16_set(r, 0xF7, 0x0100);
   dp16_set(r, 0xF9, 0xFFF1);
   dp16_set(r, w->half_dp, 0);

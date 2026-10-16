@@ -28,6 +28,12 @@ typedef struct Layer {
   bool subScreenWindowed;
 } Layer;
 
+// Top Gear port enhancement: sprites drawn scaled by f about the point (ax, ay), for
+// smooth scaling of objects (f == 0: drawn as usual).
+typedef struct PpuObjScale {
+  float ax, ay, f;
+} PpuObjScale;
+
 typedef struct WindowLayer {
   bool window1enabled;
   bool window2enabled;
@@ -64,6 +70,11 @@ struct Ppu {
   uint16_t objTileAdr1;
   uint16_t objTileAdr2;
   uint8_t objSize;
+  // when objScaleTags is set, each OAM entry DMA'd from low RAM takes the scale
+  // objScales[tag] for the tag at its source address (tag 0: not scaled)
+  const uint16_t* objScaleTags;
+  const PpuObjScale* objScales;
+  PpuObjScale objScale[128];
   uint8_t objPixelBuffer[256]; // line buffers
   uint8_t objPriorityBuffer[256];
   bool timeOver;
@@ -144,5 +155,7 @@ uint8_t ppu_read(Ppu* ppu, uint8_t adr);
 void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val);
 void ppu_putPixels(Ppu* ppu, uint8_t* pixels);
 void ppu_setPixelOutputFormat(Ppu* ppu, int pixelOutputFormat);
+
+void ppu_tagObj(Ppu* ppu, uint8_t bank, uint16_t adr);
 
 #endif

@@ -34,6 +34,7 @@ The first gamepad is player 1 and the second is player 2.
 | F3 | Integer scaling |
 | F5 | Reset |
 | F6 | Smooth motion: the race updates every frame instead of every third (off by default; also `--smooth`) |
+| F7 | Smooth scaling: signs, trees and cars grow steadily as they approach instead of jumping between sprite sizes (off by default; also `--smooth-scaling`) |
 
 ## Recordings
 

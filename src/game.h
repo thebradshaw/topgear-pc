@@ -57,6 +57,9 @@ void tg_game_set_trace(TgGame* game, void* file);
 #include <stdio.h>
 #include "lockstep.h"
 void tg_game_set_port_mode(TgGame* game, TgPortMode mode);
+// Enhancement: race objects grow smoothly instead of stepping between sprite sizes. Only
+// drawing changes; the game runs the same.
+void tg_game_set_smooth_sprites(TgGame* game, bool on);
 // Prints what the translated routines did; returns the number of mismatches found.
 int tg_game_port_report(TgGame* game, FILE* f);
 

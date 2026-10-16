@@ -352,6 +352,7 @@ static void dma_transferByte(Dma* dma, uint16_t aAdr, uint8_t aBank, uint8_t bAd
     if(validA) snes_write(dma->snes, (aBank << 16) | aAdr, val);
   } else {
     uint8_t val = validA ? snes_read(dma->snes, (aBank << 16) | aAdr) : dma->snes->openBus;
+    if(bAdr == 0x04 && dma->snes->ppu->objScaleTags) ppu_tagObj(dma->snes->ppu, aBank, aAdr);  // Top Gear port
     if(validB) snes_writeBBus(dma->snes, bAdr, val);
   }
 }

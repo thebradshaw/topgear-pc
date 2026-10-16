@@ -75,6 +75,9 @@ static uint16_t ppu_getVramRemap(Ppu* ppu);
 Ppu* ppu_init(Snes* snes) {
   Ppu* ppu = malloc(sizeof(Ppu));
   ppu->snes = snes;
+  ppu->objScaleTags = NULL;
+  ppu->objScales = NULL;
+  memset(ppu->objScale, 0, sizeof(ppu->objScale));
   ppu_setPixelOutputFormat(ppu, ppu_pixelOutputFormatBGRX);
   return ppu;
 }
@@ -96,6 +99,7 @@ void ppu_reset(Ppu* ppu) {
   ppu->cgramBuffer = 0;
   memset(ppu->oam, 0, sizeof(ppu->oam));
   memset(ppu->highOam, 0, sizeof(ppu->highOam));
+  memset(ppu->objScale, 0, sizeof(ppu->objScale));
   ppu->oamAdr = 0;
   ppu->oamAdrWritten = 0;
   ppu->oamInHigh = false;
@@ -584,6 +588,71 @@ static bool ppu_getWindowState(Ppu* ppu, int layer, int x) {
   return false;
 }
 
+// Top Gear port enhancement: a sprite drawn scaled about a point (PpuObjScale).
+static void ppu_scaledRect(Ppu* ppu, uint8_t index, int size, float* x0, float* y0, float* sz) {
+  const PpuObjScale* s = &ppu->objScale[index >> 1];
+  int x = ppu->oam[index] & 0xff;
+  x |= ((ppu->highOam[index >> 3] >> (index & 7)) & 1) << 8;
+  if(x > 255) x -= 512;
+  int y = ppu->oam[index] >> 8;
+  if(y >= 240) y -= 256;
+  *x0 = s->ax + (x - s->ax) * s->f;
+  *y0 = s->ay + (y - s->ay) * s->f;
+  *sz = size * s->f;
+}
+
+static bool ppu_scaledOnLine(Ppu* ppu, uint8_t index, int size, int line) {
+  float x0, y0, sz;
+  ppu_scaledRect(ppu, index, size, &x0, &y0, &sz);
+  float c = line + 0.5f;
+  return c >= y0 && c < y0 + sz && x0 + sz > 0 && x0 < 256;
+}
+
+static void ppu_drawScaled(Ppu* ppu, uint8_t index, int line) {
+  int size = spriteSizes[ppu->objSize][(ppu->highOam[index >> 3] >> ((index & 7) + 1)) & 1];
+  float x0, y0, sz;
+  ppu_scaledRect(ppu, index, size, &x0, &y0, &sz);
+  float f = ppu->objScale[index >> 1].f;
+  int row = (int) ((line + 0.5f - y0) / f);
+  if(row < 0 || row >= size) return;
+  uint16_t attr = ppu->oam[index + 1];
+  if(attr & 0x8000) row = size - 1 - row;
+  bool hFlipped = attr & 0x4000;
+  int tile = attr & 0xff;
+  int palette = (attr & 0xe00) >> 9;
+  uint16_t objAdr = (attr & 0x100) ? ppu->objTileAdr2 : ppu->objTileAdr1;
+  int first = (int) x0, last = (int) (x0 + sz) + 1;
+  if(first < 0) first = 0;
+  if(last > 256) last = 256;
+  for(int screenCol = first; screenCol < last; screenCol++) {
+    int col = (int) ((screenCol + 0.5f - x0) / f);
+    if(col < 0 || col >= size) continue;
+    if(hFlipped) col = size - 1 - col;
+    uint8_t usedTile = (((tile >> 4) + (row / 8)) << 4) | (((tile & 0xf) + (col / 8)) & 0xf);
+    uint16_t plane1 = ppu->vram[(objAdr + usedTile * 16 + (row & 0x7)) & 0x7fff];
+    uint16_t plane2 = ppu->vram[(objAdr + usedTile * 16 + 8 + (row & 0x7)) & 0x7fff];
+    int shift = 7 - (col & 7);
+    int pixel = (plane1 >> shift) & 1;
+    pixel |= ((plane1 >> (8 + shift)) & 1) << 1;
+    pixel |= ((plane2 >> shift) & 1) << 2;
+    pixel |= ((plane2 >> (8 + shift)) & 1) << 3;
+    if(pixel > 0) {
+      ppu->objPixelBuffer[screenCol] = 0x80 + 16 * palette + pixel;
+      ppu->objPriorityBuffer[screenCol] = (attr & 0x3000) >> 12;
+    }
+  }
+}
+
+// An OAM byte about to be written by DMA from bank:adr: at the start of an entry, the
+// entry takes the scale tagged at that address.
+void ppu_tagObj(Ppu* ppu, uint8_t bank, uint16_t adr) {
+  if(ppu->oamInHigh || ppu->oamSecondWrite || (ppu->oamAdr & 1)) return;
+  bool lowRam = (bank == 0x7e || ((bank & 0x40) == 0 && (bank & 0x7f) < 0x40)) && adr < 0x2000;
+  uint16_t tag = lowRam && ppu->objScaleTags ? ppu->objScaleTags[adr] : 0;
+  if(tag) ppu->objScale[ppu->oamAdr >> 1] = ppu->objScales[tag];
+  else ppu->objScale[ppu->oamAdr >> 1].f = 0;
+}
+
 static void ppu_evaluateSprites(Ppu* ppu, int line) {
   // TODO: rectangular sprites, wierdness with sprites at -256
   uint8_t index = ppu->objPriority ? (ppu->oamAdr & 0xfe) : 0;
@@ -597,7 +666,12 @@ static void ppu_evaluateSprites(Ppu* ppu, int line) {
     uint8_t row = line - y;
     int spriteSize = spriteSizes[ppu->objSize][(ppu->highOam[index >> 3] >> ((index & 7) + 1)) & 1];
     int spriteHeight = ppu->objInterlace ? spriteSize / 2 : spriteSize;
-    if(row < spriteHeight) {
+    if(ppu->objScaleTags && ppu->objScale[index >> 1].f != 0) {
+      if(ppu_scaledOnLine(ppu, index, spriteSize, line)) {
+        if(++spritesFound > 32) { ppu->rangeOver = true; spritesFound = 32; break; }
+        foundSprites[spritesFound - 1] = index;
+      }
+    } else if(row < spriteHeight) {
       // in y-range, get the x location, using the high bit as well
       int x = ppu->oam[index] & 0xff;
       x |= ((ppu->highOam[index >> 3] >> (index & 7)) & 1) << 8;
@@ -619,6 +693,10 @@ static void ppu_evaluateSprites(Ppu* ppu, int line) {
   // iterate over found sprites backwards to fetch max 34 tile slivers
   for(int i = spritesFound; i > 0; i--) {
     index = foundSprites[i - 1];
+    if(ppu->objScaleTags && ppu->objScale[index >> 1].f != 0) {
+      ppu_drawScaled(ppu, index, line);
+      continue;
+    }
     uint8_t y = ppu->oam[index] >> 8;
     uint8_t row = line - y;
     int spriteSize = spriteSizes[ppu->objSize][(ppu->highOam[index >> 3] >> ((index & 7) + 1)) & 1];

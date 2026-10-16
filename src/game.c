@@ -7,6 +7,7 @@
 #include "coverage.h"
 #include "lockstep.h"
 #include "snes.h"
+#include "port/port.h"
 
 struct TgGame {
   Snes* snes;
@@ -123,6 +124,13 @@ void tg_game_set_port_mode(TgGame* game, TgPortMode mode) {
 
 int tg_game_port_report(TgGame* game, FILE* f) {
   return game->lockstep ? tg_lockstep_report(game->lockstep, f) : 0;
+}
+
+void tg_game_set_smooth_sprites(TgGame* game, bool on) {
+  extern PpuObjScale tg_port_obj_scales[];
+  tg_port_smooth_sprites = on;
+  game->snes->ppu->objScaleTags = on ? tg_port_obj_tags : NULL;
+  game->snes->ppu->objScales = tg_port_obj_scales;
 }
 
 void tg_game_set_coverage(TgGame* game, TgCoverage* cov) {

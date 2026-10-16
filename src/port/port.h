@@ -143,6 +143,12 @@ static inline uint16_t rom16(uint32_t adr) { const uint8_t* p = tg_rom(adr); ret
 // time, which is how the comparison tests run it.
 extern int tg_port_race_frames;
 
+// Smooth scaling of race objects (sprites.c), an enhancement: when set, the sprite builder
+// tags each object's OAM entries in tg_port_obj_tags with a scale in tg_port_obj_scales,
+// which the PPU applies (tg_game_set_smooth_sprites connects them).
+extern bool tg_port_smooth_sprites;
+extern uint16_t tg_port_obj_tags[0x2000];
+
 // Connects the helpers above to the machine (port.c).
 typedef struct Snes Snes;
 void tg_port_bind(Snes* snes, const uint8_t* rom);
