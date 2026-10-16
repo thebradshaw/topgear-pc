@@ -79,6 +79,8 @@ Ppu* ppu_init(Snes* snes) {
   ppu->objScales = NULL;
   ppu->objBitmaps = NULL;
   ppu->objGrounds = NULL;
+  ppu->objFlags = NULL;
+  memset(ppu->objFlag, 0, sizeof(ppu->objFlag));
   ppu->raceFrame = NULL;
   ppu->full = NULL;
   ppu->fullComposing = false;
@@ -289,7 +291,7 @@ void ppu_runLine(Ppu* ppu, int line) {
   // called for lines 1-224/239
   // evaluate sprites
   memset(ppu->objPixelBuffer, 0, sizeof(ppu->objPixelBuffer));
-  if(ppu->objScaleTags) memset(ppu->objAlpha, 0, sizeof(ppu->objAlpha));
+  if(ppu->objScaleTags || ppu->objFlags) memset(ppu->objAlpha, 0, sizeof(ppu->objAlpha));
   if(!ppu->forcedBlank) ppu_evaluateSprites(ppu, line - 1);
   // actual line
   if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, line);
@@ -309,7 +311,7 @@ static void ppu_handlePixel(Ppu* ppu, int x, int y) {
   int b = 0, b2 = 0;
   if(!ppu->forcedBlank) {
     int mainLayer = ppu_getPixel(ppu, x, y, false, &r, &g, &b);
-    if(ppu->objScaleTags && (mainLayer == 4 || mainLayer == 6) && ppu->objAlpha[PPU_OBJX(x)] > 0) {
+    if((ppu->objScaleTags || ppu->objFlags) && (mainLayer == 4 || mainLayer == 6) && ppu->objAlpha[PPU_OBJX(x)] > 0) {
       // a smoothly scaled object's filtered pixel, over what is behind it
       int ox = PPU_OBJX(x);
       float a = ppu->objAlpha[ox];
@@ -652,6 +654,7 @@ void ppu_tagObj(Ppu* ppu, uint8_t bank, uint16_t adr) {
   uint16_t tag = lowRam && ppu->objScaleTags ? ppu->objScaleTags[adr] : 0;
   ppu->objTag[ppu->oamAdr >> 1] = tag;
   ppu->objGround[ppu->oamAdr >> 1] = lowRam && ppu->objGrounds ? ppu->objGrounds[adr] : PPU_NO_GROUND;
+  ppu->objFlag[ppu->oamAdr >> 1] = lowRam && ppu->objFlags ? ppu->objFlags[adr] : 0;
 }
 
 // Top Gear port: a sprite's x. On a wide line, x up to its right edge counts as on the
@@ -747,9 +750,18 @@ static void ppu_evaluateSprites(Ppu* ppu, int line) {
             // draw it in the buffer if there is a pixel here
             int screenCol = col + x + px;
             if(pixel > 0 && screenCol >= ppu->lineLeft && screenCol < ppu->lineRight) {
-              ppu->objPixelBuffer[PPU_OBJX(screenCol)] = 0x80 + 16 * palette + pixel;
-              ppu->objPriorityBuffer[PPU_OBJX(screenCol)] = (ppu->oam[index + 1] & 0x3000) >> 12;
-              ppu->objAlpha[PPU_OBJX(screenCol)] = 0;
+              int ox = PPU_OBJX(screenCol);
+              ppu->objPixelBuffer[ox] = 0x80 + 16 * palette + pixel;
+              ppu->objPriorityBuffer[ox] = (ppu->oam[index + 1] & 0x3000) >> 12;
+              ppu->objAlpha[ox] = 0;
+              if(ppu->objFlag[index >> 1] & PPU_OBJ_GHOST) {
+                // Top Gear port: the ghost car, see-through
+                uint16_t c = ppu->cgram[ppu->objPixelBuffer[ox]];
+                ppu->objR[ox] = c & 0x1f;
+                ppu->objG[ox] = (c >> 5) & 0x1f;
+                ppu->objB[ox] = (c >> 10) & 0x1f;
+                ppu->objAlpha[ox] = PPU_GHOST_ALPHA;
+              }
             }
           }
         }

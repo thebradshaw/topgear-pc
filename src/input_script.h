@@ -12,11 +12,12 @@
 // "<frame> smooth on|off" switches the smooth motion option (one race update a frame), and
 // "<frame> scaling on|off" the smooth scaling of race objects, and "<frame> fullview on|off"
 // the full-screen 1-player view; "<frame> wide <margin>" sets widescreen's extra pixels on
-// each side (0 for off), and "<frame> sidebyside on|off" the side-by-side 2-player views.
+// each side (0 for off), "<frame> sidebyside on|off" the side-by-side 2-player views, and "<frame> ghost on|off"
+// the ghost car.
 
 typedef struct {
   uint32_t frame;
-  uint8_t player;  // 0 means reset, 3 smooth motion, 4 smooth scaling, 5 full view, 6 widescreen (buttons: the margin), 7 side by side (buttons 1 on, 0 off)
+  uint8_t player;  // 0 means reset, 3 smooth motion, 4 smooth scaling, 5 full view, 6 widescreen (buttons: the margin), 7 side by side, 8 ghost (buttons 1 on, 0 off)
   uint16_t buttons;
 } TgInputEvent;
 
@@ -31,6 +32,7 @@ typedef struct {
   bool fullview;  // the full-screen 1-player view option
   int wide;  // the widescreen margin, 0 when off
   bool sideBySide;  // the side-by-side 2-player option
+  bool ghost;  // the ghost car option
 } TgInputScript;
 
 bool tg_input_script_load(const char* path, TgInputScript* script, char* error, int errorSize);

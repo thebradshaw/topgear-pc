@@ -70,6 +70,13 @@ void tg_game_set_wide(TgGame* game, int margin);
 // 2-player races in widescreen with the views side by side, each full height (an
 // enhancement, off by default).
 void tg_game_set_side_by_side(TgGame* game, bool on);
+// Ghost car (an enhancement, off by default): the best lap on each course replayed as a
+// see-through car in 1-player races. Best laps can be saved and loaded; changed reports
+// (once) that a new best lap was recorded.
+void tg_game_set_ghost(TgGame* game, bool on);
+bool tg_game_ghosts_changed(TgGame* game);
+bool tg_game_save_ghosts(TgGame* game, const char* path);
+bool tg_game_load_ghosts(TgGame* game, const char* path);
 int tg_game_wide_margin(const TgGame* game);
 const uint32_t* tg_game_wide_pixels(TgGame* game);
 // Debugging: VRAM, CGRAM and OAM to a file.

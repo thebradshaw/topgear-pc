@@ -102,6 +102,7 @@ struct Ppu {
   const PpuObjScale* objScales;
   uint16_t objTag[128];
   int16_t objGround[128];  // Top Gear port: the line each entry's object stands on, or PPU_NO_GROUND
+  uint8_t objFlag[128];    // Top Gear port: PPU_OBJ_GHOST: drawn see-through
   PpuObjBitmap* objBitmaps;  // a small cache, allocated when first needed
   bool timeOver;
   bool rangeOver;
@@ -170,6 +171,7 @@ struct Ppu {
   // (and PPU_FULL_VIEW) when the next frame shows a race; the PPU then keeps the state of
   // each line as it is drawn and redraws the screen from them at the start of vblank.
   const int16_t* objGrounds;  // by low RAM address of an OAM entry, like objScaleTags
+  const uint8_t* objFlags;    // the same for objFlag
   uint8_t* raceFrame;
   struct PpuFullView* full;
   uint8_t fullArmed;   // this frame's flags, latched at the last vblank
@@ -193,6 +195,8 @@ struct Ppu {
 #define PPU_SIDE_BY_SIDE 4  // 2 players: the two views side by side, each full height
 
 #define PPU_NO_GROUND (-32768)
+#define PPU_OBJ_GHOST 1
+#define PPU_GHOST_ALPHA 0.45f
 
 enum { ppu_pixelOutputFormatXBGR = 0, ppu_pixelOutputFormatBGRX = 1 };
 

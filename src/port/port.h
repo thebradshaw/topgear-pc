@@ -162,6 +162,27 @@ extern int tg_port_wide_margin;  // extra pixels on each side, 0 when off
 extern uint8_t tg_port_race_frame;
 extern int16_t tg_port_obj_grounds[0x2000];
 
+// Ghost car (ghost.c), an enhancement: the player's best race on each course, replayed as a
+// see-through car in 1-player races. The sprite builder flags the ghost's OAM entries in
+// tg_port_obj_flags (PPU_OBJ_GHOST) for the PPU to draw them see-through.
+#define TG_GHOST_COURSES 32
+#define TG_GHOST_SAMPLES 8192
+typedef struct TgGhostSample {
+  uint16_t time;  // the race clock
+  uint16_t pos, side, kind;  // the car record's track position, side position, kind bits
+} TgGhostSample;
+typedef struct TgGhostLap {
+  uint16_t time;  // the race's finishing time
+  int count;      // samples; 0 for no lap yet
+  TgGhostSample samples[TG_GHOST_SAMPLES];
+} TgGhostLap;
+extern bool tg_port_ghost;
+extern TgGhostLap tg_port_ghosts[TG_GHOST_COURSES];  // by course
+extern bool tg_port_ghosts_changed;  // set when a new best lap is recorded
+extern uint16_t tg_port_ghost_key, tg_port_ghost_word;
+extern uint8_t tg_port_obj_flags[0x2000];
+void tg_port_ghost_update(void);
+
 // Connects the helpers above to the machine (port.c).
 typedef struct Snes Snes;
 void tg_port_bind(Snes* snes, const uint8_t* rom);

@@ -65,8 +65,11 @@ static struct {
   bool fullView;  // enhancement: 1-player races fill the whole screen (F9, --full-view)
   bool recordedFullView;
   bool wide;  // enhancement: races drawn as wide as the window (F10, --wide)
-  bool sideBySide;  // enhancement: 2-player widescreen views side by side (F11, --side-by-side)
+  bool sideBySide;  // enhancement: 2-player widescreen views side by side (F12, --side-by-side)
   bool recordedSideBySide;
+  bool ghost;  // enhancement: race against your best race on each course (F1, --ghost)
+  bool recordedGhost;
+  char ghostPath[2400];  // where the best races are kept; empty when there is nowhere
   int recordedWide;
 } app;
 
@@ -225,6 +228,7 @@ static void updateTitle(void) {
            app.fullView && !app.original ? ", full-screen view" : "", app.rumble ? ", rumble" : "");
   if(app.wide && !app.original) SDL_strlcat(title, ", widescreen", sizeof(title));
   if(app.sideBySide && !app.original) SDL_strlcat(title, ", side by side", sizeof(title));
+  if(app.ghost && !app.original) SDL_strlcat(title, ", ghost car", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
 
@@ -383,6 +387,7 @@ static void runFrame(int samples) {
     if(app.replay.fullview != app.fullView) { app.fullView = app.replay.fullview; updateTitle(); }
     if((app.replay.wide > 0) != app.wide) { app.wide = app.replay.wide > 0; updateTitle(); }
     if(app.replay.sideBySide != app.sideBySide) { app.sideBySide = app.replay.sideBySide; updateTitle(); }
+    if(app.replay.ghost != app.ghost) { app.ghost = app.replay.ghost; updateTitle(); }
   }
   // Smooth motion runs the race logic every frame; the original updates it every third
   // frame (its pace is scaled by the frames elapsed, so the race takes the same time).
@@ -392,6 +397,7 @@ static void runFrame(int samples) {
   int margin = app.replaying ? app.replay.wide : wantedMargin();
   if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
   if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
+  if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
   if(app.record) {
     if(reset) fprintf(app.record, "%u reset\n", app.frame);
     if(app.smooth != app.recordedSmooth) {
@@ -414,6 +420,10 @@ static void runFrame(int samples) {
       fprintf(app.record, "%u sidebyside %s\n", app.frame, app.sideBySide ? "on" : "off");
       app.recordedSideBySide = app.sideBySide;
     }
+    if(app.ghost != app.recordedGhost) {
+      fprintf(app.record, "%u ghost %s\n", app.frame, app.ghost ? "on" : "off");
+      app.recordedGhost = app.ghost;
+    }
     for(int p = 1; p <= 2; p++) {
       if(input[p] != app.recorded[p] || (app.frame == 0 && p == 1)) {
         char names[96];
@@ -428,6 +438,8 @@ static void runFrame(int samples) {
   tg_game_set_input(app.game, 2, input[2]);
   tg_game_run_frame(app.game);
   app.frame++;
+  // A new best race is saved straight away (not while replaying someone's recording).
+  if(tg_game_ghosts_changed(app.game) && !app.replaying && app.ghostPath[0]) tg_game_save_ghosts(app.game, app.ghostPath);
   rumble();
 
   void* pixels;
@@ -476,6 +488,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--full-view") == 0) app.fullView = true;
     else if(strcmp(argv[i], "--wide") == 0) app.wide = true;
     else if(strcmp(argv[i], "--side-by-side") == 0) app.sideBySide = true;
+    else if(strcmp(argv[i], "--ghost") == 0) app.ghost = true;
     else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       i++;
       for(int f = 0; f < FILTER_COUNT; f++) if(strcmp(argv[i], filterNames[f]) == 0) app.filter = f;
@@ -511,6 +524,13 @@ int main(int argc, char** argv) {
     record = false;
   }
   if(record) startRecording();
+  // Ghost cars: the best race on each course, kept with the settings.
+  char* pref = SDL_GetPrefPath("topgear-pc", "Top Gear");
+  if(pref) {
+    snprintf(app.ghostPath, sizeof(app.ghostPath), "%sghosts.bin", pref);
+    SDL_free(pref);
+    tg_game_load_ghosts(app.game, app.ghostPath);
+  }
 
   app.aspect = ASPECT_4_3;
   loadControls();
@@ -559,7 +579,8 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F7 && !app.replaying) { app.scaling = !app.scaling; updateTitle(); break; }
             if(e.key.key == SDLK_F8) { app.rumble = !app.rumble; updateTitle(); break; }
             if(e.key.key == SDLK_F9 && !app.replaying) { app.fullView = !app.fullView; updateTitle(); break; }
-            if(e.key.key == SDLK_F11 && !app.replaying) { app.sideBySide = !app.sideBySide; updateTitle(); break; }
+            if(e.key.key == SDLK_F12 && !app.replaying) { app.sideBySide = !app.sideBySide; updateTitle(); break; }
+            if(e.key.key == SDLK_F1 && !app.replaying) { app.ghost = !app.ghost; updateTitle(); break; }
             if(e.key.key == SDLK_F10 && !app.replaying) {
               app.wide = !app.wide;
               if(!app.fullscreen) {

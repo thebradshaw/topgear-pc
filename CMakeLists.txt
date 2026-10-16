@@ -39,6 +39,7 @@ add_library(tgcore STATIC
   src/port/decompress.c
   src/port/drive.c
   src/port/render.c
+  src/port/ghost.c
   src/port/setup.c
   src/port/tilecache.c
   src/port/hud.c

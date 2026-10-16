@@ -157,6 +157,66 @@ void tg_game_set_full_view(TgGame* game, bool on) {
   updateRedraw(game);
 }
 
+void tg_game_set_ghost(TgGame* game, bool on) {
+  tg_port_ghost = on;
+  game->snes->ppu->objFlags = on ? tg_port_obj_flags : NULL;
+}
+
+bool tg_game_ghosts_changed(TgGame* game) {
+  (void) game;
+  bool c = tg_port_ghosts_changed;
+  tg_port_ghosts_changed = false;
+  return c;
+}
+
+// File: "TGGHOST1", then per course with a lap: course byte, lap time word, sample count
+// word, samples (4 little-endian words each).
+bool tg_game_save_ghosts(TgGame* game, const char* path) {
+  (void) game;
+  FILE* f = fopen(path, "wb");
+  if(f == NULL) return false;
+  fwrite("TGGHOST1", 1, 8, f);
+  for(int c = 0; c < TG_GHOST_COURSES; c++) {
+    const TgGhostLap* l = &tg_port_ghosts[c];
+    if(l->count == 0) continue;
+    uint8_t h[5] = {(uint8_t) c, (uint8_t) l->time, (uint8_t) (l->time >> 8), (uint8_t) l->count, (uint8_t) (l->count >> 8)};
+    fwrite(h, 1, 5, f);
+    for(int i = 0; i < l->count; i++) {
+      const TgGhostSample* s = &l->samples[i];
+      uint16_t w[4] = {s->time, s->pos, s->side, s->kind};
+      for(int k = 0; k < 4; k++) {
+        uint8_t b[2] = {(uint8_t) w[k], (uint8_t) (w[k] >> 8)};
+        fwrite(b, 1, 2, f);
+      }
+    }
+  }
+  return fclose(f) == 0;
+}
+
+bool tg_game_load_ghosts(TgGame* game, const char* path) {
+  (void) game;
+  FILE* f = fopen(path, "rb");
+  if(f == NULL) return false;
+  char magic[8];
+  bool ok = fread(magic, 1, 8, f) == 8 && memcmp(magic, "TGGHOST1", 8) == 0;
+  uint8_t h[5];
+  while(ok && fread(h, 1, 5, f) == 5) {
+    int c = h[0], count = h[3] | h[4] << 8;
+    if(c >= TG_GHOST_COURSES || count > TG_GHOST_SAMPLES) { ok = false; break; }
+    TgGhostLap* l = &tg_port_ghosts[c];
+    l->time = (uint16_t) (h[1] | h[2] << 8);
+    for(int i = 0; i < count && ok; i++) {
+      uint8_t b[8];
+      ok = fread(b, 1, 8, f) == 8;
+      l->samples[i] = (TgGhostSample) {(uint16_t) (b[0] | b[1] << 8), (uint16_t) (b[2] | b[3] << 8),
+                                       (uint16_t) (b[4] | b[5] << 8), (uint16_t) (b[6] | b[7] << 8)};
+    }
+    l->count = ok ? count : 0;
+  }
+  fclose(f);
+  return ok;
+}
+
 void tg_game_set_side_by_side(TgGame* game, bool on) {
   (void) game;
   tg_port_side_by_side = on;

@@ -301,6 +301,7 @@ static bool race_main(TgRegs* r) {
     }
     RaceMoveCars(r);
     RaceListVisibleCars(r);
+    tg_port_ghost_update();
     take_sky_colour();
     render_views(r, 0x8766);
     RaceBuildWindowTable(r);

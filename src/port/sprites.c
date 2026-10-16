@@ -139,6 +139,8 @@ bool tg_port_side_by_side;
 int tg_port_wide_margin;
 uint8_t tg_port_race_frame;
 int16_t tg_port_obj_grounds[0x2000];  // by low RAM address of an OAM buffer entry
+uint8_t tg_port_obj_flags[0x2000];  // PPU_OBJ_GHOST, by low RAM address
+static bool g_ghost;  // the object being drawn is the ghost car (ghost.c)
 
 static void mark_ground(TgRegs* r, const Variant* v, uint16_t from, int16_t ground) {
   uint16_t base = oam_base(r, v);
@@ -148,10 +150,14 @@ static void mark_ground(TgRegs* r, const Variant* v, uint16_t from, int16_t grou
 static bool add_parts_all(TgRegs* r, const Variant* v);
 
 static bool add_sprite(TgRegs* r, const Variant* v) {
-  if(!tg_port_full_view && !tg_port_wide_margin) return add_parts_all(r, v);
+  if(!tg_port_full_view && !tg_port_wide_margin && !g_ghost) return add_parts_all(r, v);
   uint16_t y0 = ram16(0x1B92);
   bool ok = add_parts_all(r, v);
   mark_ground(r, v, y0, (int16_t) (int16_t) (ram16(0x1B8A) + v->y_add));
+  if(g_ghost) {
+    uint16_t base = oam_base(r, v);
+    for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) tg_port_obj_flags[(uint16_t) (base + y) & 0x1FFF] = PPU_OBJ_GHOST;
+  }
   return ok;
 }
 
@@ -368,6 +374,7 @@ static int draw_object(TgRegs* r, const Variant* v) {
 }
 
 static void load_object(const SpriteView* w, uint16_t x) {
+  g_ghost = w == &kSpriteViews[0] && rec(w, x, 0) == tg_port_ghost_key && rec(w, x, 2) == tg_port_ghost_word;
   ram16_set(0x1B86, rec(w, x, 2));
   ram16_set(0x1B88, rec(w, x, 4));
   ram16_set(0x1B8A, rec(w, x, 6));
@@ -433,6 +440,7 @@ enum { END_HIDE, END_KEEP, BACK_TO_NORMAL };
 static int build_split_part(TgRegs* r, const SpriteView* w, uint16_t x) {
   const Variant* v = w->normal;  // the player's car still goes in the normal part
   g_skip_scale = false;
+  g_ghost = false;
   dp16_set(r, w->half_dp, (uint16_t) (ram16(0x1B92) >> 1));
   dp16_set(r, 0x1A, x);
   uint16_t p = ram16(w->player);
@@ -474,6 +482,7 @@ static int build_objects(TgRegs* r, const SpriteView* w) {
     uint16_t x = ram16(0x1B78);
     ram16_set(0x1B78, (uint16_t) (x + 8));
     ram16_set(0x1B7A, rec(w, x, 0));
+    g_ghost = false;
     if(x == ram16(w->player)) {
       ram16_set(0x1B88, rec(w, x, 4));
       ram16_set(0x1B8A, rec(w, x, 6));
@@ -498,11 +507,12 @@ static int build_objects(TgRegs* r, const SpriteView* w) {
 static void build_view(TgRegs* r, const SpriteView* w) {
   const Variant* v = w->normal;
   if(dp16(r, w->off_dp) & 0x8000) return;
-  if(tg_port_smooth_sprites || tg_port_full_view || tg_port_wide_margin) {
+  if(tg_port_smooth_sprites || tg_port_full_view || tg_port_wide_margin || tg_port_ghost) {
     uint16_t base = oam_base(r, v);
     for(uint16_t y = 0; y < 0x200; y++) {
       tg_port_obj_tags[(uint16_t) (base + y) & 0x1FFF] = 0;
       tg_port_obj_grounds[(uint16_t) (base + y) & 0x1FFF] = PPU_NO_GROUND;
+      tg_port_obj_flags[(uint16_t) (base + y) & 0x1FFF] = 0;
     }
   }
   // Parts are kept from x = -15 to 255, or out to the edges of a wide screen.

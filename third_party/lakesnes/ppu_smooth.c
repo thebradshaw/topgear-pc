@@ -172,6 +172,7 @@ void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line) {
     int ox = PPU_OBJX(x);
     float a = bm->a[k];
     if(a <= 0) continue;
+    if(ppu->objFlag[index >> 1] & PPU_OBJ_GHOST) a *= PPU_GHOST_ALPHA;
     // Over whatever sprite pixel is already there (drawn earlier, so behind).
     float da = 0, dr = 0, dg = 0, db = 0;
     if(ppu->objPixelBuffer[ox]) {

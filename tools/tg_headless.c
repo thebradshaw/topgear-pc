@@ -4,7 +4,7 @@
 //               [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]]
 //               [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE]
 //               [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native]
-//               [--frame-hashes FILE] [--race-frames N]
+//               [--frame-hashes FILE] [--race-frames N] [--ghosts FILE]
 //
 // Prints the SHA-256 of work RAM and of the final frame so runs can be compared.
 // With --expect-*, exits non-zero when a hash differs (used by the regression tests).
@@ -15,6 +15,7 @@
 // for comparing runs whose timing differs (tools/shift_compare.py).
 // --race-frames sets the video frames per race update when the race loop runs in C
 // (native mode); the default is 3, the original's pace without its slowdown.
+// --ghosts loads ghost-car races from FILE and saves them back if a better race is driven.
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -82,6 +83,7 @@ int main(int argc, char** argv) {
   const char* coveragePath = NULL;
   const char* dumpWram = NULL;
   const char* frameHashes = NULL;
+  const char* ghostsPath = NULL;
   const char* traceOut = NULL;
   long traceFrame = -1;
   long traceCount = 1;
@@ -106,6 +108,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--coverage") == 0 && next) coveragePath = argv[++i];
     else if(strcmp(argv[i], "--dump-wram") == 0 && next) dumpWram = argv[++i];
     else if(strcmp(argv[i], "--frame-hashes") == 0 && next) frameHashes = argv[++i];
+    else if(strcmp(argv[i], "--ghosts") == 0 && next) ghostsPath = argv[++i];
     else if(strcmp(argv[i], "--race-frames") == 0 && next) tg_port_race_frames = (int) strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-frame") == 0 && next) traceFrame = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-out") == 0 && next) traceOut = argv[++i];
@@ -114,7 +117,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "verify") == 0) { portMode = TG_PORT_VERIFY; i++; }
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "native") == 0) { portMode = TG_PORT_NATIVE; i++; }
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N] [--ghosts FILE]\n", argv[0]);
       return 2;
     }
   }
@@ -141,6 +144,7 @@ int main(int argc, char** argv) {
   TgGame* game = tg_game_create(&rom);
 
   g_game = game;
+  if(ghostsPath != NULL) tg_game_load_ghosts(game, ghostsPath);
   if(game == NULL) {
     fprintf(stderr, "failed to start game\n");
     return 1;
@@ -166,6 +170,7 @@ int main(int argc, char** argv) {
     if(script.fullview != tg_port_full_view) tg_game_set_full_view(game, script.fullview);
     if(script.wide != tg_port_wide_margin) tg_game_set_wide(game, script.wide);
     if(script.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(game, script.sideBySide);
+    if(script.ghost != tg_port_ghost) tg_game_set_ghost(game, script.ghost);
     tg_game_set_input(game, 1, script.state[1]);
     tg_game_set_input(game, 2, script.state[2]);
     if(frame == traceFrame && traceOut) {
@@ -215,6 +220,7 @@ int main(int argc, char** argv) {
     free(coverage);
   }
   free(pixels);
+  if(ghostsPath != NULL && tg_game_ghosts_changed(game)) tg_game_save_ghosts(game, ghostsPath);
   tg_game_destroy(game);
   tg_input_script_free(&script);
   tg_rom_free(&rom);
