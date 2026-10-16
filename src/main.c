@@ -302,6 +302,9 @@ static void updateTitle(void) {
   SDL_SetWindowTitle(app.window, title);
 }
 
+static bool menuOpen(void);
+static void drawMenu(void);
+
 static void present(void) {
   int outW, outH;
   SDL_GetCurrentRenderOutputSize(app.renderer, &outW, &outH);
@@ -358,6 +361,7 @@ static void present(void) {
     }
     SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_NONE);
   }
+  if(menuOpen()) drawMenu();
   SDL_RenderPresent(app.renderer);
 }
 
@@ -579,6 +583,280 @@ static void runFrame(int samples) {
   }
 }
 
+
+// ---------------------------------------------------------------------------------------
+// The options menu (Tab, or a gamepad's guide button): every option, the controls and the
+// gamepad order in one place. The game waits while it is open.
+
+typedef enum {
+  MI_RESUME, MI_ASPECT, MI_FILTER, MI_INTEGER, MI_FULLSCREEN, MI_WIDE, MI_FULLVIEW, MI_SIDE,
+  MI_SMOOTH, MI_HIGHFPS, MI_SCALING, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
+  MI_PADS, MI_RESET, MI_QUIT, MI_COUNT
+} MenuItem;
+
+static struct {
+  bool open;
+  int page;    // 0 options, 1 keyboard controls, 2 gamepad controls
+  int sel;
+  int binding; // controls page: the SNES button waiting for a key or gamepad button, or -1
+  bool quit;
+} menu = {false, 0, 0, -1, false};
+
+static void setFullscreen(bool on) {
+  app.fullscreen = on;
+  SDL_SetWindowFullscreen(app.window, on);
+  saveSettings();
+}
+
+static void setWide(bool on) {
+  app.wide = on;
+  if(!app.fullscreen) {
+    // A window gets the shape of the picture: 16:9 for widescreen, else 4:3.
+    int w, h;
+    SDL_GetWindowSize(app.window, &w, &h);
+    SDL_SetWindowSize(app.window, on ? h * 16 / 9 : h * 4 / 3, h);
+  }
+  updateTitle();
+}
+
+// Off, then full view with the original's low horizon, then with a tall road.
+static void stepFullView(void) {
+  if(!app.fullView) app.fullView = true;
+  else if(!app.tallRoad) app.tallRoad = true;
+  else app.fullView = app.tallRoad = false;
+  updateTitle();
+}
+
+static void setHighFps(bool on) {
+  // In-between frames need the race to move every frame: smooth motion comes on too.
+  app.highFps = on;
+  if(on && !app.replaying) app.smooth = true;
+  updateTitle();
+}
+
+static void setSmooth(bool on) {
+  app.smooth = on;
+  if(!on) app.highFps = false;
+  updateTitle();
+}
+
+// The names of a SNES button's keyboard or gamepad bindings.
+static void bindingNames(int button, bool pad, char* out, size_t size) {
+  out[0] = 0;
+  for(int i = 0; i < bindingCount; i++) {
+    if(bindings[i].pad != pad || bindings[i].button != (uint16_t) (1 << button)) continue;
+    const char* name = pad ? SDL_GetGamepadStringForButton((SDL_GamepadButton) bindings[i].code) : SDL_GetKeyName((SDL_Keycode) bindings[i].code);
+    if(out[0]) SDL_strlcat(out, ", ", size);
+    SDL_strlcat(out, name ? name : "?", size);
+  }
+  if(!out[0]) SDL_strlcpy(out, "-", size);
+}
+
+static void saveControls(void) {
+  const char* base = SDL_GetBasePath();
+  char path[2048];
+  snprintf(path, sizeof(path), "%scontrols.txt", base ? base : "");
+  FILE* f = fopen(path, "w");
+  if(f == NULL) return;
+  // The comment lines of the defaults, then the bindings.
+  for(const char* t = kDefaultControls; *t == '#'; ) {
+    const char* end = strchr(t, '\n');
+    fwrite(t, 1, (size_t) (end - t + 1), f);
+    t = end + 1;
+  }
+  for(int i = 0; i < bindingCount; i++) {
+    int b = 0;
+    while(b < 12 && bindings[i].button != (uint16_t) (1 << b)) b++;
+    if(bindings[i].pad) fprintf(f, "%s pad %s\n", kButtonNames[b], SDL_GetGamepadStringForButton((SDL_GamepadButton) bindings[i].code));
+    else fprintf(f, "%s key %s\n", kButtonNames[b], SDL_GetKeyName((SDL_Keycode) bindings[i].code));
+  }
+  fclose(f);
+}
+
+// Replaces a SNES button's keyboard (or gamepad) bindings with code.
+static void rebind(int button, bool pad, int code) {
+  int n = 0;
+  for(int i = 0; i < bindingCount; i++) {
+    if(bindings[i].pad == pad && bindings[i].button == (uint16_t) (1 << button)) continue;
+    if(bindings[i].pad == pad && bindings[i].code == code) continue;  // the key moves here
+    bindings[n++] = bindings[i];
+  }
+  bindingCount = n;
+  if(bindingCount < (int) SDL_arraysize(bindings)) bindings[bindingCount++] = (Binding) {pad, code, (uint16_t) (1 << button)};
+  saveControls();
+}
+
+static const char* onOff(bool on) { return on ? "on" : "off"; }
+
+static void menuItemText(int i, char* out, size_t size) {
+  switch(i) {
+    case MI_RESUME: snprintf(out, size, "Back to the game"); break;
+    case MI_ASPECT: snprintf(out, size, "Aspect             %s", aspectNames[app.aspect]); break;
+    case MI_FILTER: snprintf(out, size, "Display filter     %s", filterNames[app.filter]); break;
+    case MI_INTEGER: snprintf(out, size, "Integer scaling    %s", onOff(app.integerScale)); break;
+    case MI_FULLSCREEN: snprintf(out, size, "Fullscreen         %s", onOff(app.fullscreen)); break;
+    case MI_WIDE: snprintf(out, size, "Widescreen         %s", onOff(app.wide)); break;
+    case MI_FULLVIEW: snprintf(out, size, "Full-screen view   %s", !app.fullView ? "off" : app.tallRoad ? "on, tall road" : "on"); break;
+    case MI_SIDE: snprintf(out, size, "2P side by side    %s", onOff(app.sideBySide)); break;
+    case MI_SMOOTH: snprintf(out, size, "Smooth motion      %s", onOff(app.smooth)); break;
+    case MI_HIGHFPS: snprintf(out, size, "High frame rate    %s", onOff(app.highFps)); break;
+    case MI_SCALING: snprintf(out, size, "Smooth scaling     %s", onOff(app.scaling)); break;
+    case MI_GHOST: snprintf(out, size, "Ghost car          %s", onOff(app.ghost)); break;
+    case MI_AUTOSAVE: snprintf(out, size, "Auto-save          %s", onOff(app.autoSave)); break;
+    case MI_RUMBLE: snprintf(out, size, "Rumble             %s", onOff(app.rumble)); break;
+    case MI_SWAP: snprintf(out, size, "Swap gamepads      P1: %s", app.pads[0] ? SDL_GetGamepadName(app.pads[0]) : "none"); break;
+    case MI_KEYS: snprintf(out, size, "Keyboard controls..."); break;
+    case MI_PADS: snprintf(out, size, "Gamepad controls..."); break;
+    case MI_RESET: snprintf(out, size, "Reset the game"); break;
+    case MI_QUIT: snprintf(out, size, "Quit"); break;
+  }
+}
+
+static int menuCount(void) { return menu.page == 0 ? MI_COUNT : 13; }
+
+// Changes the selected item (dir: -1 left, +1 right or select).
+static void menuActivate(int dir) {
+  if(menu.page != 0) {
+    if(menu.sel == 12) {
+      menu.page = 0;
+      menu.sel = MI_KEYS;
+    } else {
+      menu.binding = menu.sel;
+    }
+    return;
+  }
+  bool locked = app.replaying;  // a replay sets the options that change the race
+  switch(menu.sel) {
+    case MI_RESUME: menu.open = false; break;
+    case MI_ASPECT: app.aspect = (app.aspect + 1) % ASPECT_COUNT; updateTitle(); break;
+    case MI_FILTER: app.filter = (FilterMode) ((app.filter + (dir < 0 ? FILTER_COUNT - 1 : 1)) % FILTER_COUNT); updateTitle(); break;
+    case MI_INTEGER: app.integerScale = !app.integerScale; updateTitle(); break;
+    case MI_FULLSCREEN: setFullscreen(!app.fullscreen); break;
+    case MI_WIDE: if(!locked) setWide(!app.wide); break;
+    case MI_FULLVIEW: if(!locked) stepFullView(); break;
+    case MI_SIDE: if(!locked) { app.sideBySide = !app.sideBySide; updateTitle(); } break;
+    case MI_SMOOTH: if(!locked) setSmooth(!app.smooth); break;
+    case MI_HIGHFPS: setHighFps(!app.highFps); break;
+    case MI_SCALING: if(!locked) { app.scaling = !app.scaling; updateTitle(); } break;
+    case MI_GHOST: if(!locked) { app.ghost = !app.ghost; updateTitle(); } break;
+    case MI_AUTOSAVE: app.autoSave = !app.autoSave; updateTitle(); break;
+    case MI_RUMBLE: app.rumble = !app.rumble; updateTitle(); break;
+    case MI_SWAP: {
+      SDL_Gamepad* t = app.pads[0];
+      app.pads[0] = app.pads[1];
+      app.pads[1] = t;
+      break;
+    }
+    case MI_KEYS: menu.page = 1; menu.sel = 0; break;
+    case MI_PADS: menu.page = 2; menu.sel = 0; break;
+    case MI_RESET: app.resetRequested = true; menu.open = false; break;
+    case MI_QUIT: menu.quit = true; break;
+  }
+}
+
+static void menuBack(void) {
+  if(menu.binding >= 0) menu.binding = -1;
+  else if(menu.page != 0) {
+    menu.sel = menu.page == 1 ? MI_KEYS : MI_PADS;
+    menu.page = 0;
+  } else menu.open = false;
+}
+
+static void menuMove(int d) {
+  int n = menuCount();
+  menu.sel = (menu.sel + d + n) % n;
+}
+
+static void openMenu(void) {
+  menu.open = true;
+  menu.page = 0;
+  menu.sel = MI_RESUME;
+  menu.binding = -1;
+  app.keys[1] = app.keys[2] = 0;
+}
+
+// A key while the menu is open.
+static void menuKey(SDL_Keycode key) {
+  if(menu.binding >= 0) {
+    if(key == SDLK_ESCAPE) menu.binding = -1;
+    else if(menu.page == 1) {
+      rebind(menu.binding, false, (int) key);
+      menu.binding = -1;
+    }
+    return;
+  }
+  switch(key) {
+    case SDLK_UP: menuMove(-1); break;
+    case SDLK_DOWN: menuMove(1); break;
+    case SDLK_LEFT: if(menu.page == 0) menuActivate(-1); break;
+    case SDLK_RIGHT: case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: menuActivate(1); break;
+    case SDLK_ESCAPE: case SDLK_BACKSPACE: menuBack(); break;
+    case SDLK_TAB: menu.open = false; break;
+    default: break;
+  }
+}
+
+static void menuPadButton(SDL_GamepadButton b) {
+  if(menu.binding >= 0) {
+    if(menu.page == 2 && b != SDL_GAMEPAD_BUTTON_GUIDE) {
+      rebind(menu.binding, true, (int) b);
+      menu.binding = -1;
+    }
+    return;
+  }
+  switch(b) {
+    case SDL_GAMEPAD_BUTTON_DPAD_UP: menuMove(-1); break;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: menuMove(1); break;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: if(menu.page == 0) menuActivate(-1); break;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: case SDL_GAMEPAD_BUTTON_SOUTH: menuActivate(1); break;
+    case SDL_GAMEPAD_BUTTON_EAST: menuBack(); break;
+    case SDL_GAMEPAD_BUTTON_GUIDE: case SDL_GAMEPAD_BUTTON_START: menu.open = false; break;
+    default: break;
+  }
+}
+
+static bool menuOpen(void) { return menu.open; }
+
+static void drawMenu(void) {
+  int outW, outH;
+  SDL_GetCurrentRenderOutputSize(app.renderer, &outW, &outH);
+  int lines = menuCount() + 4;
+  float scale = SDL_max(1.0f, SDL_floorf(SDL_min(outH / (lines * 12.0f + 16), outW / 400.0f)));
+  SDL_SetRenderScale(app.renderer, scale, scale);
+  float w = outW / scale, h = outH / scale;
+  SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 200);
+  SDL_FRect box = {0, 0, w, h};
+  SDL_RenderFillRect(app.renderer, &box);
+  float x = SDL_max(8.0f, (w - 50 * 8) / 2), y = SDL_max(8.0f, (h - lines * 12) / 2);
+  const char* title = menu.page == 0 ? "OPTIONS" : menu.page == 1 ? "KEYBOARD CONTROLS (PLAYER 1)" : "GAMEPAD CONTROLS (BOTH PADS)";
+  SDL_SetRenderDrawColor(app.renderer, 255, 210, 80, 255);
+  SDL_RenderDebugText(app.renderer, x, y, title);
+  y += 20;
+  for(int i = 0; i < menuCount(); i++) {
+    char text[160];
+    if(menu.page == 0) {
+      menuItemText(i, text, sizeof(text));
+    } else if(i == 12) {
+      snprintf(text, sizeof(text), "Back");
+    } else {
+      char names[96];
+      bindingNames(i, menu.page == 2, names, sizeof(names));
+      snprintf(text, sizeof(text), "%-7s %s", kButtonNames[i], menu.binding == i ? (menu.page == 1 ? "press a key (Esc: cancel)" : "press a button") : names);
+    }
+    bool sel = i == menu.sel;
+    SDL_SetRenderDrawColor(app.renderer, sel ? 255 : 200, sel ? 255 : 200, sel ? 255 : 200, 255);
+    SDL_RenderDebugText(app.renderer, x, y, sel ? ">" : " ");
+    SDL_RenderDebugText(app.renderer, x + 16, y, text);
+    y += 12;
+  }
+  y += 8;
+  SDL_SetRenderDrawColor(app.renderer, 150, 150, 150, 255);
+  SDL_RenderDebugText(app.renderer, x, y, menu.page == 0 ? "Up/Down choose, Enter or Left/Right change, Tab closes" : "Enter: change, Esc: back");
+  SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_NONE);
+  SDL_SetRenderScale(app.renderer, 1, 1);
+}
+
 int main(int argc, char** argv) {
   SDL_SetAppMetadata("Top Gear", "0.1", "topgear-pc");
   if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
@@ -681,9 +959,21 @@ int main(int argc, char** argv) {
         case SDL_EVENT_QUIT: running = false; break;
         case SDL_EVENT_GAMEPAD_ADDED: openPad(e.gdevice.which); break;
         case SDL_EVENT_GAMEPAD_REMOVED: closePad(e.gdevice.which); break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+          if(menu.open) menuPadButton((SDL_GamepadButton) e.gbutton.button);
+          else if(e.gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) openMenu();
+          break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP: {
           bool down = e.type == SDL_EVENT_KEY_DOWN;
+          if(menu.open) {
+            if(down) menuKey(e.key.key);
+            break;
+          }
+          if(down && !e.key.repeat && e.key.key == SDLK_TAB) {
+            openMenu();
+            break;
+          }
           if(down && !e.key.repeat) {
             if(e.key.key == SDLK_F11 || (e.key.key == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT))) {
               app.fullscreen = !app.fullscreen;
@@ -749,7 +1039,15 @@ int main(int argc, char** argv) {
       }
     }
 
+    if(menu.quit) break;
     Uint64 now = SDL_GetTicksNS();
+    if(menu.open) {
+      // The game waits; the picture stays, with the menu over it.
+      present();
+      SDL_DelayPrecise((Uint64) FRAME_NS);
+      next = SDL_GetTicksNS();
+      continue;
+    }
     if(now - next > (Uint64) (FRAME_NS * 8) && now > next) next = now;  // resync after a stall
     bool highFps = app.highFps && !app.original;
     if(highFps != app.vsync) {
