@@ -65,6 +65,8 @@ static struct {
   bool fullView;  // enhancement: 1-player races fill the whole screen (F9, --full-view)
   bool recordedFullView;
   bool wide;  // enhancement: races drawn as wide as the window (F10, --wide)
+  bool sideBySide;  // enhancement: 2-player widescreen views side by side (F11, --side-by-side)
+  bool recordedSideBySide;
   int recordedWide;
 } app;
 
@@ -222,6 +224,7 @@ static void updateTitle(void) {
            app.smooth && !app.original ? ", smooth motion" : "", app.scaling ? ", smooth scaling" : "",
            app.fullView && !app.original ? ", full-screen view" : "", app.rumble ? ", rumble" : "");
   if(app.wide && !app.original) SDL_strlcat(title, ", widescreen", sizeof(title));
+  if(app.sideBySide && !app.original) SDL_strlcat(title, ", side by side", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
 
@@ -379,6 +382,7 @@ static void runFrame(int samples) {
     if(app.replay.scaling != app.scaling) { app.scaling = app.replay.scaling; updateTitle(); }
     if(app.replay.fullview != app.fullView) { app.fullView = app.replay.fullview; updateTitle(); }
     if((app.replay.wide > 0) != app.wide) { app.wide = app.replay.wide > 0; updateTitle(); }
+    if(app.replay.sideBySide != app.sideBySide) { app.sideBySide = app.replay.sideBySide; updateTitle(); }
   }
   // Smooth motion runs the race logic every frame; the original updates it every third
   // frame (its pace is scaled by the frames elapsed, so the race takes the same time).
@@ -387,6 +391,7 @@ static void runFrame(int samples) {
   if(app.fullView != tg_port_full_view) tg_game_set_full_view(app.game, app.fullView);
   int margin = app.replaying ? app.replay.wide : wantedMargin();
   if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
+  if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
   if(app.record) {
     if(reset) fprintf(app.record, "%u reset\n", app.frame);
     if(app.smooth != app.recordedSmooth) {
@@ -404,6 +409,10 @@ static void runFrame(int samples) {
     if(margin != app.recordedWide) {
       fprintf(app.record, "%u wide %d\n", app.frame, margin);
       app.recordedWide = margin;
+    }
+    if(app.sideBySide != app.recordedSideBySide) {
+      fprintf(app.record, "%u sidebyside %s\n", app.frame, app.sideBySide ? "on" : "off");
+      app.recordedSideBySide = app.sideBySide;
     }
     for(int p = 1; p <= 2; p++) {
       if(input[p] != app.recorded[p] || (app.frame == 0 && p == 1)) {
@@ -466,6 +475,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--smooth-scaling") == 0) app.scaling = true;
     else if(strcmp(argv[i], "--full-view") == 0) app.fullView = true;
     else if(strcmp(argv[i], "--wide") == 0) app.wide = true;
+    else if(strcmp(argv[i], "--side-by-side") == 0) app.sideBySide = true;
     else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       i++;
       for(int f = 0; f < FILTER_COUNT; f++) if(strcmp(argv[i], filterNames[f]) == 0) app.filter = f;
@@ -549,6 +559,7 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F7 && !app.replaying) { app.scaling = !app.scaling; updateTitle(); break; }
             if(e.key.key == SDLK_F8) { app.rumble = !app.rumble; updateTitle(); break; }
             if(e.key.key == SDLK_F9 && !app.replaying) { app.fullView = !app.fullView; updateTitle(); break; }
+            if(e.key.key == SDLK_F11 && !app.replaying) { app.sideBySide = !app.sideBySide; updateTitle(); break; }
             if(e.key.key == SDLK_F10 && !app.replaying) {
               app.wide = !app.wide;
               if(!app.fullscreen) {

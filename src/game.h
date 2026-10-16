@@ -67,6 +67,9 @@ void tg_game_set_full_view(TgGame* game, bool on);
 // tg_game_wide_pixels: XRGB, (256 + 2 * margin) x 224, one pixel per SNES pixel (NULL
 // before the first frame).
 void tg_game_set_wide(TgGame* game, int margin);
+// 2-player races in widescreen with the views side by side, each full height (an
+// enhancement, off by default).
+void tg_game_set_side_by_side(TgGame* game, bool on);
 int tg_game_wide_margin(const TgGame* game);
 const uint32_t* tg_game_wide_pixels(TgGame* game);
 // Debugging: VRAM, CGRAM and OAM to a file.

@@ -157,6 +157,7 @@ extern uint16_t tg_port_obj_tags[0x2000];
 // the PPU to redraw the next frame (tg_game_set_full_view and tg_game_set_wide connect
 // them).
 extern bool tg_port_full_view;
+extern bool tg_port_side_by_side;  // 2 players in widescreen: the views side by side
 extern int tg_port_wide_margin;  // extra pixels on each side, 0 when off
 extern uint8_t tg_port_race_frame;
 extern int16_t tg_port_obj_grounds[0x2000];

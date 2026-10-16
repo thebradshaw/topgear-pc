@@ -39,6 +39,7 @@ The first gamepad is player 1 and the second is player 2. To change the controls
 | F8 | Controller rumble when your car hits something and when nitro fires (off by default; also `--rumble`) |
 | F9 | Full-screen view: in 1-player races your view fills the whole screen instead of sharing it with the computer's, with more lines of road (off by default; also `--full-view`) |
 | F10 | Widescreen: races are drawn as wide as the window (up to 21:9), with the road, scenery and roadside objects carrying on past the original edges and the HUD moved out to the sides; menus get black borders. In a window it also switches the window between 16:9 and 4:3 (off by default; also `--wide`) |
+| F11 | Side by side: in 2-player races with widescreen on, the two views sit next to each other, each the full height of the screen, instead of one above the other (off by default; also `--side-by-side`) |
 
 ## Recordings
 

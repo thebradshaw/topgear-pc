@@ -135,6 +135,7 @@ static uint16_t oam_base(TgRegs* r, const Variant* v);
 // Full-screen view (an enhancement, off by default): each OAM buffer entry an object adds
 // records the line the object stands on, so the PPU can move it with the road (ppu_full.c).
 bool tg_port_full_view;
+bool tg_port_side_by_side;
 int tg_port_wide_margin;
 uint8_t tg_port_race_frame;
 int16_t tg_port_obj_grounds[0x2000];  // by low RAM address of an OAM buffer entry

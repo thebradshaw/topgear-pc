@@ -136,8 +136,9 @@ static void clipLines(Ppu* ppu, const PpuObjScale* s, int* top, int* bottom) {
   *top = s->clipTop;
   *bottom = s->clipBottom;
   if(!ppu->fullComposing) return;
-  *top = *top <= 4 ? 0 : ppu_fullMapRow(ppu, *top);
-  *bottom = *bottom >= 108 ? 224 : ppu_fullMapRow(ppu, *bottom);
+  int off = ppu_fullViewOff(ppu);
+  *top = *top <= off + 4 ? 0 : ppu_fullMapRow(ppu, *top);
+  *bottom = *bottom >= off + 108 ? 224 : ppu_fullMapRow(ppu, *bottom);
 }
 
 static int shiftOf(Ppu* ppu, uint8_t index) {

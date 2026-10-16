@@ -190,6 +190,7 @@ struct Ppu {
 
 #define PPU_RACE_FRAME 1
 #define PPU_FULL_VIEW 2
+#define PPU_SIDE_BY_SIDE 4  // 2 players: the two views side by side, each full height
 
 #define PPU_NO_GROUND (-32768)
 
@@ -214,6 +215,7 @@ void ppu_smoothDrawLine(Ppu* ppu, uint8_t index, int line);
 void ppu_fullCapture(Ppu* ppu, int line);
 void ppu_fullCompose(Ppu* ppu);
 int ppu_fullMapRow(Ppu* ppu, int row);
+int ppu_fullViewOff(Ppu* ppu);
 #define PPU_NO_HUD (-32768)
 int ppu_hudSource(Ppu* ppu, int x);
 int ppu_hudShift(Ppu* ppu, int x);

@@ -165,6 +165,7 @@ int main(int argc, char** argv) {
     if(script.scaling != tg_port_smooth_sprites) tg_game_set_smooth_sprites(game, script.scaling);
     if(script.fullview != tg_port_full_view) tg_game_set_full_view(game, script.fullview);
     if(script.wide != tg_port_wide_margin) tg_game_set_wide(game, script.wide);
+    if(script.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(game, script.sideBySide);
     tg_game_set_input(game, 1, script.state[1]);
     tg_game_set_input(game, 2, script.state[2]);
     if(frame == traceFrame && traceOut) {

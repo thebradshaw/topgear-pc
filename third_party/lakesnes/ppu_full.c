@@ -32,6 +32,7 @@
 #define SCREEN_LINES 224
 #define VIEW_LINES 108   // lines 1-108 (pixel rows 0-107) are the top view
 #define VIEW_TOP 4       // its first row; the rows above are a black border
+#define VIEW_STEP 112    // the bottom view is this many rows lower
 #define ROAD_ROW 31      // the road below this row ...
 #define OUT_ROAD_ROW 71  // ... starts on this row of the screen ...
 #define ROAD_SCALE 2.0f  // ... and is drawn this much taller
@@ -44,6 +45,7 @@ typedef struct PpuFullView {
   bool got[SCREEN_LINES];
   int horizon;     // the first row of road, this frame
   int outHorizon;  // where it is on the screen
+  int off;         // the view's first row: 0 for the top view, VIEW_STEP for the bottom one
   uint8_t* lines;  // SCREEN_LINES copies of the line state
   uint8_t* live;
 } PpuFullView;
@@ -103,17 +105,20 @@ static float mapRow(PpuFullView* f, float row) {
   return row + (f->outHorizon - f->horizon);
 }
 
+// Where a row of the screen as the game drew it goes (in the view being composed).
 int ppu_fullMapRow(Ppu* ppu, int row) {
-  return (int) floorf(mapRow(ppu->full, (float) row) + 0.5f);
+  return (int) floorf(mapRow(ppu->full, (float) (row - ppu->full->off)) + 0.5f);
 }
+
+int ppu_fullViewOff(Ppu* ppu) { return ppu->full ? ppu->full->off : 0; }
 
 // Widescreen HUD: the source column shown at x, or PPU_NO_HUD.
 int ppu_hudSource(Ppu* ppu, int x) {
   int m = ppu->hudMargin;
   if(ppu->hudClamp) return x < 0 ? 0 : x > 255 ? 255 : x;
-  if(x >= HUD_LEFT && x < HUD_RIGHT) return x;
   if(x + m >= 0 && x + m < HUD_LEFT) return x + m;
   if(x - m >= HUD_RIGHT && x - m < 256) return x - m;
+  if(x >= HUD_LEFT && x < HUD_RIGHT) return x;
   return PPU_NO_HUD;
 }
 
@@ -147,6 +152,11 @@ static void composeLine(Ppu* ppu, PpuFullView* f, int y) {
   int sky = a;  // the row the sky above the view repeats
   if(a < VIEW_TOP) a = VIEW_TOP;
   int use = road && t >= 0.5f ? a + 1 : a;
+  // Rows of the view from here on.
+  int o = f->off;
+  a += o;
+  sky += o;
+  use += o;
   loadState(ppu, lineState(f, use));
   // The road: its row of art and its curve, between the two rows.
   BgLayer* bg3 = &ppu->bgLayer[2];
@@ -170,13 +180,14 @@ static void composeLine(Ppu* ppu, PpuFullView* f, int y) {
   BgLayer* bg2 = &ppu->bgLayer[1];
   int row2 = road ? use : sky;
   bg2->vScroll = (uint16_t) ((asPpu(lineState(f, use))->bgLayer[1].vScroll + row2 - y) & 0x3ff);
-  if(!road && sky < VIEW_TOP) {
+  if(!road && sky < o + VIEW_TOP) {
     ppu->layer[1].mainScreenEnabled = false;
     ppu->layer[1].subScreenEnabled = false;
   }
   // The HUD.
   int hud = y < HUD_SPLIT ? y : y >= HUD_SPLIT + HUD_MOVE ? y - HUD_MOVE : -1;
   if(hud >= 0) {
+    hud += o;
     const Ppu* ph = asPpu(lineState(f, hud));
     ppu->bgLayer[0].hScroll = ph->bgLayer[0].hScroll;
     ppu->bgLayer[0].vScroll = (uint16_t) ((ph->bgLayer[0].vScroll + hud - y) & 0x3ff);
@@ -192,8 +203,8 @@ static void composeLine(Ppu* ppu, PpuFullView* f, int y) {
     if(g != PPU_NO_GROUND) {
       shift = ppu_fullMapRow(ppu, g) - g;
       if(oy >= 224) oy -= 256;  // the part above the top of the view
-    } else if(oy < 224 && oy >= HUD_SPLIT) {
-      shift = HUD_MOVE;
+    } else if(oy < 224) {
+      shift = (oy - o >= HUD_SPLIT ? HUD_MOVE : 0) - o;
     }
     ppu->objShift[i] = (int16_t) shift;
     if(shift && !(ppu->objScaleTags && ppu->objTag[i])) {
@@ -203,6 +214,20 @@ static void composeLine(Ppu* ppu, PpuFullView* f, int y) {
   }
   checkHudClamp(ppu, y + 1);
   ppu_runLine(ppu, y + 1);
+}
+
+// The view composed from here on, and its horizon: the first row where the road's rows
+// start to change.
+static void setView(PpuFullView* f, int off) {
+  f->off = off;
+  f->horizon = VIEW_LINES - 1;
+  for(int row = VIEW_TOP + 2; row < VIEW_LINES; row++) {
+    if(bg3Row(f, off + row) != bg3Row(f, off + row - 1)) {
+      f->horizon = row;
+      break;
+    }
+  }
+  f->outHorizon = (int) floorf(OUT_ROAD_ROW + (f->horizon - ROAD_ROW) * ROAD_SCALE + 0.5f);
 }
 
 // Another screen in widescreen: the picture in the middle, black at the sides.
@@ -238,20 +263,39 @@ void ppu_fullCompose(Ppu* ppu) {
     if(m > 0) pillarbox(ppu);
     return;
   }
-  bool full = (flags & PPU_FULL_VIEW) != 0;
-  if(full) {
-    // The horizon: the first row where the road's rows start to change.
-    f->horizon = VIEW_LINES - 1;
-    for(int row = VIEW_TOP + 2; row < VIEW_LINES; row++) {
-      if(bg3Row(f, row) != bg3Row(f, row - 1)) {
-        f->horizon = row;
-        break;
-      }
-    }
-    f->outHorizon = (int) floorf(OUT_ROAD_ROW + (f->horizon - ROAD_ROW) * ROAD_SCALE + 0.5f);
-  }
+  bool side = (flags & PPU_SIDE_BY_SIDE) && m > 0;
+  bool full = (flags & PPU_FULL_VIEW) || side;
   memcpy(f->live, (uint8_t*) ppu + stateStart(), stateSize());
   ppu->fullComposing = true;
+  if(side) {
+    // Each view full height in half the width, showing the middle of its picture, with its
+    // HUD's sides moved in to its edges.
+    int w = 256 + 2 * m, half = w / 2;
+    ppu->lineLeft = (int16_t) (128 - half / 2);
+    ppu->lineRight = (int16_t) (ppu->lineLeft + half);
+    ppu->hudMargin = (int16_t) (half / 2 - 128);
+    for(int v = 0; v < 2; v++) {
+      setView(f, v * VIEW_STEP);
+      for(int y = 0; y < SCREEN_LINES; y++) {
+        ppu->lineOut = ppu->wideBuffer + (size_t) y * w + v * (w - half);
+        composeLine(ppu, f, y);
+      }
+    }
+    for(int y = 0; y < SCREEN_LINES; y++) {  // a dark line between them
+      uint32_t* out = ppu->wideBuffer + (size_t) y * w;
+      out[half - 1] = out[w - half] = 0;
+    }
+    f->off = 0;
+    ppu->fullComposing = false;
+    ppu->lineLeft = 0;
+    ppu->lineRight = 256;
+    ppu->hudMargin = 0;
+    ppu->hudClamp = false;
+    ppu->lineOut = NULL;
+    loadState(ppu, f->live);
+    return;
+  }
+  if(full) setView(f, 0);
   ppu->lineLeft = (int16_t) -m;
   ppu->lineRight = (int16_t) (256 + m);
   ppu->hudMargin = (int16_t) m;

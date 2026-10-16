@@ -157,6 +157,11 @@ void tg_game_set_full_view(TgGame* game, bool on) {
   updateRedraw(game);
 }
 
+void tg_game_set_side_by_side(TgGame* game, bool on) {
+  (void) game;
+  tg_port_side_by_side = on;
+}
+
 void tg_game_set_wide(TgGame* game, int margin) {
   if(margin < 0) margin = 0;
   if(margin > PPU_WIDE_MAX) margin = PPU_WIDE_MAX;
