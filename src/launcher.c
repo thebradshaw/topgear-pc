@@ -10,7 +10,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
-#include "launcher_word.h"
+#include "launcher_start.h"
 #include "rom.h"
 
 #define VIEW_W 1280
@@ -382,53 +382,17 @@ static void loadLogo(void) {
   if(L.logo) SDL_SetTextureScaleMode(L.logo, SDL_SCALEMODE_LINEAR);
 }
 
-// One slanted copy of a word texture, coloured top to bottom.
-static void slanted(SDL_Texture* tex, float x, float y, float w, float h, float slant, SDL_FColor top, SDL_FColor bottom) {
-  SDL_Vertex v[4] = {
-    {{x + slant, y}, top, {0, 0}}, {{x + w + slant, y}, top, {1, 0}},
-    {{x + w, y + h}, bottom, {1, 1}}, {{x, y + h}, bottom, {0, 1}},
-  };
-  int idx[6] = {0, 1, 2, 0, 2, 3};
-  SDL_RenderGeometry(L.renderer, tex, v, 4, idx, 6);
-}
-
-// The Start button's word (see launcher_word.h) as a white texture.
+// The Start button's word, drawn in the spirit of the Top Gear logo (launcher_start.h).
 static SDL_Texture* startTexture(void) {
-  SDL_Surface* s = SDL_CreateSurface(START_WORD_W, START_WORD_H, SDL_PIXELFORMAT_RGBA32);
+  SDL_Surface* s = SDL_CreateSurfaceFrom(START_ART_W, START_ART_H, SDL_PIXELFORMAT_RGBA32, (void*) kStartArt, START_ART_W * 4);
   if(s == NULL) return NULL;
-  for(int y = 0; y < START_WORD_H; y++) {
-    Uint8* row = (Uint8*) s->pixels + y * s->pitch;
-    for(int x = 0; x < START_WORD_W; x++) {
-      row[x * 4 + 0] = row[x * 4 + 1] = row[x * 4 + 2] = 255;
-      row[x * 4 + 3] = kStartWord[y * START_WORD_W + x];
-    }
-  }
   SDL_Texture* tex = SDL_CreateTextureFromSurface(L.renderer, s);
   SDL_DestroySurface(s);
   if(tex) {
     SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
-    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
   }
   return tex;
-}
-
-// A word in the colours of the Top Gear logo: an orange-to-gold face, a dark outline and
-// a purple block underneath.
-static void logoWord(SDL_Texture* tex, float cx, float y, float scale, bool lit) {
-  if(tex == NULL) return;
-  float tw, th;
-  SDL_GetTextureSize(tex, &tw, &th);
-  float w = tw * scale, h = th * scale, x = cx - w / 2;
-  SDL_FColor block = {0.36f, 0.22f, 0.78f, 1}, blockDark = {0.20f, 0.10f, 0.45f, 1};
-  SDL_FColor line = {0.10f, 0.04f, 0.18f, 1};
-  for(int d = 1; d <= 4; d++) slanted(tex, x + d, y + d, w, h, 0, block, blockDark);
-  for(int k = 0; k < 8; k++) {
-    float a = k * SDL_PI_F / 4;
-    slanted(tex, x + 2 * SDL_cosf(a), y + 2 * SDL_sinf(a), w, h, 0, line, line);
-  }
-  SDL_FColor top = lit ? (SDL_FColor) {1, 0.86f, 0.30f, 1} : (SDL_FColor) {0.55f, 0.55f, 0.62f, 1};
-  SDL_FColor bottom = lit ? (SDL_FColor) {0.93f, 0.33f, 0.20f, 1} : (SDL_FColor) {0.35f, 0.36f, 0.44f, 1};
-  slanted(tex, x, y, w, h, 0, top, bottom);
 }
 
 static void drawRoad(Uint64 t) {
@@ -510,7 +474,13 @@ static void draw(void) {
       SDL_FRect r = {LEFT_X + k, PLAY_Y + k, LEFT_W - 2 * k, 80 - 2.0f * k};
       SDL_RenderRect(L.renderer, &r);
     }
-    logoWord(L.playWord, LEFT_X + LEFT_W / 2, PLAY_Y + 15, 1, L.romOk);
+    if(L.playWord) {
+      // Greyed out until there is a ROM to play.
+      Uint8 v = L.romOk ? 255 : 110;
+      SDL_SetTextureColorMod(L.playWord, v, v, v);
+      SDL_FRect r = {LEFT_X + (LEFT_W - START_ART_W) / 2, PLAY_Y + (80 - START_ART_H) / 2.0f + 1, START_ART_W, START_ART_H};
+      SDL_RenderTexture(L.renderer, L.playWord, NULL, &r);
+    }
   }
 
   // Options list (scrolls to keep the focused row in view)
