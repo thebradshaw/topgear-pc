@@ -477,6 +477,8 @@ void RaceIrqTop(TgRegs* r) {
       !(z(0x40) & 0x8000) && !(z(0x53) & 0x8000);
     tg_port_race_frame = full ? PPU_RACE_FRAME | PPU_FULL_VIEW : side ? PPU_RACE_FRAME | PPU_SIDE_BY_SIDE :
       tg_port_wide_margin || tg_port_interp ? PPU_RACE_FRAME : 0;
+    if(tg_port_race_frame && (z(0x40) & 0x8000)) tg_port_race_frame |= PPU_PIT_TOP;
+    if(tg_port_race_frame && (z(0x53) & 0x8000)) tg_port_race_frame |= PPU_PIT_BOTTOM;
   }
   if(z(0xE3) & 0x8000) {
     z_set(0xE3, 0);

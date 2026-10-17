@@ -183,6 +183,8 @@ struct Ppu {
 #define PPU_RACE_FRAME 1
 #define PPU_FULL_VIEW 2
 #define PPU_SIDE_BY_SIDE 4  // 2 players: the two views side by side, each full height
+#define PPU_PIT_TOP 8       // the top view shows the pit stop scene (widescreen: nothing past its sides)
+#define PPU_PIT_BOTTOM 16   // the same for the bottom view
 
 #define PPU_NO_GROUND (-32768)
 #define PPU_NO_DEPTH (-32767)  // a line's scroll entry off the road

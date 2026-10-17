@@ -159,6 +159,37 @@ static bool boxesNear(const HudBox* a, const HudBox* b, int gx, int gy) {
   return a->x0 <= b->x1 + gx && b->x0 <= a->x1 + gx && a->y0 <= b->y1 + gy && b->y0 <= a->y1 + gy;
 }
 
+// A sprite's 9-bit x from 256 up is either off the left edge or, on a wide line, on the
+// right. The race's objects say which (PPU_OBJ_LEFT); for others (the car in the pits),
+// a sprite goes on the side nearer the sprites next to it in OAM, else on the left as on
+// the SNES. Marks the left ones in the line states of rows first..last (ppu: the loaded
+// middle row).
+static void leftOrRight(Ppu* ppu, PpuFullView* f, int first, int last) {
+  for(int i = 0; i < 128; i++) {
+    if(ppu->objGround[i] != PPU_NO_GROUND || (ppu->objFlag[i] & PPU_OBJ_LEFT)) continue;
+    if(!((ppu->highOam[i >> 2] >> ((i & 3) * 2)) & 1)) continue;
+    int low = ppu->oam[i * 2] & 0xff, oy = ppu->oam[i * 2] >> 8;
+    bool left = true;
+    for(int d = 1; d <= 2; d++) {
+      int k = -1;
+      for(int s = -1; s <= 1 && k < 0; s += 2) {
+        int j = i + s * d;
+        if(j < 0 || j >= 128 || ((ppu->highOam[j >> 2] >> ((j & 3) * 2)) & 1)) continue;
+        int jy = ppu->oam[j * 2] >> 8;
+        if(jy >= 224 || (jy - oy > 64 || oy - jy > 64)) continue;
+        k = j;
+      }
+      if(k < 0) continue;
+      int nx = ppu->oam[k * 2] & 0xff;
+      left = abs((low - 256) - nx) <= abs((low + 256) - nx);
+      break;
+    }
+    if(!left) continue;
+    ppu->objFlag[i] |= PPU_OBJ_LEFT;
+    for(int r = first; r <= last; r++) ((Ppu*) (f->lines + (size_t) r * stateSize() - stateStart()))->objFlag[i] |= PPU_OBJ_LEFT;
+  }
+}
+
 // Lays out the HUD of the rows first..last (one view): fills f->hudSrc for the screen rows
 // they go to, f->hudH/V for them, and the view's sprite moves. m: how far the sides move
 // out; full: the full view (the rows go to the whole screen).
@@ -209,6 +240,7 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
   rowStart[rows] = n;
   // HUD sprites, as the view's middle row has them.
   loadState(ppu, lineState(f, (first + last) / 2));
+  if(m != 0) leftOrRight(ppu, f, first, last);
   int sprite[128];
   for(int i = 0; i < 128; i++) {
     sprite[i] = -1;
@@ -250,8 +282,12 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
     int cx = (q->x0 + q->x1) / 2, cy = (q->y0 + q->y1) / 2 - f->off, h = q->y1 - q->y0 + 1;
     dx[p] = (int16_t) (cx < HUD_LEFT ? -m : cx >= HUD_RIGHT ? m : 0);
     dy[p] = 0;
-    // Big sprites with no HUD art under them are a picture (the car in the pits): they stay.
-    if(!hasBg[p] && (q->x1 - q->x0 >= 40 || h >= 40)) { dx[p] = 0; continue; }
+    // Sprites with no HUD art under them (race messages, the car in the pits) stay in the
+    // middle; big ones are a picture and don't move at all.
+    if(!hasBg[p]) {
+      dx[p] = 0;
+      if(q->x1 - q->x0 >= 40 || h >= 40) continue;
+    }
     if(!full || h > 60) continue;  // a picture (the pits), not part of the HUD
     if(q->x1 - q->x0 >= 200 && h <= 8) { dy[p] = 2 * SCREEN_LINES; continue; }  // the view's border: not shown
     if(cx >= HUD_LEFT && cx < HUD_RIGHT) dy[p] = HUD_MOVE;
@@ -388,7 +424,6 @@ static void setView(Ppu* ppu, PpuFullView* f, int off) {
       break;
     }
   }
-  f->outHorizon = (int) floorf(f->outRoad + (f->horizon - ROAD_ROW) * f->scale + 0.5f);
   int view = off != 0;
   // Sky: a long run of the same road-layer row above the road.
   if(f->horizon >= VIEW_TOP + 20) {
@@ -398,6 +433,19 @@ static void setView(Ppu* ppu, PpuFullView* f, int off) {
       f->skyBg3Row[view] = bg3Row(f, off + VIEW_TOP);
     }
   }
+  // Over a hill the road can reach the top of the view: those top rows are road too.
+  if(f->skyState[view] && bg3Row(f, off + VIEW_TOP) != f->skyBg3Row[view]) f->horizon = VIEW_TOP;
+  // Above the horizon the sky and scenery keep their size. On level ground that leaves a gap
+  // above the view's top row, filled with more sky; as the road climbs towards the top of
+  // the view the gap closes and the road is drawn taller, so nothing has to be made up
+  // above a hill.
+  if(f->horizon < ROAD_ROW) {
+    float gap = f->outRoad - (ROAD_ROW - VIEW_TOP);  // on level ground
+    float top = gap * (f->horizon - VIEW_TOP) / (ROAD_ROW - VIEW_TOP) + (f->horizon - VIEW_TOP);
+    f->scale = (SCREEN_LINES - 1 - top) / (VIEW_LINES - 1 - f->horizon);
+    f->outRoad = SCREEN_LINES - 1 - (VIEW_LINES - 1 - ROAD_ROW) * f->scale;
+  }
+  f->outHorizon = (int) floorf(f->outRoad + (f->horizon - ROAD_ROW) * f->scale + 0.5f);
   // The scenery (mountains, buildings) that the top of the view cut off carries on above
   // it, up to its first empty or solid row.
   f->skyRows = 0;
@@ -666,6 +714,14 @@ static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
       memset(ppu->objShift, 0, sizeof(ppu->objShift));
       if(m > 0) setHudLine(ppu, f, y, y >= VIEW_STEP);
       ppu_runLine(ppu, y + 1);
+      if(m > 0 && (flags & (y < VIEW_STEP ? PPU_PIT_TOP : PPU_PIT_BOTTOM))) {
+        // The pit scene is scrolled art (the car too): past its sides there is only the HUD.
+        uint32_t* out = ppu->lineOut;
+        for(int x = -m; x < 256 + m; x++) {
+          if(x == 0) x = 256;
+          if(ppu->hudLine[PPU_OBJX(x)] < 0) out[x + m] = 0;
+        }
+      }
       ppu->hudLine = NULL;
     }
   }
