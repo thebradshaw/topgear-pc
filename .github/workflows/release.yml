@@ -1,6 +1,7 @@
 name: release
 
-# A v* tag builds the Windows and Linux downloads and publishes them as that tag's release.
+# A v* tag, or running this by hand with a new tag name (it builds the branch it's run on
+# and creates the tag), builds the Windows and Linux downloads and publishes them as that tag's release.
 # The launcher's logo and icon (box art) aren't in the repo, so these builds show the plain
 # title instead; a Windows zip with the art can be attached to the release by hand.
 on:
@@ -22,8 +23,6 @@ jobs:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.tag || github.ref }}
       - name: Install MinGW
         run: sudo apt-get update && sudo apt-get install -y mingw-w64 ninja-build
       - name: Build
@@ -47,8 +46,6 @@ jobs:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.tag || github.ref }}
       - name: Install SDL's build dependencies
         run: |
           sudo apt-get update
@@ -86,5 +83,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sed "s/TAG/$TAG/g" .github/release-notes.md > notes.md
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Top Gear PC $TAG" --notes-file notes.md
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Top Gear PC $TAG" --notes-file notes.md
           gh release upload "$TAG" topgear-pc-*.zip topgear-pc-*.tar.gz --clobber
