@@ -56,6 +56,7 @@ add_library(tgcore STATIC
   src/port/uploads.c
   src/port/visible.c
   src/port/waits.c
+  src/remix/remix.c
   src/rom.c
   src/sha256.c
 )

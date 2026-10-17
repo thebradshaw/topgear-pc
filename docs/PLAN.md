@@ -91,6 +91,7 @@ A separate mode, chosen from the menu, that keeps Top Gear's gameplay exactly (t
 - *Look:* a new renderer that builds each track from the game's own track data (curves, scenery, cars, positions) and draws it in a clean, flat-shaded modern style at any resolution and frame rate, with long draw distance, sunsets and weather. Widescreen, high frame rate and the full-screen view from Phase 5 are steps toward it. All art for this mode is newly made; nothing is taken from Horizon Chase or any other game.
 - *Animation:* smooth car motion and steering lean, body roll and bounce, camera sway through corners, tyre smoke, sparks and exhaust, animated scenery and crowds, all driven by the unchanged 60 Hz game state.
 - *Approach:* prototype one track in the new style first, then decide how far to take it.
+- *Status (2026-10-17):* first prototype in `src/remix/`: draws the first course (Las Vegas) from the track tables in work RAM, with the cars, cacti, bushes and corner signs, at any resolution (`tg_headless --remix-shots 1920x1080`). Track tables, per segment of 32 track units: `$4C00` curve (how fast the road turns; this course only turns left), `$4000` slope, `$5800` stripe phase, `$6400` roadside object (bit 15: a group or special; else bit 8 left side, low byte distance from the road, bits 9-15 the art).
 
 ## 4. What I need from you
 
