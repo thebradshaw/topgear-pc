@@ -32,33 +32,46 @@ static Col rgb(int hex) { return (Col) {(hex >> 16 & 255) / 255.0f, (hex >> 8 & 
 static Col mix(Col a, Col b, float t) { return (Col) {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t}; }
 static Col shade(Col a, float f) { return (Col) {a.r * f, a.g * f, a.b * f}; }
 
-// The canvas: floats, supersampled.
+// The canvas: XRGB, supersampled, kept between frames.
 typedef struct {
   int w, h;
-  float* px;  // rgb
+  int y0, y1;  // the rows this call draws (a band, so threads can share a frame)
+  uint32_t* px;
+  float fog;   // haze: how far (0-1) what is drawn now fades into the haze colour
 } Canvas;
 
-static void put(Canvas* c, int x, int y, Col k) {
-  float* p = &c->px[(y * c->w + x) * 3];
-  p[0] = k.r; p[1] = k.g; p[2] = k.b;
+static uint32_t pack(Col k) {
+  int r = (int) (k.r * 255 + 0.5f), g = (int) (k.g * 255 + 0.5f), b = (int) (k.b * 255 + 0.5f);
+  r = r < 0 ? 0 : r > 255 ? 255 : r;
+  g = g < 0 ? 0 : g > 255 ? 255 : g;
+  b = b < 0 ? 0 : b > 255 ? 255 : b;
+  return (uint32_t) (r << 16 | g << 8 | b);
 }
 
-static void put_a(Canvas* c, int x, int y, Col k, float a) {
-  float* p = &c->px[(y * c->w + x) * 3];
-  p[0] += (k.r - p[0]) * a; p[1] += (k.g - p[1]) * a; p[2] += (k.b - p[2]) * a;
+static void fill(uint32_t* p, int n, uint32_t v) {
+  for(int i = 0; i < n; i++) p[i] = v;
+}
+
+static void blend(uint32_t* p, int n, uint32_t v, int a) {  // a: 0-256
+  uint32_t vrb = v & 0xFF00FF, vg = v & 0x00FF00;
+  for(int i = 0; i < n; i++) {
+    uint32_t d = p[i], rb = d & 0xFF00FF, g = d & 0x00FF00;
+    rb = (rb + (((vrb - rb) * (uint32_t) a) >> 8)) & 0xFF00FF;
+    g = (g + (((vg - g) * (uint32_t) a) >> 8)) & 0x00FF00;
+    p[i] = rb | g;
+  }
 }
 
 static void span(Canvas* c, int y, float x0, float x1, Col k) {
-  if(y < 0 || y >= c->h) return;
+  if(y < c->y0 || y >= c->y1) return;
   int a = (int) ceilf(x0 - 0.5f), b = (int) ceilf(x1 - 0.5f);
   if(a < 0) a = 0;
   if(b > c->w) b = c->w;
-  for(int x = a; x < b; x++) put(c, x, y, k);
+  if(b > a) fill(&c->px[y * c->w + a], b - a, pack(k));
 }
 
-// Haze: how far (0-1) what is drawn now fades into the haze colour, by its distance.
-static float g_fog;
-static Col g_haze;
+// Haze, by distance.
+static const int kHaze = 0xF0DCC0;
 
 static float fog_at(float z) {
   float f = z / (DRAW_SEGS * SEG_LEN);
@@ -68,16 +81,18 @@ static float fog_at(float z) {
 
 // A polygon (any shape, even-odd), filled between rows top and bottom (exclusive) only.
 static void poly(Canvas* c, const float* xy, int n, Col k, float alpha, int clipBottom) {
-  k = mix(k, g_haze, g_fog);
+  k = mix(k, rgb(kHaze), c->fog);
+  uint32_t v = pack(k);
+  int ia = (int) (alpha * 256 + 0.5f);
   float ymin = 1e9f, ymax = -1e9f;
   for(int i = 0; i < n; i++) {
     if(xy[i * 2 + 1] < ymin) ymin = xy[i * 2 + 1];
     if(xy[i * 2 + 1] > ymax) ymax = xy[i * 2 + 1];
   }
   int y0 = (int) ceilf(ymin - 0.5f), y1 = (int) ceilf(ymax - 0.5f);
-  if(y0 < 0) y0 = 0;
+  if(y0 < c->y0) y0 = c->y0;
   if(y1 > clipBottom) y1 = clipBottom;
-  if(y1 > c->h) y1 = c->h;
+  if(y1 > c->y1) y1 = c->y1;
   for(int y = y0; y < y1; y++) {
     float cy = y + 0.5f, xs[16];
     int m = 0;
@@ -92,10 +107,9 @@ static void poly(Canvas* c, const float* xy, int n, Col k, float alpha, int clip
       int a = (int) ceilf(xs[i] - 0.5f), b = (int) ceilf(xs[i + 1] - 0.5f);
       if(a < 0) a = 0;
       if(b > c->w) b = c->w;
-      for(int x = a; x < b; x++) {
-        if(alpha >= 1) put(c, x, y, k);
-        else put_a(c, x, y, k, alpha);
-      }
+      if(b <= a) continue;
+      if(ia >= 256) fill(&c->px[y * c->w + a], b - a, v);
+      else blend(&c->px[y * c->w + a], b - a, v, ia);
     }
   }
 }
@@ -256,7 +270,7 @@ static float ridge(float x, float seed) {
 
 static void draw_backdrop(Canvas* c, const Scene* sc, float heading) {
   Col skyTop = rgb(0x2D6BD3), skyLow = rgb(0xF3E2C8);
-  for(int y = 0; y < c->h; y++) {
+  for(int y = c->y0; y < c->y1; y++) {
     float t = (float) y / (sc->horizon > 1 ? sc->horizon : 1);
     if(t > 1) t = 1;
     Col k = mix(skyTop, skyLow, t * t);
@@ -280,11 +294,81 @@ static void draw_backdrop(Canvas* c, const Scene* sc, float heading) {
       float r = ridge(wx, seed), r2 = ridge(wx + 0.01f, seed);
       float top = sc->horizon - r * height;
       Col k = r2 > r ? lit : dim;
-      for(int y = (int) top; y < c->h; y++) if(y >= 0) put(c, x, y, k);
+      uint32_t v = pack(k);
+      int y0 = top < c->y0 ? c->y0 : (int) top, y1 = (int) (sc->horizon + sc->h * 0.2f);
+      if(y1 > c->y1) y1 = c->y1;
+      for(int y = y0; y < y1; y++) c->px[y * c->w + x] = v;
       prev = r;
     }
     (void) prev;
   }
+}
+
+// Car positions for drawing. The game moves the cars once per race update (every third
+// frame); tg_remix_tick keeps the last two updates so that drawing can go smoothly between
+// them, a step behind. Without ticks, the positions are read straight from RAM.
+#define CARS 20
+typedef struct {
+  uint16_t pos[CARS];
+  int16_t side[CARS];
+} Snap;
+static Snap s_prev, s_cur;
+static bool s_valid;
+static int s_since, s_period = 3;
+static uint16_t s_time, s_len;
+static float s_sub;
+
+static void read_snap(const uint8_t* m, Snap* s) {
+  for(int k = 0; k < CARS; k++) {
+    uint32_t b = 0x0200 + 0x12 + (uint32_t) k * 0x12;
+    s->pos[k] = r16(m, b + 7);
+    s->side[k] = s16(m, b + 2);
+  }
+}
+
+void tg_remix_tick(const uint8_t* m) {
+  uint16_t time = r16(m, 0x1EAE), len = r16(m, 0x0200);
+  if(!s_valid || len != s_len || time < s_time) {
+    read_snap(m, &s_cur);
+    s_prev = s_cur;
+    s_valid = true;
+    s_since = 0;
+    s_time = time;
+    s_len = len;
+    return;
+  }
+  if(time != s_time) {
+    s_prev = s_cur;
+    read_snap(m, &s_cur);
+    s_period = s_since + 1 < 1 ? 1 : s_since + 1 > 6 ? 6 : s_since + 1;
+    s_since = 0;
+    s_time = time;
+  } else {
+    s_since++;
+  }
+}
+
+void tg_remix_set_subframe(float t) { s_sub = t; }
+
+// Car k's track position (in segments) and side position (world units).
+static void car_at(const uint8_t* m, int k, float* pos, float* side) {
+  uint32_t b = 0x0200 + 0x12 + (uint32_t) k * 0x12;
+  if(!s_valid || s_len != r16(m, 0x0200)) {
+    *pos = (float) r16(m, b + 7) / SEG_UNITS;
+    *side = (float) s16(m, b + 2) / SIDE_UNIT * ROAD_HALF;
+    return;
+  }
+  float t = (s_since + s_sub) / s_period;
+  if(t > 1) t = 1;
+  int d = (int) s_cur.pos[k] - (int) s_prev.pos[k];
+  if(d > s_len / 2) d -= s_len;
+  if(d < -(int) s_len / 2) d += s_len;
+  if(d > 0x200 || d < -0x200) t = 1;  // a jump: no sliding
+  float p = s_prev.pos[k] + d * t;
+  if(p < 0) p += s_len;
+  if(p >= s_len) p -= s_len;
+  *pos = p / SEG_UNITS;
+  *side = (s_prev.side[k] + (s_cur.side[k] - s_prev.side[k]) * t) / (float) SIDE_UNIT * ROAD_HALF;
 }
 
 bool tg_remix_active(const uint8_t* wram) {
@@ -292,11 +376,23 @@ bool tg_remix_active(const uint8_t* wram) {
   return len >= 0x400 && len < 0x8000 && (len & 0x1F) == 0;
 }
 
+static int clamp_ss(int ss) { return ss < 1 ? 1 : ss > 4 ? 4 : ss; }
+
+size_t tg_remix_work_size(int w, int h, int ss) {
+  ss = clamp_ss(ss);
+  return (size_t) w * ss * h * ss * sizeof(uint32_t);
+}
+
 void tg_remix_draw(const uint8_t* m, uint32_t* out, int w, int h, int ss) {
-  if(ss < 1) ss = 1;
-  if(ss > 4) ss = 4;
-  Canvas c = {w * ss, h * ss, calloc((size_t) w * ss * h * ss * 3, sizeof(float))};
-  if(c.px == NULL) return;
+  void* work = malloc(tg_remix_work_size(w, h, ss));
+  if(work == NULL) return;
+  tg_remix_draw_rows(m, out, w, h, ss, work, 0, h);
+  free(work);
+}
+
+void tg_remix_draw_rows(const uint8_t* m, uint32_t* out, int w, int h, int ss, void* work, int row0, int row1) {
+  ss = clamp_ss(ss);
+  Canvas c = {w * ss, h * ss, row0 * ss, row1 * ss, work, 0};
   Scene sc = {.m = m};
   sc.nseg = r16(m, 0x0200) / SEG_UNITS;
   sc.w = (float) c.w;
@@ -306,10 +402,9 @@ void tg_remix_draw(const uint8_t* m, uint32_t* out, int w, int h, int ss) {
   sc.focal = sc.h * 1.0f;
 
   // Player 1 and the camera behind it.
-  uint32_t p1 = 0x0200 + 0x12 + r16(m, 0x0204);
-  uint16_t p1pos = r16(m, p1 + 7);
-  float p1x = (float) s16(m, p1 + 2) / SIDE_UNIT * ROAD_HALF;
-  float camPos = (float) p1pos / SEG_UNITS - CAM_BACK;
+  float p1seg, p1x;
+  car_at(m, r16(m, 0x0204) / 0x12, &p1seg, &p1x);
+  float camPos = p1seg - CAM_BACK;
   if(camPos < 0) camPos += sc.nseg;
   int camSeg = (int) camPos;
   float frac = camPos - camSeg;
@@ -319,8 +414,7 @@ void tg_remix_draw(const uint8_t* m, uint32_t* out, int w, int h, int ss) {
   float heading = 0;
   for(int i = 0; i < camSeg; i++) heading += r16(m, 0x4C00 + 2 * i) * CURVE_K * SEG_LEN;
   heading += r16(m, 0x4C00 + 2 * camSeg) * CURVE_K * SEG_LEN * frac;
-  g_fog = 0;
-  g_haze = rgb(0xF0DCC0);
+  Col haze = rgb(kHaze);
   draw_backdrop(&c, &sc, heading * 2.2f);
 
   // The road's centre line at each segment end, from the camera out: the curves bend it,
@@ -378,19 +472,19 @@ void tg_remix_draw(const uint8_t* m, uint32_t* out, int w, int h, int ss) {
       int top = (int) ceilf(p->sy - 0.5f), bottom = (int) ceilf(n->sy - 0.5f);
       if(bottom > clip) bottom = clip;
       if(top < 0) top = 0;
-      for(int row = top; row < bottom; row++) {
+      for(int row = top > c.y0 ? top : c.y0; row < bottom && row < c.y1; row++) {
         float t = (n->sy - (row + 0.5f)) / (n->sy - p->sy);
         float rx = n->sx + (p->sx - n->sx) * t;
         float rs = n->scale + (p->scale - n->scale) * t;
         float half = ROAD_HALF * rs, rumble = 0.12f * rs, lw = 0.035f * rs;
         float f = fog_at(sc.focal / rs);
-        span(&c, row, 0, sc.w, mix(alt ? sandA : sandB, g_haze, f));
-        span(&c, row, rx - half - rumble, rx + half + rumble, mix(alt ? red : white, g_haze, f));
-        span(&c, row, rx - half, rx + half, mix(alt ? roadA : roadB, g_haze, f));
+        span(&c, row, 0, sc.w, mix(alt ? sandA : sandB, haze, f));
+        span(&c, row, rx - half - rumble, rx + half + rumble, mix(alt ? red : white, haze, f));
+        span(&c, row, rx - half, rx + half, mix(alt ? roadA : roadB, haze, f));
         if(alt) {
           for(int k = -1; k <= 1; k += 2) {
             float lx = rx + k * half / 3;
-            span(&c, row, lx - lw, lx + lw, mix(line, g_haze, f));
+            span(&c, row, lx - lw, lx + lw, mix(line, haze, f));
           }
         }
       }
@@ -418,7 +512,8 @@ void tg_remix_draw(const uint8_t* m, uint32_t* out, int w, int h, int ss) {
     uint32_t b = 0x0200 + 0x12 + (uint32_t) k * 0x12;
     uint16_t kind = r16(m, b);
     if(kind == 0) continue;
-    float pos = (float) r16(m, b + 7) / SEG_UNITS;
+    float pos, side;
+    car_at(m, k, &pos, &side);
     float d = pos - camPos;
     if(d < 0) d += sc.nseg;
     if(d >= DRAW_SEGS - 1 || d < 0.6f) continue;
@@ -429,7 +524,7 @@ void tg_remix_draw(const uint8_t* m, uint32_t* out, int w, int h, int ss) {
     Proj* bb = &pr[i + 1];
     float scale = 1 / (1 / a->scale + (1 / bb->scale - 1 / a->scale) * t);
     float cx = a->sx + (bb->sx - a->sx) * t, cy = a->sy + (bb->sy - a->sy) * t;
-    float cx0 = cx + ((float) s16(m, b + 2) / SIDE_UNIT * ROAD_HALF) * scale;
+    float cx0 = cx + side * scale;
     Sprite* s = &sprites[ns++];
     s->depth = at;
     s->kind = 0;
@@ -447,7 +542,7 @@ void tg_remix_draw(const uint8_t* m, uint32_t* out, int w, int h, int ss) {
     }
   for(int i = 0; i < ns; i++) {
     const Sprite* s = &sprites[i];
-    g_fog = fog_at(sc.focal / s->scale);
+    c.fog = fog_at(sc.focal / s->scale);
     if(s->kind == 0) draw_car(&c, s);
     else if(s->type == 9) draw_sign(&c, s);
     else if(s->type >= 0x1B && s->type <= 0x1C) draw_cactus(&c, s);
@@ -455,22 +550,46 @@ void tg_remix_draw(const uint8_t* m, uint32_t* out, int w, int h, int ss) {
     else draw_rock(&c, s);
   }
 
-  g_fog = 0;
   // Down to the output size.
-  float norm = 1.0f / (ss * ss);
-  for(int y = 0; y < h; y++)
+  uint32_t inv = (uint32_t) (65536 / (ss * ss)) + (ss == 3);  // exact for 1, 2 and 4
+  for(int y = row0; y < row1; y++)
     for(int x = 0; x < w; x++) {
-      float r = 0, g = 0, b = 0;
-      for(int j = 0; j < ss; j++)
+      uint32_t rb = 0, g = 0;
+      for(int j = 0; j < ss; j++) {
+        const uint32_t* p = &c.px[(y * ss + j) * c.w + x * ss];
         for(int i = 0; i < ss; i++) {
-          const float* p = &c.px[((y * ss + j) * c.w + x * ss + i) * 3];
-          r += p[0]; g += p[1]; b += p[2];
+          rb += p[i] & 0xFF00FF;
+          g += p[i] & 0x00FF00;
         }
-      int R = (int) (r * norm * 255 + 0.5f), G = (int) (g * norm * 255 + 0.5f), B = (int) (b * norm * 255 + 0.5f);
-      R = R < 0 ? 0 : R > 255 ? 255 : R;
-      G = G < 0 ? 0 : G > 255 ? 255 : G;
-      B = B < 0 ? 0 : B > 255 ? 255 : B;
-      out[y * w + x] = (uint32_t) (R << 16 | G << 8 | B);
+      }
+      uint32_t r = ((rb >> 16) * inv) >> 16, b = ((rb & 0xFFFF) * inv) >> 16;
+      out[y * w + x] = r << 16 | (((g >> 8) * inv) >> 16) << 8 | b;
     }
-  free(c.px);
+}
+
+void tg_remix_hud(const uint8_t* m, TgRemixHud* hud) {
+  bool kph = m[0x1FB0] != 0 && !(m[0x1FF6] & 0x80);
+  uint16_t speed = r16(m, 0x1E5A);
+  int factor = kph ? 0x18 : 0x0F;
+  hud->speed = (speed & 0x8000) ? 0 : (int) ((uint16_t) (((int32_t) (int16_t) speed * factor) >> 8) >> 2);
+  hud->kph = kph;
+  uint16_t pos = r16(m, 0x1F00);
+  if(pos & 0x8000) pos = r16(m, 0x1E7A);
+  hud->position = pos + 1;
+  int laps = r16(m, 0x1E56);
+  int lap = (int16_t) r16(m, 0x1E76);
+  hud->laps = laps;
+  hud->lap = lap < 0 ? 1 : lap + 1 > laps ? laps : lap + 1;
+  uint16_t t = r16(m, 0x1F26);
+  if(t & 0x8000) t = r16(m, 0x1EAE);
+  hud->minutes = t / 3600;
+  hud->seconds = t / 60 % 60;
+  hud->hundredths = t % 60 * 100 / 60;
+  hud->gear = r16(m, 0x1E72) + 1;
+  uint16_t n = r16(m, 0x1E6C);
+  int d = n & 3;
+  if((n & 0x8000) && d != 0) d--;
+  hud->nitros = d;
+  int full = (r16(m, 0x1E62) >> 8) >> 3;
+  hud->fuel = (full > 20 ? 20 : full) * 5;
 }
