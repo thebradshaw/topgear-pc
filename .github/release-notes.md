@@ -1,5 +1,7 @@
 Made by **Vibe Slop Studios**. Top Gear PC TAG.
 
+![Widescreen with the full-screen 1-player view](https://raw.githubusercontent.com/thebradshaw/topgear-pc/main/docs/screenshots/grid-widescreen.png)
+
 **You need your own Top Gear (USA) SNES ROM.** No ROM, graphics, sound or music are included. Unzip, run `topgear-launcher`, choose your ROM, set the options and press Start.
 
 Downloads:

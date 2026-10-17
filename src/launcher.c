@@ -368,8 +368,8 @@ static float optionY(int i) {
 #define ROMBTN_Y 236.0f
 #define PLAY_Y 592.0f
 
-// The logo, if logo.bmp sits next to the launcher (magenta is see-through). It isn't part
-// of the source code: the game's art stays out of the repository.
+// The logo, if logo.bmp sits next to the launcher (magenta is see-through); the build copies
+// it there from assets/.
 static void loadLogo(void) {
   char path[2400];
   const char* base = SDL_GetBasePath();

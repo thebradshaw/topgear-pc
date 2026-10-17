@@ -2,8 +2,6 @@ name: release
 
 # A v* tag, or running this by hand with a new tag name (it builds the branch it's run on
 # and creates the tag), builds the Windows and Linux downloads and publishes them as that tag's release.
-# The launcher's logo and icon (box art) aren't in the repo, so these builds show the plain
-# title instead; a Windows zip with the art can be attached to the release by hand.
 on:
   push:
     tags: ['v*']
@@ -32,7 +30,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/topgear-pc/licenses
-          cp build/topgear.exe build/topgear-launcher.exe README.md dist/topgear-pc/
+          cp build/topgear.exe build/topgear-launcher.exe build/logo.bmp README.md dist/topgear-pc/
           cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
           cd dist && zip -qr "../topgear-pc-$TAG-windows-x64.zip" topgear-pc
       - uses: actions/upload-artifact@v4
@@ -60,7 +58,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/topgear-pc/licenses
-          cp build/topgear build/topgear-launcher README.md dist/topgear-pc/
+          cp build/topgear build/topgear-launcher build/logo.bmp README.md dist/topgear-pc/
           cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
           tar -C dist -czf "topgear-pc-$TAG-linux-x64.tar.gz" topgear-pc
       - uses: actions/upload-artifact@v4

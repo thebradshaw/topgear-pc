@@ -10,4 +10,3 @@ out/
 .vs/
 *.user
 __pycache__/
-*.ico

@@ -90,13 +90,16 @@ if(TG_BUILD_FRONTEND)
   add_executable(topgear-launcher WIN32 src/launcher.c src/rom.c src/sha256.c)
   target_include_directories(topgear-launcher PRIVATE src)
   target_link_libraries(topgear-launcher PRIVATE SDL3::SDL3)
-  # The launcher's icon is drawn from the box art, which isn't in the repo: make it with
-  # tools/gen_launcher_icon.py and pass its path here.
-  set(TG_LAUNCHER_ICON "" CACHE FILEPATH "Icon (.ico) for topgear-launcher.exe")
-  if(WIN32 AND TG_LAUNCHER_ICON)
+  # The launcher's icon (assets/launcher-icon.ico, made by tools/gen_launcher_icon.py from the
+  # box art) and its logo (assets/logo.bmp, copied next to the launcher).
+  set(TG_LAUNCHER_ICON "${CMAKE_SOURCE_DIR}/assets/launcher-icon.ico" CACHE FILEPATH "Icon (.ico) for topgear-launcher.exe")
+  if(WIN32 AND EXISTS "${TG_LAUNCHER_ICON}")
     file(WRITE ${CMAKE_BINARY_DIR}/launcher_icon.rc "1 ICON \"${TG_LAUNCHER_ICON}\"\n")
     target_sources(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/launcher_icon.rc)
+    set_source_files_properties(${CMAKE_BINARY_DIR}/launcher_icon.rc PROPERTIES OBJECT_DEPENDS "${TG_LAUNCHER_ICON}")
   endif()
+  add_custom_command(TARGET topgear-launcher POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/assets/logo.bmp $<TARGET_FILE_DIR:topgear-launcher>/logo.bmp)
   if(MINGW)
     target_link_options(topgear PRIVATE -static -static-libgcc)
     target_link_options(topgear-launcher PRIVATE -static -static-libgcc)

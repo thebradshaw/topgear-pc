@@ -11,6 +11,15 @@ Made by Vibe Slop Studios. A fan project, not affiliated with or endorsed by Kem
 
 Downloads for Windows, and an experimental Linux build, are on the [releases page](../../releases). On Linux, run `topgear-launcher` from the unpacked folder.
 
+![Widescreen with the full-screen 1-player view, on the starting grid](docs/screenshots/grid-widescreen.png)
+
+| | |
+|---|---|
+| ![The game in a window on Windows, widescreen and full view on](docs/screenshots/window.png) | ![The launcher: pick your ROM and the options, then Start](docs/screenshots/launcher.png) |
+| Widescreen and full view, in a window | The launcher |
+
+![Widescreen on the open road](docs/screenshots/road-widescreen.png)
+
 ## Status
 
 Phase 3. The races run in translated C: the race program, the per-frame update, the renderer, the cars, the sprites and the raster interrupts. The menus and a few routines still run as the original game on the embedded reference emulator ([LakeSnes](https://github.com/angelo-wf/LakeSnes), MIT), which also checks the C code call by call against the original.

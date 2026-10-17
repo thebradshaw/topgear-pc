@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the launcher's icon from the Top Gear box art (not in the repo; pass its path).
+"""Draws the launcher's icon (assets/launcher-icon.ico) from the Top Gear box art (pass its path).
 
 The car's nose against the box art's fire, on a rounded tile.
 
