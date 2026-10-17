@@ -119,7 +119,7 @@ void tg_input_script_advance(TgInputScript* script, uint32_t frame) {
     TgInputEvent* e = &script->events[script->next++];
     if(e->player == 0) script->resetPending = true;
     else if(e->player == 3) script->smooth = e->buttons != 0;
-    else if(e->player == 4) script->scaling = e->buttons != 0;
+    // 4: smooth scaling, since removed; old recordings still read
     else if(e->player == 5) script->fullview = e->buttons != 0;
     else if(e->player == 6) script->wide = e->buttons;
     else if(e->player == 7) script->sideBySide = e->buttons != 0;

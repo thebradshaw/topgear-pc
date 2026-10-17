@@ -10,7 +10,7 @@
 // The state holds from that frame until the next line for the same player.
 // "<frame> reset" presses the console's reset button before that frame runs.
 // "<frame> smooth on|off" switches the smooth motion option (one race update a frame), and
-// "<frame> scaling on|off" the smooth scaling of race objects, and "<frame> fullview on|off"
+// "<frame> fullview on|off"
 // the full-screen 1-player view; "<frame> wide <margin>" sets widescreen's extra pixels on
 // each side (0 for off), "<frame> sidebyside on|off" the side-by-side 2-player views, and "<frame> ghost on|off"
 // the ghost car, and "<frame> tallroad on|off" the full view's road drawn twice as tall;
@@ -18,7 +18,7 @@
 
 typedef struct {
   uint32_t frame;
-  uint8_t player;  // 0 means reset, 3 smooth motion, 4 smooth scaling, 5 full view, 6 widescreen (buttons: the margin), 7 side by side, 8 ghost, 9 tall road (buttons 1 on, 0 off), 10 unlock (buttons: the countries open at each skill level, 4 bits each)
+  uint8_t player;  // 0 means reset, 3 smooth motion, 4 smooth scaling (removed, ignored), 5 full view, 6 widescreen (buttons: the margin), 7 side by side, 8 ghost, 9 tall road (buttons 1 on, 0 off), 10 unlock (buttons: the countries open at each skill level, 4 bits each)
   uint16_t buttons;
 } TgInputEvent;
 
@@ -29,7 +29,6 @@ typedef struct {
   uint16_t state[3];
   bool resetPending;
   bool smooth;  // the smooth motion option, as the events so far set it
-  bool scaling;  // the smooth scaling option
   bool fullview;  // the full-screen 1-player view option
   int wide;  // the widescreen margin, 0 when off
   bool sideBySide;  // the side-by-side 2-player option

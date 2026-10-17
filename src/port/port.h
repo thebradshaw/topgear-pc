@@ -147,13 +147,8 @@ static inline uint16_t rom16(uint32_t adr) { const uint8_t* p = tg_rom(adr); ret
 // time, which is how the comparison tests run it.
 extern int tg_port_race_frames;
 
-// Smooth scaling of race objects (sprites.c), an enhancement: when set, the sprite builder
-// tags each object's OAM entries in tg_port_obj_tags with a scale in tg_port_obj_scales,
-// which the PPU applies (tg_game_set_smooth_sprites connects them).
-extern bool tg_port_smooth_sprites;
 // Counts the race's top-of-frame interrupts (RaceIrqTop): changes every frame of a race.
 extern uint32_t tg_port_race_irqs;
-extern uint16_t tg_port_obj_tags[0x2000];
 // Full-screen 1-player view and widescreen (sprites.c, LakeSnes ppu_full.c), enhancements:
 // when either is on, the sprite builder records each OAM entry's ground line in
 // tg_port_obj_grounds (widescreen: and keeps sprites out to the wider edges), and

@@ -63,8 +63,6 @@ static struct {
   bool recordedSmooth;
   bool highFps;  // enhancement: in-between frames at the display's rate (Shift+F6, --high-fps)
   bool vsync;
-  bool scaling;  // enhancement: race objects grow smoothly (F7, --smooth-scaling)
-  bool recordedScaling;
   bool fullView;  // enhancement: 1-player races fill the whole screen (F9, --full-view)
   bool recordedFullView;
   bool tallRoad;  // full view with the road twice as tall, filling the screen (F9 again, --tall-road)
@@ -245,7 +243,7 @@ typedef struct {
 
 static const Setting kSettings[] = {
   {"fullscreen", &app.fullscreen}, {"integer_scale", &app.integerScale}, {"rumble", &app.rumble},
-  {"smooth", &app.smooth}, {"smooth_scaling", &app.scaling}, {"full_view", &app.fullView},
+  {"smooth", &app.smooth}, {"full_view", &app.fullView},
   {"tall_road", &app.tallRoad}, {"wide", &app.wide}, {"side_by_side", &app.sideBySide},
   {"ghost", &app.ghost}, {"auto_save", &app.autoSave}, {"high_fps", &app.highFps}, {"tv_colour", &app.tvColour},
 };
@@ -299,9 +297,9 @@ static void loadProgress(void) {
 static void updateTitle(void) {
   saveSettings();
   char title[128];
-  snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
+  snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
            app.integerScale ? ", integer scale" : "",
-           app.smooth && !app.original ? ", smooth motion" : "", app.scaling ? ", smooth scaling" : "",
+           app.smooth && !app.original ? ", smooth motion" : "",
            app.fullView && !app.original ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
   if(app.wide && !app.original) SDL_strlcat(title, ", widescreen", sizeof(title));
   if(app.sideBySide && !app.original) SDL_strlcat(title, ", side by side", sizeof(title));
@@ -518,7 +516,6 @@ static void runFrame(int samples) {
     reset = app.replay.resetPending;
     app.replay.resetPending = false;
     if(app.replay.smooth != app.smooth) { app.smooth = app.replay.smooth; updateTitle(); }
-    if(app.replay.scaling != app.scaling) { app.scaling = app.replay.scaling; updateTitle(); }
     if(app.replay.fullview != app.fullView) { app.fullView = app.replay.fullview; updateTitle(); }
     if(app.replay.tallRoad != app.tallRoad) { app.tallRoad = app.replay.tallRoad; updateTitle(); }
     if((app.replay.wide > 0) != app.wide) { app.wide = app.replay.wide > 0; updateTitle(); }
@@ -528,7 +525,6 @@ static void runFrame(int samples) {
   // Smooth motion runs the race logic every frame; the original updates it every third
   // frame (its pace is scaled by the frames elapsed, so the race takes the same time).
   tg_port_race_frames = app.smooth ? 1 : 3;
-  if(app.scaling != tg_port_smooth_sprites) tg_game_set_smooth_sprites(app.game, app.scaling);
   if(app.fullView != tg_port_full_view) tg_game_set_full_view(app.game, app.fullView);
   tg_game_set_tall_road(app.game, app.tallRoad);
   int margin = app.replaying ? app.replay.wide : wantedMargin();
@@ -541,10 +537,6 @@ static void runFrame(int samples) {
     if(app.smooth != app.recordedSmooth) {
       fprintf(app.record, "%u smooth %s\n", app.frame, app.smooth ? "on" : "off");
       app.recordedSmooth = app.smooth;
-    }
-    if(app.scaling != app.recordedScaling) {
-      fprintf(app.record, "%u scaling %s\n", app.frame, app.scaling ? "on" : "off");
-      app.recordedScaling = app.scaling;
     }
     if(app.fullView != app.recordedFullView) {
       fprintf(app.record, "%u fullview %s\n", app.frame, app.fullView ? "on" : "off");
@@ -630,7 +622,7 @@ static void runFrame(int samples) {
 
 typedef enum {
   MI_RESUME, MI_ASPECT, MI_FILTER, MI_INTEGER, MI_FULLSCREEN, MI_WIDE, MI_FULLVIEW, MI_SIDE,
-  MI_COLOUR, MI_SMOOTH, MI_HIGHFPS, MI_SCALING, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
+  MI_COLOUR, MI_SMOOTH, MI_HIGHFPS, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
   MI_KEYS2, MI_PADS, MI_RESET, MI_QUIT, MI_COUNT
 } MenuItem;
 
@@ -742,7 +734,6 @@ static void menuItemText(int i, char* out, size_t size) {
     case MI_SIDE: snprintf(out, size, "2P side by side    %s", onOff(app.sideBySide)); break;
     case MI_SMOOTH: snprintf(out, size, "Smooth motion      %s", onOff(app.smooth)); break;
     case MI_HIGHFPS: snprintf(out, size, "High frame rate    %s", onOff(app.highFps)); break;
-    case MI_SCALING: snprintf(out, size, "Smooth scaling     %s", onOff(app.scaling)); break;
     case MI_GHOST: snprintf(out, size, "Ghost car          %s", onOff(app.ghost)); break;
     case MI_AUTOSAVE: snprintf(out, size, "Auto-save          %s", onOff(app.autoSave)); break;
     case MI_COLOUR: snprintf(out, size, "Colours            %s", app.tvColour ? "as on a TV" : "exact"); break;
@@ -782,7 +773,6 @@ static void menuActivate(int dir) {
     case MI_SIDE: if(!locked) { app.sideBySide = !app.sideBySide; updateTitle(); } break;
     case MI_SMOOTH: if(!locked) setSmooth(!app.smooth); break;
     case MI_HIGHFPS: setHighFps(!app.highFps); break;
-    case MI_SCALING: if(!locked) { app.scaling = !app.scaling; updateTitle(); } break;
     case MI_GHOST: if(!locked) { app.ghost = !app.ghost; updateTitle(); } break;
     case MI_AUTOSAVE: app.autoSave = !app.autoSave; updateTitle(); break;
     case MI_RUMBLE: app.rumble = !app.rumble; updateTitle(); break;
@@ -930,7 +920,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--original") == 0) original = true;
     else if(strcmp(argv[i], "--smooth") == 0) app.smooth = true;
     else if(strcmp(argv[i], "--rumble") == 0) app.rumble = true;
-    else if(strcmp(argv[i], "--smooth-scaling") == 0) app.scaling = true;
+    else if(strcmp(argv[i], "--smooth-scaling") == 0) {}  // removed; still accepted
     else if(strcmp(argv[i], "--full-view") == 0) app.fullView = true;
     else if(strcmp(argv[i], "--tall-road") == 0) app.tallRoad = true;
     else if(strcmp(argv[i], "--wide") == 0) app.wide = true;
@@ -1052,7 +1042,6 @@ int main(int argc, char** argv) {
               updateTitle();
               break;
             }
-            if(e.key.key == SDLK_F7 && !app.replaying) { app.scaling = !app.scaling; updateTitle(); break; }
             if(e.key.key == SDLK_F8) { app.rumble = !app.rumble; updateTitle(); break; }
             if(e.key.key == SDLK_F9 && !app.replaying) {
               // Off, then full view with the original's low horizon, then with a tall road.

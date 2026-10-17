@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
   const char* expectFrame = NULL;
   const char* coveragePath = NULL;
   const char* dumpWram = NULL;
+  long watchWord = -1;  // print this WRAM word once a second
   const char* frameHashes = NULL;
   const char* ghostsPath = NULL;
   int interpSteps = 0;
@@ -96,6 +97,7 @@ int main(int argc, char** argv) {
   long shotsFrom = 0;
   const char* dumpPpu = NULL;
   TgPortMode portMode = TG_PORT_OFF;
+  long nativeFrom = -1;  // switch to the C code from this frame (to look at enhancements in a recording made with the original)
   for(int i = 1; i < argc; i++) {
     const char* next = i + 1 < argc ? argv[i + 1] : NULL;
     if(strcmp(argv[i], "--rom") == 0 && next) romPath = argv[++i];
@@ -110,6 +112,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--expect-frame") == 0 && next) expectFrame = argv[++i];
     else if(strcmp(argv[i], "--coverage") == 0 && next) coveragePath = argv[++i];
     else if(strcmp(argv[i], "--dump-wram") == 0 && next) dumpWram = argv[++i];
+    else if(strcmp(argv[i], "--watch-word") == 0 && next) watchWord = strtol(argv[++i], NULL, 16);
     else if(strcmp(argv[i], "--frame-hashes") == 0 && next) frameHashes = argv[++i];
     else if(strcmp(argv[i], "--ghosts") == 0 && next) ghostsPath = argv[++i];
     else if(strcmp(argv[i], "--interp-steps") == 0 && next) interpSteps = (int) strtol(argv[++i], NULL, 10);
@@ -120,8 +123,9 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "off") == 0) { portMode = TG_PORT_OFF; i++; }
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "verify") == 0) { portMode = TG_PORT_VERIFY; i++; }
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "native") == 0) { portMode = TG_PORT_NATIVE; i++; }
+    else if(strcmp(argv[i], "--native-from") == 0 && next) { nativeFrom = atol(next); i++; }
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N] [--ghosts FILE] [--interp-steps K]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--watch-word HEX] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--native-from F] [--frame-hashes FILE] [--race-frames N] [--ghosts FILE] [--interp-steps K]\n", argv[0]);
       return 2;
     }
   }
@@ -166,6 +170,7 @@ int main(int argc, char** argv) {
   FILE* hashes = frameHashes ? fopen(frameHashes, "w") : NULL;
   for(long frame = 0; frame < frames; frame++) {
     tg_input_script_advance(&script, (uint32_t) frame);
+    if(frame == nativeFrom) tg_game_set_port_mode(game, TG_PORT_NATIVE);
     if(script.resetPending) {
       tg_game_reset(game, false);
       script.resetPending = false;
@@ -176,7 +181,6 @@ int main(int argc, char** argv) {
       script.unlockPending = false;
     }
     tg_port_race_frames = script.smooth ? 1 : raceFrames;
-    if(script.scaling != tg_port_smooth_sprites) tg_game_set_smooth_sprites(game, script.scaling);
     if(script.fullview != tg_port_full_view) tg_game_set_full_view(game, script.fullview);
     tg_game_set_tall_road(game, script.tallRoad);
     if(script.wide != tg_port_wide_margin) tg_game_set_wide(game, script.wide);
@@ -190,6 +194,10 @@ int main(int argc, char** argv) {
     }
     if(trace) fprintf(trace, "# frame %ld\n", frame);
     tg_game_run_frame(game);
+    if(watchWord >= 0 && (getenv("TG_WATCH_ALL") || frame % 60 == 0)) {
+      const uint8_t* w = tg_game_wram(game);
+      printf("frame %ld word %04lX = %04X\n", frame, watchWord, w[watchWord & 0x1FFFF] | w[(watchWord + 1) & 0x1FFFF] << 8);
+    }
     if(trace && frame == traceFrame + traceCount - 1) {
       tg_game_set_trace(game, NULL);
       fclose(trace);

@@ -73,7 +73,10 @@ static void update_player(TgRegs* r, const MessagePlayer* p) {
   uint16_t lap = ram16(p->lap);
   bool keep_going = fuel_message && !(lap & 0x8000) && lap >= ram16(RaceLaps);
   if(!keep_going && var(p, kFlags) != 0) {
-    // A message is up: wait out the delay, then blink it.
+    // A message is up: wait out the delay, then blink it. Smooth motion (an enhancement)
+    // runs three race updates to the original's one, so the blinking steps on every third.
+    static unsigned ticks[2];
+    if(tg_port_race_frames == 1 && ++ticks[p == &kPlayers[0] ? 0 : 1] % 3 != 0) return;
     if(var(p, kDelay) != 0) return;
     uint16_t blink = var(p, kBlink);
     if(blink == 0) {

@@ -57,9 +57,6 @@ void tg_game_set_trace(TgGame* game, void* file);
 #include <stdio.h>
 #include "lockstep.h"
 void tg_game_set_port_mode(TgGame* game, TgPortMode mode);
-// Enhancement: race objects grow smoothly instead of stepping between sprite sizes. Only
-// drawing changes; the game runs the same.
-void tg_game_set_smooth_sprites(TgGame* game, bool on);
 // The full-screen 1-player race view (an enhancement, off by default).
 void tg_game_set_full_view(TgGame* game, bool on);
 // Full view and side by side draw the road 1.3 times taller, with the horizon low as in the

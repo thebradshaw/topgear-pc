@@ -137,13 +137,6 @@ void tg_game_dump_ppu(TgGame* game, const char* path) {
   fclose(f);
 }
 
-void tg_game_set_smooth_sprites(TgGame* game, bool on) {
-  extern PpuObjScale tg_port_obj_scales[];
-  tg_port_smooth_sprites = on;
-  game->snes->ppu->objScaleTags = on ? tg_port_obj_tags : NULL;
-  game->snes->ppu->objScales = tg_port_obj_scales;
-}
-
 static void updateRedraw(TgGame* game) {
   bool on = tg_port_full_view || tg_port_wide_margin > 0 || tg_port_interp;
   tg_port_race_frame = 0;

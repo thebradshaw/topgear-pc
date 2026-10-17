@@ -36,10 +36,13 @@
 #define ROAD_ROW 31      // the road below this row is drawn f->scale times taller, ending at
                          // the bottom of the screen: 1.3 keeps the horizon low and the road
                          // flat as in the original; 2 (tall road) fills the screen with road
-#define HUD_SPLIT 47     // HUD rows from here on (below the race messages) ...
-#define HUD_MOVE 116     // ... move down this far
-#define HUD_LEFT 64      // widescreen: HUD columns left of this move left ...
+#define SKY_ROWS 40      // the most rows of scenery carried on above the view
+#define HUD_SPLIT 47     // full view: parts of the HUD centred below this row ...
+#define HUD_MOVE 116     // ... move down this far, and so do the race messages
+#define HUD_LEFT 64      // widescreen: parts of the HUD centred left of this move left ...
 #define HUD_RIGHT 160    // ... and from this one on, right
+#define HUD_GAP 6        // HUD pixels this close together are one part (a word, the map)
+#define HUD_PARTS 4096
 
 typedef struct PpuFullView {
   bool got[SCREEN_LINES];
@@ -48,6 +51,16 @@ typedef struct PpuFullView {
   int off;         // the view's first row: 0 for the top view, VIEW_STEP for the bottom one
   float scale;     // how much taller the road is drawn
   float outRoad;   // where ROAD_ROW is on the screen
+  int skyRows;     // how many rows of scenery carry on above the top of the view
+  // Each view's top row from the last frame that had sky there, for when a hill brings
+  // the road up to the top of the view (the full view shows more above it).
+  uint8_t* skyState[2];
+  int skyBg3Row[2];
+  // The HUD's parts, moved: for each screen pixel, the game's pixel (ppu.h hudLine), each
+  // row's BG1 scroll, and how far each HUD sprite moves (by view).
+  int32_t hudSrc[SCREEN_LINES * PPU_LINE_BUF];
+  uint16_t hudH[SCREEN_LINES], hudV[SCREEN_LINES];
+  int16_t objDx[2][128], objDy[2][128];
   uint8_t* lines;  // SCREEN_LINES copies of the line state
   uint8_t* live;
   // VRAM as the top view was drawn: the bottom view's car art goes into the same place
@@ -69,13 +82,7 @@ static size_t stateStart(void) { return offsetof(Ppu, cgram); }
 static size_t stateSize(void) { return offsetof(Ppu, hCount) - offsetof(Ppu, cgram); }
 
 static void loadState(Ppu* ppu, const uint8_t* src) {
-  const uint16_t* tags = ppu->objScaleTags;
-  const PpuObjScale* scales = ppu->objScales;
-  PpuObjBitmap* bitmaps = ppu->objBitmaps;
   memcpy((uint8_t*) ppu + stateStart(), src, stateSize());
-  ppu->objScaleTags = tags;
-  ppu->objScales = scales;
-  ppu->objBitmaps = bitmaps;
 }
 
 static const uint8_t* lineState(PpuFullView* f, int row) {
@@ -130,30 +137,156 @@ int ppu_fullMapRow(Ppu* ppu, int row) {
 
 int ppu_fullViewOff(Ppu* ppu) { return ppu->full ? ppu->full->off : 0; }
 
-// Widescreen HUD: the source column shown at x, or PPU_NO_HUD.
-int ppu_hudSource(Ppu* ppu, int x) {
-  int m = ppu->hudMargin;
-  if(ppu->hudClamp) return x < 0 ? 0 : x > 255 ? 255 : x;
-  if(x + m >= 0 && x + m < HUD_LEFT) return x + m;
-  if(x - m >= HUD_RIGHT && x - m < 256) return x - m;
-  if(x >= HUD_LEFT && x < HUD_RIGHT) return x;
-  return PPU_NO_HUD;
+// The HUD's parts. BG1 pixels close together (HUD_GAP) are one part, and so is a HUD
+// sprite with what it touches, so a word, the map with its dots, or the pit-stop car stays
+// whole. Widescreen moves each part out to the side its middle is on; the full view moves
+// the parts centred low in the view (and the race messages in the middle) to the bottom
+// of the screen, and the map to just above the gear.
+typedef struct HudBox { int16_t x0, x1, y0, y1; } HudBox;
+
+static int hudRoot(int* p, int i) {
+  while(p[i] != i) i = p[i] = p[p[i]];
+  return i;
 }
 
-// How far a HUD sprite at source column x moves.
-int ppu_hudShift(Ppu* ppu, int x) {
-  if(x < HUD_LEFT) return -ppu->hudMargin;
-  if(x >= HUD_RIGHT) return ppu->hudMargin;
-  return 0;
+static void hudJoin(int* p, int a, int b) {
+  a = hudRoot(p, a);
+  b = hudRoot(p, b);
+  if(a != b) p[a] = b;
 }
 
-// A HUD line that is solid all the way across (a border) is carried on to the edges
-// rather than split.
-static void checkHudClamp(Ppu* ppu, int line) {
-  ppu->hudClamp = false;
-  if(!ppu->hudMargin || !ppu->layer[0].mainScreenEnabled) return;
-  for(int x = 0; x < 256; x++) if(!ppu_bgOpaque(ppu, 0, x, line)) return;
-  ppu->hudClamp = true;
+static bool boxesNear(const HudBox* a, const HudBox* b, int gx, int gy) {
+  return a->x0 <= b->x1 + gx && b->x0 <= a->x1 + gx && a->y0 <= b->y1 + gy && b->y0 <= a->y1 + gy;
+}
+
+// Lays out the HUD of the rows first..last (one view): fills f->hudSrc for the screen rows
+// they go to, f->hudH/V for them, and the view's sprite moves. m: how far the sides move
+// out; full: the full view (the rows go to the whole screen).
+static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool full, int view) {
+  static HudBox box[HUD_PARTS + 128];
+  static int parent[HUD_PARTS + 128];
+  static int rowStart[SCREEN_LINES + 1];
+  static uint8_t opaque[SCREEN_LINES][256];
+  static int16_t dx[HUD_PARTS + 128], dy[HUD_PARTS + 128];
+  int n = 0, rows = last - first + 1;
+  int outFirst = full ? 0 : first, outLast = full ? SCREEN_LINES - 1 : last;
+  for(int y = outFirst; y <= outLast; y++) {
+    int32_t* out = f->hudSrc + (size_t) y * PPU_LINE_BUF;
+    for(int x = 0; x < PPU_LINE_BUF; x++) out[x] = -1;
+  }
+  for(int k = 0; k < rows; k++) {
+    int r = first + k;
+    rowStart[k] = n;
+    loadState(ppu, lineState(f, r));
+    f->hudH[r] = ppu->bgLayer[0].hScroll;
+    f->hudV[r] = ppu->bgLayer[0].vScroll;
+    bool on = ppu->layer[0].mainScreenEnabled, all = on;
+    for(int x = 0; x < 256; x++) {
+      opaque[k][x] = on && ppu_bgOpaque(ppu, 0, x, r + 1);
+      all = all && opaque[k][x];
+    }
+    if(all && m != 0 && !full) {
+      // Solid all the way across (a border): carried on to the edges.
+      int32_t* out = f->hudSrc + (size_t) r * PPU_LINE_BUF;
+      for(int x = -m; x < 256 + m; x++) out[PPU_OBJX(x)] = r << 9 | (x < 0 ? 0 : x > 255 ? 255 : x);
+      memset(opaque[k], 0, 256);
+      continue;
+    }
+    for(int x = 0; x < 256;) {
+      if(!opaque[k][x]) { x++; continue; }
+      int x0 = x, x1 = x;
+      while(x < 256 && (opaque[k][x] || x - x1 <= HUD_GAP)) {
+        if(opaque[k][x]) x1 = x;
+        x++;
+      }
+      if(n == HUD_PARTS) break;
+      box[n] = (HudBox) {(int16_t) x0, (int16_t) x1, (int16_t) r, (int16_t) r};
+      parent[n] = n;
+      for(int j = k >= 2 ? rowStart[k - 2] : 0; j < rowStart[k]; j++) if(boxesNear(&box[j], &box[n], HUD_GAP, 2)) hudJoin(parent, j, n);
+      n++;
+    }
+  }
+  rowStart[rows] = n;
+  // HUD sprites, as the view's middle row has them.
+  loadState(ppu, lineState(f, (first + last) / 2));
+  int sprite[128];
+  for(int i = 0; i < 128; i++) {
+    sprite[i] = -1;
+    if(ppu->objGround[i] != PPU_NO_GROUND) continue;
+    int size = ppu_objSize(ppu, i);
+    int oy = ppu->oam[i * 2] >> 8;
+    if(oy >= 224) oy -= 256;
+    int x = ppu->oam[i * 2] & 0xff;
+    if((ppu->highOam[i >> 2] >> ((i & 3) * 2)) & 1) x -= 256;
+    HudBox b = {(int16_t) x, (int16_t) (x + size - 1), (int16_t) (oy - 1), (int16_t) (oy + size - 2)};
+    if(b.y1 < first || b.y0 > last || b.x1 < 0 || b.x0 > 255) continue;
+    int id = n + i;
+    box[id] = b;
+    parent[id] = id;
+    sprite[i] = id;
+    for(int j = 0; j < n; j++) if(boxesNear(&box[j], &b, 1, 1)) hudJoin(parent, j, id);
+    for(int j = 0; j < i; j++) if(sprite[j] >= 0 && boxesNear(&box[sprite[j]], &b, 1, 1)) hudJoin(parent, sprite[j], id);
+  }
+  // Each part's extent, at its root.
+  static HudBox part[HUD_PARTS + 128];
+  static bool isRoot[HUD_PARTS + 128], hasBg[HUD_PARTS + 128];
+  int total = n + 128;
+  for(int i = 0; i < total; i++) isRoot[i] = hasBg[i] = false;
+  for(int i = 0; i < total; i++) {
+    if(i >= n && sprite[i - n] < 0) continue;
+    int p = hudRoot(parent, i);
+    if(i < n) hasBg[p] = true;
+    if(!isRoot[p]) { part[p] = box[i]; isRoot[p] = true; continue; }
+    HudBox* q = &part[p];
+    if(box[i].x0 < q->x0) q->x0 = box[i].x0;
+    if(box[i].x1 > q->x1) q->x1 = box[i].x1;
+    if(box[i].y0 < q->y0) q->y0 = box[i].y0;
+    if(box[i].y1 > q->y1) q->y1 = box[i].y1;
+  }
+  int map = -1, lowLeft = SCREEN_LINES;
+  for(int p = 0; p < total; p++) {
+    if(!isRoot[p]) continue;
+    const HudBox* q = &part[p];
+    int cx = (q->x0 + q->x1) / 2, cy = (q->y0 + q->y1) / 2 - f->off, h = q->y1 - q->y0 + 1;
+    dx[p] = (int16_t) (cx < HUD_LEFT ? -m : cx >= HUD_RIGHT ? m : 0);
+    dy[p] = 0;
+    // Big sprites with no HUD art under them are a picture (the car in the pits): they stay.
+    if(!hasBg[p] && (q->x1 - q->x0 >= 40 || h >= 40)) { dx[p] = 0; continue; }
+    if(!full || h > 60) continue;  // a picture (the pits), not part of the HUD
+    if(q->x1 - q->x0 >= 200 && h <= 8) { dy[p] = 2 * SCREEN_LINES; continue; }  // the view's border: not shown
+    if(cx >= HUD_LEFT && cx < HUD_RIGHT) dy[p] = HUD_MOVE;
+    else if(cy >= HUD_SPLIT) dy[p] = HUD_MOVE;
+    if(cx < HUD_LEFT && dy[p] == 0 && h >= 16 && (map < 0 || h > part[map].y1 - part[map].y0 + 1)) map = p;
+    if(cx < HUD_LEFT && dy[p] == HUD_MOVE && q->y0 - f->off < lowLeft) lowLeft = q->y0 - f->off;
+  }
+  if(map >= 0 && lowLeft < SCREEN_LINES) dy[map] = (int16_t) (lowLeft + HUD_MOVE - 6 - (part[map].y1 - f->off));
+  // The pixels to their new places.
+  for(int k = 0; k < rows; k++) {
+    int r = first + k;
+    for(int j = rowStart[k]; j < rowStart[k + 1]; j++) {
+      int p = hudRoot(parent, j);
+      int y = (full ? r - f->off : r) + dy[p];
+      if(y < 0 || y >= SCREEN_LINES) continue;
+      int32_t* out = f->hudSrc + (size_t) y * PPU_LINE_BUF;
+      for(int x = box[j].x0; x <= box[j].x1; x++) {
+        int ox = x + dx[p];
+        if(opaque[k][x] && ox >= -PPU_WIDE_MAX && ox < 256 + PPU_WIDE_MAX) out[PPU_OBJX(ox)] = r << 9 | x;
+      }
+    }
+  }
+  for(int i = 0; i < 128; i++) {
+    int p = sprite[i] >= 0 ? hudRoot(parent, sprite[i]) : -1;
+    f->objDx[view][i] = p >= 0 ? dx[p] : 0;
+    f->objDy[view][i] = p >= 0 ? dy[p] : 0;
+  }
+}
+
+// The HUD for screen row y, of view 0 (top) or 1.
+static void setHudLine(Ppu* ppu, PpuFullView* f, int y, int view) {
+  ppu->hudLine = f->hudSrc + (size_t) y * PPU_LINE_BUF;
+  ppu->hudRowH = f->hudH;
+  ppu->hudRowV = f->hudV;
+  memcpy(ppu->objHudDx, f->objDx[view], sizeof(ppu->objHudDx));
 }
 
 static void composeLine(Ppu* ppu, PpuFullView* f, int y) {
@@ -178,7 +311,25 @@ static void composeLine(Ppu* ppu, PpuFullView* f, int y) {
   loadState(ppu, lineState(f, use));
   // The road: its row of art and its curve, between the two rows.
   BgLayer* bg3 = &ppu->bgLayer[2];
-  if(road && t > 0) {
+  int view = o != 0;
+  bool crest = !road && sky < o + VIEW_TOP && f->skyState[view] && bg3Row(f, o + VIEW_TOP) != f->skyBg3Row[view];
+  if(crest) {
+    // A hill: the road reaches the top of the view, so above it is sky. The sky row as it
+    // last was, with this frame's sprites.
+    const Ppu* cur = asPpu(lineState(f, use));
+    loadState(ppu, f->skyState[view]);
+    memcpy(ppu->oam, cur->oam, sizeof(ppu->oam));
+    memcpy(ppu->highOam, cur->highOam, sizeof(ppu->highOam));
+    memcpy(ppu->objGround, cur->objGround, sizeof(ppu->objGround));
+    memcpy(ppu->objFlag, cur->objFlag, sizeof(ppu->objFlag));
+    memcpy(ppu->objIdent, cur->objIdent, sizeof(ppu->objIdent));
+    ppu->objSize = cur->objSize;
+    ppu->objTileAdr1 = cur->objTileAdr1;
+    ppu->objTileAdr2 = cur->objTileAdr2;
+    bg3->vScroll = (uint16_t) ((f->skyBg3Row[view] - (y + 1)) & 0x3ff);
+    ppu->layer[1].mainScreenEnabled = false;
+    ppu->layer[1].subScreenEnabled = false;
+  } else if(road && t > 0) {
     const Ppu* pa = asPpu(lineState(f, a));
     const Ppu* pb = asPpu(lineState(f, a + 1));
     int ra = bg3Row(f, a), rb = bg3Row(f, a + 1);
@@ -197,22 +348,12 @@ static void composeLine(Ppu* ppu, PpuFullView* f, int y) {
   // The scenery: the source row, or above the view the rows above it.
   BgLayer* bg2 = &ppu->bgLayer[1];
   int row2 = road ? use : sky;
-  bg2->vScroll = (uint16_t) ((asPpu(lineState(f, use))->bgLayer[1].vScroll + row2 - y) & 0x3ff);
-  if(!road && sky < o + VIEW_TOP) {
+  if(!crest) bg2->vScroll = (uint16_t) ((asPpu(lineState(f, use))->bgLayer[1].vScroll + row2 - y) & 0x3ff);
+  if(!crest && !road && sky < o + VIEW_TOP && o + VIEW_TOP - sky > f->skyRows) {
     ppu->layer[1].mainScreenEnabled = false;
     ppu->layer[1].subScreenEnabled = false;
   }
-  // The HUD.
-  int hud = y < HUD_SPLIT ? y : y >= HUD_SPLIT + HUD_MOVE ? y - HUD_MOVE : -1;
-  if(hud >= 0) {
-    hud += o;
-    const Ppu* ph = asPpu(lineState(f, hud));
-    ppu->bgLayer[0].hScroll = ph->bgLayer[0].hScroll;
-    ppu->bgLayer[0].vScroll = (uint16_t) ((ph->bgLayer[0].vScroll + hud - y) & 0x3ff);
-  } else {
-    ppu->layer[0].mainScreenEnabled = false;
-    ppu->layer[0].subScreenEnabled = false;
-  }
+  setHudLine(ppu, f, y, o != 0);
   // Sprites move with the ground under their object; the HUD's with the HUD.
   for(int i = 0; i < 128; i++) {
     int oy = ppu->oam[i * 2] >> 8;
@@ -222,16 +363,16 @@ static void composeLine(Ppu* ppu, PpuFullView* f, int y) {
       shift = ppu_fullMapRow(ppu, g) - g;
       if(oy >= 224) oy -= 256;  // the part above the top of the view
     } else if(oy < 224) {
-      shift = (oy - o >= HUD_SPLIT ? HUD_MOVE : 0) - o;
+      shift = f->objDy[o != 0][i] - o;
     }
     ppu->objShift[i] = (int16_t) shift;
-    if(shift && !(ppu->objScaleTags && ppu->objTag[i])) {
+    if(shift) {
       int ny = oy + shift;
       ppu->oam[i * 2] = (uint16_t) ((ppu->oam[i * 2] & 0xff) | ((ny < 224 ? ny & 0xff : 0xf0) << 8));
     }
   }
-  checkHudClamp(ppu, y + 1);
   ppu_runLine(ppu, y + 1);
+  ppu->hudLine = NULL;
 }
 
 // The view composed from here on, and its horizon: the first row where the road's rows
@@ -248,6 +389,26 @@ static void setView(Ppu* ppu, PpuFullView* f, int off) {
     }
   }
   f->outHorizon = (int) floorf(f->outRoad + (f->horizon - ROAD_ROW) * f->scale + 0.5f);
+  int view = off != 0;
+  // Sky: a long run of the same road-layer row above the road.
+  if(f->horizon >= VIEW_TOP + 20) {
+    if(f->skyState[view] == NULL) f->skyState[view] = malloc(stateSize());
+    if(f->skyState[view]) {
+      memcpy(f->skyState[view], lineState(f, off + VIEW_TOP), stateSize());
+      f->skyBg3Row[view] = bg3Row(f, off + VIEW_TOP);
+    }
+  }
+  // The scenery (mountains, buildings) that the top of the view cut off carries on above
+  // it, up to its first empty or solid row.
+  f->skyRows = 0;
+  loadState(ppu, lineState(f, off + VIEW_TOP));
+  for(int d = 1; d <= SKY_ROWS; d++) {
+    // Scenery has sky between its shapes: stop at an empty row, or a solid one (not scenery).
+    int count = 0;
+    for(int x = 0; x < 256; x++) count += ppu_bgOpaque(ppu, 1, x, off + VIEW_TOP + 1 - d);
+    if(count == 0 || count == 256) break;
+    f->skyRows = d;
+  }
 }
 
 // Another screen in widescreen: the picture in the middle, black at the sides.
@@ -427,14 +588,10 @@ bool ppu_interpCompose(Ppu* ppu, float t) {
   int16_t dx[128], dy[128];
   blendObjects(f, t, dx, dy);
   for(int y = 0; y < SCREEN_LINES; y++) moveObjects(blendRow(f, y), dx, dy);
-  memcpy(ppu->objInterpX, dx, sizeof(dx));
-  memcpy(ppu->objInterpY, dy, sizeof(dy));
   uint8_t* lines = f->lines;
   f->lines = f->blend;
   composeFrame(ppu, f, f->curFlags, f->curMargin);
   f->lines = lines;
-  memset(ppu->objInterpX, 0, sizeof(ppu->objInterpX));
-  memset(ppu->objInterpY, 0, sizeof(ppu->objInterpY));
   return true;
 }
 
@@ -464,8 +621,9 @@ static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
     ppu->lineRight = (int16_t) (ppu->lineLeft + half);
     ppu->hudMargin = (int16_t) (half / 2 - 128);
     for(int v = 0; v < 2; v++) {
-      setView(ppu, f, v * VIEW_STEP);
       useVram(ppu, f, v == 0);
+      setView(ppu, f, v * VIEW_STEP);
+      layoutHud(ppu, f, v * VIEW_STEP + VIEW_TOP, v * VIEW_STEP + VIEW_LINES - 1, ppu->hudMargin, true, v);
       for(int y = 0; y < SCREEN_LINES; y++) {
         ppu->lineOut = ppu->wideBuffer + (size_t) y * w + v * (w - half);
         composeLine(ppu, f, y);
@@ -481,12 +639,20 @@ static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
     ppu->lineLeft = 0;
     ppu->lineRight = 256;
     ppu->hudMargin = 0;
-    ppu->hudClamp = false;
     ppu->lineOut = NULL;
     loadState(ppu, f->live);
     return;
   }
-  if(full) setView(ppu, f, 0);
+  if(full) {
+    useVram(ppu, f, true);
+    setView(ppu, f, 0);
+    layoutHud(ppu, f, VIEW_TOP, VIEW_LINES - 1, m, true, 0);
+  } else if(m > 0) {
+    useVram(ppu, f, true);
+    layoutHud(ppu, f, 0, VIEW_STEP - 1, m, false, 0);
+    useVram(ppu, f, false);
+    layoutHud(ppu, f, VIEW_STEP, SCREEN_LINES - 1, m, false, 1);
+  }
   ppu->lineLeft = (int16_t) -m;
   ppu->lineRight = (int16_t) (256 + m);
   ppu->hudMargin = (int16_t) m;
@@ -498,15 +664,15 @@ static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
     } else {
       loadState(ppu, lineState(f, y));
       memset(ppu->objShift, 0, sizeof(ppu->objShift));
-      checkHudClamp(ppu, y + 1);
+      if(m > 0) setHudLine(ppu, f, y, y >= VIEW_STEP);
       ppu_runLine(ppu, y + 1);
+      ppu->hudLine = NULL;
     }
   }
   ppu->fullComposing = false;
   ppu->lineLeft = 0;
   ppu->lineRight = 256;
   ppu->hudMargin = 0;
-  ppu->hudClamp = false;
   ppu->lineOut = NULL;
   useVram(ppu, f, false);
   loadState(ppu, f->live);
