@@ -67,6 +67,8 @@ static struct {
   bool recordedFullView;
   bool tallRoad;  // full view with the road twice as tall, filling the screen (F9 again, --tall-road)
   bool recordedTallRoad;
+  bool mapTop;  // full view: the map at the top left instead of above the gear
+  bool speedBottom;  // full view: the speedometer and timer at the bottom right
   bool wide;  // enhancement: races drawn as wide as the window (F10, --wide)
   bool sideBySide;  // enhancement: 2-player widescreen views side by side (F12, --side-by-side)
   bool recordedSideBySide;
@@ -244,7 +246,7 @@ typedef struct {
 static const Setting kSettings[] = {
   {"fullscreen", &app.fullscreen}, {"integer_scale", &app.integerScale}, {"rumble", &app.rumble},
   {"smooth", &app.smooth}, {"full_view", &app.fullView},
-  {"tall_road", &app.tallRoad}, {"wide", &app.wide}, {"side_by_side", &app.sideBySide},
+  {"tall_road", &app.tallRoad}, {"map_top", &app.mapTop}, {"speed_bottom", &app.speedBottom}, {"wide", &app.wide}, {"side_by_side", &app.sideBySide},
   {"ghost", &app.ghost}, {"auto_save", &app.autoSave}, {"high_fps", &app.highFps}, {"tv_colour", &app.tvColour},
 };
 
@@ -527,6 +529,7 @@ static void runFrame(int samples) {
   tg_port_race_frames = app.smooth ? 1 : 3;
   if(app.fullView != tg_port_full_view) tg_game_set_full_view(app.game, app.fullView);
   tg_game_set_tall_road(app.game, app.tallRoad);
+  tg_game_set_hud_layout(app.game, app.mapTop, app.speedBottom);
   int margin = app.replaying ? app.replay.wide : wantedMargin();
   if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
   if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
@@ -621,7 +624,7 @@ static void runFrame(int samples) {
 // gamepad order in one place. The game waits while it is open.
 
 typedef enum {
-  MI_RESUME, MI_ASPECT, MI_FILTER, MI_INTEGER, MI_FULLSCREEN, MI_WIDE, MI_FULLVIEW, MI_SIDE,
+  MI_RESUME, MI_ASPECT, MI_FILTER, MI_INTEGER, MI_FULLSCREEN, MI_WIDE, MI_FULLVIEW, MI_MAPPOS, MI_SPEEDPOS, MI_SIDE,
   MI_COLOUR, MI_SMOOTH, MI_HIGHFPS, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
   MI_KEYS2, MI_PADS, MI_RESET, MI_QUIT, MI_COUNT
 } MenuItem;
@@ -731,6 +734,8 @@ static void menuItemText(int i, char* out, size_t size) {
     case MI_FULLSCREEN: snprintf(out, size, "Fullscreen         %s", onOff(app.fullscreen)); break;
     case MI_WIDE: snprintf(out, size, "Widescreen         %s", onOff(app.wide)); break;
     case MI_FULLVIEW: snprintf(out, size, "Full-screen view   %s", !app.fullView ? "off" : app.tallRoad ? "on, tall road" : "on"); break;
+    case MI_MAPPOS: snprintf(out, size, "  Map              %s", app.mapTop ? "top" : "bottom"); break;
+    case MI_SPEEDPOS: snprintf(out, size, "  Speed and time   %s", app.speedBottom ? "bottom" : "top"); break;
     case MI_SIDE: snprintf(out, size, "2P side by side    %s", onOff(app.sideBySide)); break;
     case MI_SMOOTH: snprintf(out, size, "Smooth motion      %s", onOff(app.smooth)); break;
     case MI_HIGHFPS: snprintf(out, size, "High frame rate    %s", onOff(app.highFps)); break;
@@ -770,6 +775,8 @@ static void menuActivate(int dir) {
     case MI_FULLSCREEN: setFullscreen(!app.fullscreen); break;
     case MI_WIDE: if(!locked) setWide(!app.wide); break;
     case MI_FULLVIEW: if(!locked) stepFullView(); break;
+    case MI_MAPPOS: app.mapTop = !app.mapTop; saveSettings(); break;
+    case MI_SPEEDPOS: app.speedBottom = !app.speedBottom; saveSettings(); break;
     case MI_SIDE: if(!locked) { app.sideBySide = !app.sideBySide; updateTitle(); } break;
     case MI_SMOOTH: if(!locked) setSmooth(!app.smooth); break;
     case MI_HIGHFPS: setHighFps(!app.highFps); break;
@@ -923,6 +930,8 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--smooth-scaling") == 0) {}  // removed; still accepted
     else if(strcmp(argv[i], "--full-view") == 0) app.fullView = true;
     else if(strcmp(argv[i], "--tall-road") == 0) app.tallRoad = true;
+    else if(strcmp(argv[i], "--map-top") == 0) app.mapTop = true;
+    else if(strcmp(argv[i], "--speed-bottom") == 0) app.speedBottom = true;
     else if(strcmp(argv[i], "--wide") == 0) app.wide = true;
     else if(strcmp(argv[i], "--side-by-side") == 0) app.sideBySide = true;
     else if(strcmp(argv[i], "--ghost") == 0) app.ghost = true;

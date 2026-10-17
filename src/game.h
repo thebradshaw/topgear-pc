@@ -62,6 +62,9 @@ void tg_game_set_full_view(TgGame* game, bool on);
 // Full view and side by side draw the road 1.3 times taller, with the horizon low as in the
 // original; tall road draws it twice as tall, filling the screen.
 void tg_game_set_tall_road(TgGame* game, bool on);
+// Full view: the map at the top left (else just above the gear), and the speedometer and
+// timer at the bottom right under the position and fuel gauge (else at the top right).
+void tg_game_set_hud_layout(TgGame* game, bool mapTop, bool speedBottom);
 // High frame rate: keeps what is needed to draw in-between race frames; tg_game_interp
 // then redraws the picture (pixels or wide pixels) t (0-1) of the way from the frame
 // before the last to the last. False (picture unchanged) outside races.

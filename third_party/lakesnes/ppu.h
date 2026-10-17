@@ -160,6 +160,8 @@ struct Ppu {
   bool fullComposing;
   bool fullSkipDraw;   // the last race frame was redrawn: this one's lines need not be drawn as they come
   int16_t objShift[128];      // while composing: how far each entry moves down
+  bool hudMapTop;              // full view: the map stays at the top left
+  bool hudSpeedBottom;         // full view: the speedometer and timer go to the bottom right
   float roadScale;            // full view: how much taller the road is drawn (0: 1.3, horizon low as in the original)
   int wideMargin;             // widescreen: extra pixels on each side (0: off)
   uint32_t* wideBuffer;       // the wide picture, XRGB, (256 + 2 * wideMargin) x 224

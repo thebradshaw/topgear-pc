@@ -36,6 +36,7 @@
 #define ROAD_ROW 31      // the road below this row is drawn f->scale times taller, ending at
                          // the bottom of the screen: 1.3 keeps the horizon low and the road
                          // flat as in the original; 2 (tall road) fills the screen with road
+#define HILL_ROWS 24     // the gap above the view closes as the horizon climbs this far
 #define SKY_ROWS 40      // the most rows of scenery carried on above the view
 #define HUD_SPLIT 47     // full view: parts of the HUD centred below this row ...
 #define HUD_MOVE 116     // ... move down this far, and so do the race messages
@@ -56,6 +57,8 @@ typedef struct PpuFullView {
   // the road up to the top of the view (the full view shows more above it).
   uint8_t* skyState[2];
   int skyBg3Row[2];
+  float hillGap[2];  // how open the gap above each view is (0-1), last frame
+  bool interpolating;
   // The HUD's parts, moved: for each screen pixel, the game's pixel (ppu.h hudLine), each
   // row's BG1 scroll, and how far each HUD sprite moves (by view).
   int32_t hudSrc[SCREEN_LINES * PPU_LINE_BUF];
@@ -241,7 +244,46 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
   // HUD sprites, as the view's middle row has them.
   loadState(ppu, lineState(f, (first + last) / 2));
   if(m != 0) leftOrRight(ppu, f, first, last);
+  // A big picture made of sprites (the car in the pits) is kept apart from the HUD it
+  // passes over, or the map and speedometer would move with it and it with them.
   int sprite[128];
+  static HudBox sbox[128];
+  int sp[128];
+  bool sOn[128];
+  for(int i = 0; i < 128; i++) {
+    sp[i] = i;
+    sOn[i] = false;
+    if(ppu->objGround[i] != PPU_NO_GROUND) continue;
+    int size = ppu_objSize(ppu, i);
+    int oy = ppu->oam[i * 2] >> 8;
+    if(oy >= 224) oy -= 256;
+    int x = ppu->oam[i * 2] & 0xff;
+    if((ppu->highOam[i >> 2] >> ((i & 3) * 2)) & 1) x -= 256;
+    sbox[i] = (HudBox) {(int16_t) x, (int16_t) (x + size - 1), (int16_t) (oy - 1), (int16_t) (oy + size - 2)};
+    if(sbox[i].y1 < first || sbox[i].y0 > last || sbox[i].x1 < -64 || sbox[i].x0 > 255) continue;
+    sOn[i] = true;
+    for(int j = 0; j < i; j++) if(sOn[j] && boxesNear(&sbox[j], &sbox[i], 1, 1)) hudJoin(sp, j, i);
+  }
+  bool bigSprite[128];
+  {
+    HudBox ext[128];
+    bool got[128] = {false};
+    for(int i = 0; i < 128; i++) {
+      if(!sOn[i]) continue;
+      int r = hudRoot(sp, i);
+      if(!got[r]) { ext[r] = sbox[i]; got[r] = true; continue; }
+      if(sbox[i].x0 < ext[r].x0) ext[r].x0 = sbox[i].x0;
+      if(sbox[i].x1 > ext[r].x1) ext[r].x1 = sbox[i].x1;
+      if(sbox[i].y0 < ext[r].y0) ext[r].y0 = sbox[i].y0;
+      if(sbox[i].y1 > ext[r].y1) ext[r].y1 = sbox[i].y1;
+    }
+    for(int i = 0; i < 128; i++) {
+      bigSprite[i] = false;
+      if(!sOn[i]) continue;
+      const HudBox* e = &ext[hudRoot(sp, i)];
+      bigSprite[i] = e->x1 - e->x0 >= 32 && e->y1 - e->y0 >= 32;
+    }
+  }
   for(int i = 0; i < 128; i++) {
     sprite[i] = -1;
     if(ppu->objGround[i] != PPU_NO_GROUND) continue;
@@ -256,8 +298,8 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
     box[id] = b;
     parent[id] = id;
     sprite[i] = id;
-    for(int j = 0; j < n; j++) if(boxesNear(&box[j], &b, 1, 1)) hudJoin(parent, j, id);
-    for(int j = 0; j < i; j++) if(sprite[j] >= 0 && boxesNear(&box[sprite[j]], &b, 1, 1)) hudJoin(parent, sprite[j], id);
+    if(!bigSprite[i]) for(int j = 0; j < n; j++) if(boxesNear(&box[j], &b, 1, 1)) hudJoin(parent, j, id);
+    for(int j = 0; j < i; j++) if(sprite[j] >= 0 && bigSprite[j] == bigSprite[i] && boxesNear(&box[sprite[j]], &b, 1, 1)) hudJoin(parent, sprite[j], id);
   }
   // Each part's extent, at its root.
   static HudBox part[HUD_PARTS + 128];
@@ -295,7 +337,28 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
     if(cx < HUD_LEFT && dy[p] == 0 && h >= 16 && (map < 0 || h > part[map].y1 - part[map].y0 + 1)) map = p;
     if(cx < HUD_LEFT && dy[p] == HUD_MOVE && q->y0 - f->off < lowLeft) lowLeft = q->y0 - f->off;
   }
-  if(map >= 0 && lowLeft < SCREEN_LINES) dy[map] = (int16_t) (lowLeft + HUD_MOVE - 6 - (part[map].y1 - f->off));
+  if(map >= 0 && lowLeft < SCREEN_LINES && !ppu->hudMapTop) dy[map] = (int16_t) (lowLeft + HUD_MOVE - 6 - (part[map].y1 - f->off));
+  if(full && ppu->hudSpeedBottom) {
+    // The speedometer and timer (the right's top parts) go to the bottom right; the
+    // position and fuel gauge move up to make room for them.
+    int t0 = SCREEN_LINES, t1 = -1, b1 = -1;
+    for(int p = 0; p < total; p++) {
+      if(!isRoot[p] || dx[p] <= 0 && (part[p].x0 + part[p].x1) / 2 < HUD_RIGHT) continue;
+      if(part[p].y1 - part[p].y0 + 1 > 60 || dy[p] > SCREEN_LINES) continue;
+      int y0 = part[p].y0 - f->off, y1 = part[p].y1 - f->off;
+      if(dy[p] == 0) { if(y0 < t0) t0 = y0; if(y1 > t1) t1 = y1; }
+      else if(y1 + dy[p] > b1) b1 = y1 + dy[p];
+    }
+    if(t1 >= 0 && b1 >= 0) {
+      int h = t1 - t0 + 1;
+      for(int p = 0; p < total; p++) {
+        if(!isRoot[p] || dx[p] <= 0 && (part[p].x0 + part[p].x1) / 2 < HUD_RIGHT) continue;
+        if(part[p].y1 - part[p].y0 + 1 > 60 || dy[p] > SCREEN_LINES) continue;
+        if(dy[p] == 0) dy[p] = (int16_t) (b1 - t1);
+        else dy[p] = (int16_t) (dy[p] - h - 2);
+      }
+    }
+  }
   // The pixels to their new places.
   for(int k = 0; k < rows; k++) {
     int r = first + k;
@@ -436,25 +499,31 @@ static void setView(Ppu* ppu, PpuFullView* f, int off) {
   // Over a hill the road can reach the top of the view: those top rows are road too.
   if(f->skyState[view] && bg3Row(f, off + VIEW_TOP) != f->skyBg3Row[view]) f->horizon = VIEW_TOP;
   // Above the horizon the sky and scenery keep their size. On level ground that leaves a gap
-  // above the view's top row, filled with more sky; as the road climbs towards the top of
-  // the view the gap closes and the road is drawn taller, so nothing has to be made up
-  // above a hill.
-  if(f->horizon < ROAD_ROW) {
+  // above the view's top row, filled with more sky and scenery; as the horizon climbs (up
+  // or down a hill) the gap closes and the road is drawn taller, so nothing has to be made
+  // up: by HILL_ROWS above its level place, the top of the view is the top of the screen.
+  // The gap opens again slowly, so a bump in the road doesn't flash the sky.
+  float t = (float) (f->horizon - (ROAD_ROW - HILL_ROWS)) / HILL_ROWS;
+  if(t < 0) t = 0;
+  if(t > 1) t = 1;
+  if(t > f->hillGap[view] + 0.04f) t = f->hillGap[view] + 0.04f;
+  if(!f->interpolating) f->hillGap[view] = t;
+  if(t < 1) {
     float gap = f->outRoad - (ROAD_ROW - VIEW_TOP);  // on level ground
-    float top = gap * (f->horizon - VIEW_TOP) / (ROAD_ROW - VIEW_TOP) + (f->horizon - VIEW_TOP);
+    float top = gap * t + (f->horizon - VIEW_TOP);
     f->scale = (SCREEN_LINES - 1 - top) / (VIEW_LINES - 1 - f->horizon);
     f->outRoad = SCREEN_LINES - 1 - (VIEW_LINES - 1 - ROAD_ROW) * f->scale;
   }
   f->outHorizon = (int) floorf(f->outRoad + (f->horizon - ROAD_ROW) * f->scale + 0.5f);
   // The scenery (mountains, buildings) that the top of the view cut off carries on above
-  // it, up to its first empty or solid row.
+  // it, up to its first empty row.
   f->skyRows = 0;
   loadState(ppu, lineState(f, off + VIEW_TOP));
   for(int d = 1; d <= SKY_ROWS; d++) {
-    // Scenery has sky between its shapes: stop at an empty row, or a solid one (not scenery).
+    // Scenery has sky between its shapes: stop at an empty row.
     int count = 0;
     for(int x = 0; x < 256; x++) count += ppu_bgOpaque(ppu, 1, x, off + VIEW_TOP + 1 - d);
-    if(count == 0 || count == 256) break;
+    if(count == 0) break;
     f->skyRows = d;
   }
 }
@@ -638,7 +707,9 @@ bool ppu_interpCompose(Ppu* ppu, float t) {
   for(int y = 0; y < SCREEN_LINES; y++) moveObjects(blendRow(f, y), dx, dy);
   uint8_t* lines = f->lines;
   f->lines = f->blend;
+  f->interpolating = true;
   composeFrame(ppu, f, f->curFlags, f->curMargin);
+  f->interpolating = false;
   f->lines = lines;
   return true;
 }

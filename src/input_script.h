@@ -14,11 +14,13 @@
 // the full-screen 1-player view; "<frame> wide <margin>" sets widescreen's extra pixels on
 // each side (0 for off), "<frame> sidebyside on|off" the side-by-side 2-player views, and "<frame> ghost on|off"
 // the ghost car, and "<frame> tallroad on|off" the full view's road drawn twice as tall;
+// "<frame> maptop on|off" keeps the full view's map at the top, "<frame> speedbottom on|off"
+// puts its speedometer and timer at the bottom right;
 // "<frame> unlock A B C" opens countries up to A, B and C at the three skill levels (auto-save).
 
 typedef struct {
   uint32_t frame;
-  uint8_t player;  // 0 means reset, 3 smooth motion, 4 smooth scaling (removed, ignored), 5 full view, 6 widescreen (buttons: the margin), 7 side by side, 8 ghost, 9 tall road (buttons 1 on, 0 off), 10 unlock (buttons: the countries open at each skill level, 4 bits each)
+  uint8_t player;  // 0 means reset, 3 smooth motion, 4 smooth scaling (removed, ignored), 5 full view, 6 widescreen (buttons: the margin), 7 side by side, 8 ghost, 9 tall road (buttons 1 on, 0 off), 10 unlock (buttons: the countries open at each skill level, 4 bits each), 11 map at the top, 12 speedometer at the bottom
   uint16_t buttons;
 } TgInputEvent;
 
@@ -34,6 +36,8 @@ typedef struct {
   bool sideBySide;  // the side-by-side 2-player option
   bool ghost;  // the ghost car option
   bool tallRoad;  // full view: the road drawn twice as tall
+  bool mapTop;  // full view: the map stays at the top left
+  bool speedBottom;  // full view: the speedometer and timer go to the bottom right
   bool unlockPending;  // auto-save: countries to open before the next frame
   uint16_t unlock;
 } TgInputScript;

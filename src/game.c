@@ -166,6 +166,10 @@ void tg_game_set_interp(TgGame* game, bool on) {
 bool tg_game_interp(TgGame* game, float t) { return ppu_interpCompose(game->snes->ppu, t); }
 
 void tg_game_set_tall_road(TgGame* game, bool on) { game->snes->ppu->roadScale = on ? 2.0f : 0; }
+void tg_game_set_hud_layout(TgGame* game, bool mapTop, bool speedBottom) {
+  game->snes->ppu->hudMapTop = mapTop;
+  game->snes->ppu->hudSpeedBottom = speedBottom;
+}
 
 void tg_game_progress(TgGame* game, uint8_t open[3]) {
   for(int i = 0; i < 3; i++) open[i] = (uint8_t) (game->snes->ram[0x1F0A + i * 2] & 7);

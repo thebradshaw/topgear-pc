@@ -183,6 +183,7 @@ int main(int argc, char** argv) {
     tg_port_race_frames = script.smooth ? 1 : raceFrames;
     if(script.fullview != tg_port_full_view) tg_game_set_full_view(game, script.fullview);
     tg_game_set_tall_road(game, script.tallRoad);
+    tg_game_set_hud_layout(game, script.mapTop, script.speedBottom);
     if(script.wide != tg_port_wide_margin) tg_game_set_wide(game, script.wide);
     if(script.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(game, script.sideBySide);
     if(script.ghost != tg_port_ghost) tg_game_set_ghost(game, script.ghost);

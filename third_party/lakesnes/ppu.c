@@ -84,6 +84,7 @@ Ppu* ppu_init(Snes* snes) {
   ppu->fullSkipDraw = false;
   ppu->fullArmed = 0;
   ppu->roadScale = 0;
+  ppu->hudMapTop = ppu->hudSpeedBottom = false;
   ppu->objIdents = NULL;
   ppu->objAnchorXs = NULL;
   ppu->objAnchorYs = NULL;
