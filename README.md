@@ -2,10 +2,14 @@
 
 A faithful PC port of the 1992 SNES game Top Gear (USA), in progress. The goal is a version that plays exactly like the cartridge first, then optional extras such as widescreen and 120 fps. See [docs/PLAN.md](docs/PLAN.md).
 
-**You need your own ROM.** No game code or assets are in this repository. The game only runs from an unmodified Top Gear (USA) ROM:
+**You need your own ROM.** No ROM data, graphics, sound or music are in this repository or its downloads; the game's code is rewritten in C here and runs only alongside an unmodified Top Gear (USA) ROM:
 
 - 524,288 bytes (a 512-byte copier header is removed automatically)
 - SHA-256 `ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788`
+
+A fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics or Nintendo. Top Gear is a trademark of its owners.
+
+Downloads for Windows are on the [releases page](../../releases).
 
 ## Status
 
@@ -15,7 +19,7 @@ The C races drop the original's slowdown and loading pauses: a race updates ever
 
 ## Playing
 
-Open `topgear-launcher.exe`, choose your ROM, set the options and press Play. The launcher works with a mouse, the keyboard or a gamepad (D-pad to choose, A to change, Start to play), remembers the ROM, and keeps the options in the same `settings.txt` as the game, so the options menu (Tab) in the game still changes them.
+Open `topgear-launcher.exe`, choose your ROM, set the options and press Start. The launcher works with a mouse, the keyboard or a gamepad (D-pad to choose, A to change, Start to play), remembers the ROM, and keeps the options in the same `settings.txt` as the game, so the options menu (Tab) in the game still changes them.
 
 You can also skip the launcher: put `Top Gear (USA).sfc` next to `topgear.exe`, or drag the ROM onto `topgear.exe`.
 

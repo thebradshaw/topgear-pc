@@ -1,0 +1,34 @@
+name: release
+
+# Push a tag like v0.1.0 to build the Windows download and publish it as a GitHub release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install MinGW
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64 ninja-build
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
+          cmake --build build --target topgear topgear-launcher
+      - name: Package
+        run: |
+          mkdir -p dist/topgear-pc/licenses
+          cp build/topgear.exe build/topgear-launcher.exe README.md dist/topgear-pc/
+          cp third_party/lakesnes/LICENSE* dist/topgear-pc/licenses/ 2>/dev/null || true
+          cd dist && zip -r "../topgear-pc-${GITHUB_REF_NAME}-windows-x64.zip" topgear-pc
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "topgear-pc-${GITHUB_REF_NAME}-windows-x64.zip" \
+            --title "Top Gear PC $GITHUB_REF_NAME" \
+            --notes "Windows build. You need your own Top Gear (USA) SNES ROM: run topgear-launcher.exe and pick it."
