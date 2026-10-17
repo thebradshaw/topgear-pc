@@ -102,6 +102,8 @@ static struct {
   Uint64 heldSince;
   int heldDir;
   Uint64 nextRepeat;
+  SDL_Texture* logo;  // logo.bmp next to the launcher, when there is one
+  SDL_Texture* playWord;  // "PLAY", drawn in the logo's style
 } L;
 
 // --- Settings ------------------------------------------------------------------------
@@ -356,6 +358,69 @@ static float optionY(int i) {
 #define ROMBTN_Y 236.0f
 #define PLAY_Y 592.0f
 
+// The logo, if logo.bmp sits next to the launcher (magenta is see-through). It isn't part
+// of the source code: the game's art stays out of the repository.
+static void loadLogo(void) {
+  char path[2400];
+  const char* base = SDL_GetBasePath();
+  snprintf(path, sizeof(path), "%slogo.bmp", base ? base : "");
+  SDL_Surface* s = SDL_LoadBMP(path);
+  if(s == NULL) return;
+  SDL_SetSurfaceColorKey(s, true, SDL_MapSurfaceRGB(s, 255, 0, 255));
+  L.logo = SDL_CreateTextureFromSurface(L.renderer, s);
+  SDL_DestroySurface(s);
+  if(L.logo) SDL_SetTextureScaleMode(L.logo, SDL_SCALEMODE_LINEAR);
+}
+
+// A word of the 8x8 font as a white texture, for styled drawing.
+static SDL_Texture* wordTexture(const char* word) {
+  int w = (int) strlen(word) * 8;
+  SDL_Texture* tex = SDL_CreateTexture(L.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, 8);
+  if(tex == NULL) return NULL;
+  SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+  SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+  SDL_Texture* old = SDL_GetRenderTarget(L.renderer);
+  SDL_SetRenderTarget(L.renderer, tex);
+  SDL_SetRenderLogicalPresentation(L.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+  SDL_SetRenderDrawColor(L.renderer, 0, 0, 0, 0);
+  SDL_RenderClear(L.renderer);
+  SDL_SetRenderDrawColor(L.renderer, 255, 255, 255, 255);
+  SDL_RenderDebugText(L.renderer, 0, 0, word);
+  SDL_SetRenderTarget(L.renderer, old);
+  SDL_SetRenderLogicalPresentation(L.renderer, VIEW_W, VIEW_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+  return tex;
+}
+
+// One slanted copy of a word texture, coloured top to bottom.
+static void slanted(SDL_Texture* tex, float x, float y, float w, float h, SDL_FColor top, SDL_FColor bottom) {
+  float slant = h * 0.3f;
+  SDL_Vertex v[4] = {
+    {{x + slant, y}, top, {0, 0}}, {{x + w + slant, y}, top, {1, 0}},
+    {{x + w, y + h}, bottom, {1, 1}}, {{x, y + h}, bottom, {0, 1}},
+  };
+  int idx[6] = {0, 1, 2, 0, 2, 3};
+  SDL_RenderGeometry(L.renderer, tex, v, 4, idx, 6);
+}
+
+// A word in the style of the Top Gear logo: leaning forward, an orange-to-gold face,
+// a dark outline and a purple block underneath.
+static void logoWord(SDL_Texture* tex, float cx, float y, float scale, bool lit) {
+  if(tex == NULL) return;
+  float tw, th;
+  SDL_GetTextureSize(tex, &tw, &th);
+  float w = tw * scale, h = th * scale, x = cx - (w + h * 0.3f) / 2;
+  float u = scale / 3;  // outline thickness
+  SDL_FColor block = {0.36f, 0.22f, 0.78f, 1}, blockDark = {0.20f, 0.10f, 0.45f, 1};
+  SDL_FColor line = {0.10f, 0.04f, 0.18f, 1};
+  for(int d = 1; d <= 4; d++) slanted(tex, x + d * u, y + d * u, w, h, block, blockDark);
+  for(int oy = -1; oy <= 1; oy++)
+    for(int ox = -1; ox <= 1; ox++)
+      if(ox || oy) slanted(tex, x + ox * u, y + oy * u, w, h, line, line);
+  SDL_FColor top = lit ? (SDL_FColor) {1, 0.86f, 0.30f, 1} : (SDL_FColor) {0.55f, 0.55f, 0.62f, 1};
+  SDL_FColor bottom = lit ? (SDL_FColor) {0.93f, 0.33f, 0.20f, 1} : (SDL_FColor) {0.35f, 0.36f, 0.44f, 1};
+  slanted(tex, x, y, w, h, top, bottom);
+}
+
 static void drawRoad(Uint64 t) {
   // A little road running to the horizon in the header, its stripes scrolling like a race.
   const float cx = 700, top = 30, rows = 56;
@@ -377,7 +442,14 @@ static void draw(void) {
   SDL_RenderClear(L.renderer);
   // Header
   for(int y = 0; y < 86; y++) fill(0, (float) y, VIEW_W, 1, (Rgb) {(Uint8) (20 + y / 4), (Uint8) (22 + y / 6), (Uint8) (36 + y / 3)}, 255);
-  text(LEFT_X, 22, 5, kAccent, "TOP GEAR");
+  if(L.logo) {
+    float lw, lh;
+    SDL_GetTextureSize(L.logo, &lw, &lh);
+    SDL_FRect r = {LEFT_X - 8, 5, 78 * lw / lh, 78};
+    SDL_RenderTexture(L.renderer, L.logo, NULL, &r);
+  } else {
+    text(LEFT_X, 22, 5, kAccent, "TOP GEAR");
+  }
   text(VIEW_W - 40 - textWidth("PC LAUNCHER", 2), 34, 2, kDim, "PC LAUNCHER");
   drawRoad(t);
   fill(0, 86, VIEW_W, 2, kAccent, 255);
@@ -417,19 +489,18 @@ static void draw(void) {
       "Starts the game with these options. Tab (or the gamepad's guide button) opens the options menu while you play.");
   }
 
-  // Play
+  // Play: a dark button with a thin orange edge, the word in the logo's style
   {
     bool f = L.focus == F_PLAY;
     float pulse = f ? 0.5f + 0.5f * SDL_sinf((float) t / 260.0f) : 0;
-    Rgb c = L.romOk ? kAccent : kPanelHi;
-    if(f && L.romOk) c = (Rgb) {255, (Uint8) (92 + 60 * pulse), (Uint8) (56 + 20 * pulse)};
-    panel(LEFT_X, PLAY_Y, LEFT_W, 80, c, 255);
-    if(f) {
-      color(kText, 255);
-      SDL_FRect r = {LEFT_X - 3, PLAY_Y - 3, LEFT_W + 6, 86};
+    panel(LEFT_X, PLAY_Y, LEFT_W, 80, f ? kPanelHi : kPanel, 255);
+    Rgb edge = !L.romOk ? kFaint : f ? (Rgb) {255, (Uint8) (120 + 76 * pulse), 64} : kAccent;
+    color(edge, 255);
+    for(int k = 0; k < (f ? 3 : 2); k++) {
+      SDL_FRect r = {LEFT_X + k, PLAY_Y + k, LEFT_W - 2 * k, 80 - 2.0f * k};
       SDL_RenderRect(L.renderer, &r);
     }
-    text(LEFT_X + (LEFT_W - textWidth("PLAY", 6)) / 2, PLAY_Y + 16, 6, L.romOk ? kText : kDim, "PLAY");
+    logoWord(L.playWord, LEFT_X + LEFT_W / 2, PLAY_Y + 14, 6, L.romOk);
   }
 
   // Options list (scrolls to keep the focused row in view)
@@ -562,6 +633,8 @@ int main(int argc, char** argv) {
   SDL_SetRenderVSync(L.renderer, 1);
   SDL_SetRenderLogicalPresentation(L.renderer, VIEW_W, VIEW_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
   SDL_SetRenderDrawBlendMode(L.renderer, SDL_BLENDMODE_BLEND);
+  loadLogo();
+  L.playWord = wordTexture("PLAY");
 
   // For checking the layout without a display: SDL_VIDEO_DRIVER=offscreen
   // TG_LAUNCHER_SHOT=out.bmp [TG_LAUNCHER_FOCUS=n] saves a picture and quits.
