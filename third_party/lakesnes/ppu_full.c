@@ -526,7 +526,25 @@ void ppu_fullCompose(Ppu* ppu) {
   bool all = f != NULL && (flags & PPU_RACE_FRAME);
   int need = (flags & PPU_FULL_VIEW) && m == 0 ? VIEW_LINES : SCREEN_LINES;
   for(int i = 0; all && i < need; i++) all = f->got[i];
-  if(f != NULL) memset(f->got, 0, sizeof(f->got));
+  bool got[SCREEN_LINES] = {false};
+  if(f != NULL) {
+    memcpy(got, f->got, sizeof(got));
+    memset(f->got, 0, sizeof(f->got));
+  }
+  if(!all && ppu->fullSkipDraw && f != NULL && (flags & PPU_RACE_FRAME)) {
+    // This frame's lines were left undrawn, but it can't be redrawn: draw the lines that
+    // were kept as they were.
+    memcpy(f->live, (uint8_t*) ppu + stateStart(), stateSize());
+    ppu->fullComposing = true;
+    for(int y = 0; y < SCREEN_LINES; y++) {
+      if(!got[y]) continue;
+      loadState(ppu, lineState(f, y));
+      ppu_runLine(ppu, y + 1);
+    }
+    ppu->fullComposing = false;
+    loadState(ppu, f->live);
+  }
+  ppu->fullSkipDraw = all;
   if(!all) {
     if(f != NULL) f->haveCur = f->havePrev = false;
     if(m > 0) pillarbox(ppu);

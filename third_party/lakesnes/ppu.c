@@ -84,6 +84,7 @@ Ppu* ppu_init(Snes* snes) {
   ppu->raceFrame = NULL;
   ppu->full = NULL;
   ppu->fullComposing = false;
+  ppu->fullSkipDraw = false;
   ppu->fullArmed = 0;
   ppu->roadScale = 0;
   ppu->objIdents = NULL;
@@ -309,8 +310,11 @@ void ppu_runLine(Ppu* ppu, int line) {
   if(!ppu->forcedBlank) ppu_evaluateSprites(ppu, line - 1);
   // actual line
   if(ppu->mode == 7) ppu_calculateMode7Starts(ppu, line);
-  for(int x = ppu->lineLeft; x < ppu->lineRight; x++) {
-    ppu_handlePixel(ppu, x, line);
+  // Top Gear port: a race frame that will be redrawn at vblank needn't be drawn now.
+  if(!(ppu->fullArmed && ppu->fullSkipDraw && !ppu->fullComposing)) {
+    for(int x = ppu->lineLeft; x < ppu->lineRight; x++) {
+      ppu_handlePixel(ppu, x, line);
+    }
   }
   if(ppu->fullArmed && !ppu->fullComposing) ppu_fullCapture(ppu, line);
 }
@@ -689,7 +693,7 @@ void ppu_tagLine(Ppu* ppu, uint8_t bank, uint16_t adr) {
 static int ppu_spriteX(Ppu* ppu, uint8_t index) {
   int x = ppu->oam[index] & 0xff;
   x |= ((ppu->highOam[index >> 3] >> (index & 7)) & 1) << 8;
-  if(x >= (ppu->lineRight > 256 ? ppu->lineRight : 256)) x -= 512;
+  if(x >= (ppu->lineRight > 256 && !(ppu->objFlag[index >> 1] & PPU_OBJ_LEFT) ? ppu->lineRight : 256)) x -= 512;
   if(ppu->hudMargin && ppu->objGround[index >> 1] == PPU_NO_GROUND) x += ppu_hudShift(ppu, x);
   return x;
 }
@@ -716,7 +720,7 @@ static void ppu_evaluateSprites(Ppu* ppu, int line) {
         if(++spritesFound > maxSprites) { ppu->rangeOver = true; spritesFound = maxSprites; break; }
         foundSprites[spritesFound - 1] = index;
       }
-    } else if(row < spriteHeight) {
+    } else if(row < spriteHeight && !(wide && (ppu->objFlag[index >> 1] & PPU_OBJ_BLANK))) {
       // in y-range, get the x location, using the high bit as well
       int x = ppu_spriteX(ppu, index);
       // if in x-range, record

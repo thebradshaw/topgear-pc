@@ -175,10 +175,11 @@ static bool add_sprite(TgRegs* r, const Variant* v) {
     }
   }
   mark_ground(r, v, y0, (int16_t) (int16_t) (ram16(0x1B8A) + v->y_add));
-  if(g_ghost) {
-    uint16_t base = oam_base(r, v);
-    for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) tg_port_obj_flags[(uint16_t) (base + y) & 0x1FFF] = PPU_OBJ_GHOST;
-  }
+  // An object left of centre: its parts past x = 255 are off the left edge, not on the
+  // right of a wide screen (OAM keeps only 9 bits of x).
+  uint8_t flags = (uint8_t) ((g_ghost ? PPU_OBJ_GHOST : 0) | (sx < 128 ? PPU_OBJ_LEFT : 0));
+  uint16_t base = oam_base(r, v);
+  for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) tg_port_obj_flags[(uint16_t) (base + y) & 0x1FFF] = flags;
   return ok;
 }
 
@@ -432,6 +433,12 @@ static void close_split(TgRegs* r, const SpriteView* w, const Variant* v) {
   }
   ram16_set(0x1B92, y);
   if(tg_port_full_view || tg_port_wide_margin) mark_ground(r, v, y0, (int16_t) (pos >> 8));
+  // They are there to fill that line's sprite limit, just past the right edge; a wide
+  // screen would show them.
+  if(tg_port_wide_margin) {
+    uint16_t base = oam_base(r, v);
+    for(uint16_t k = y0; k < y; k = (uint16_t) (k + 4)) tg_port_obj_flags[(uint16_t) (base + k) & 0x1FFF] = PPU_OBJ_BLANK;
+  }
   uint16_t hy = ram16(0x1B94), slot = ram16(0x1B96);
   uint8_t a = oam_read(r, v, hy);
   for(uint16_t k = slot; k != 4; k++) a |= (uint8_t) (abs8(r, (uint16_t) (0xADF1 + k)) | abs8(r, (uint16_t) (0xADED + k)));

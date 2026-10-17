@@ -102,7 +102,7 @@ struct Ppu {
   const PpuObjScale* objScales;
   uint16_t objTag[128];
   int16_t objGround[128];  // Top Gear port: the line each entry's object stands on, or PPU_NO_GROUND
-  uint8_t objFlag[128];    // Top Gear port: PPU_OBJ_GHOST: drawn see-through
+  uint8_t objFlag[128];    // Top Gear port: PPU_OBJ_GHOST: drawn see-through; PPU_OBJ_LEFT
   // Top Gear port, high frame rate: which object each entry belongs to (0: none) and that
   // object's position, so in-between frames can move it; and the line's road depth (track
   // units x 8 ahead of the camera, PPU_NO_DEPTH off the road) and camera position.
@@ -189,6 +189,7 @@ struct Ppu {
   struct PpuFullView* full;
   uint8_t fullArmed;   // this frame's flags, latched at the last vblank
   bool fullComposing;
+  bool fullSkipDraw;   // the last race frame was redrawn: this one's lines need not be drawn as they come
   int16_t objShift[128];      // while composing: how far each entry moves down
   int16_t objInterpX[128], objInterpY[128];  // in-between frames: how far each object moves
   float roadScale;            // full view: how much taller the road is drawn (0: 1.3, horizon low as in the original)
@@ -213,6 +214,8 @@ struct Ppu {
 #define PPU_NO_DEPTH (-32767)  // a line's scroll entry off the road
 #define PPU_NOT_ENTRY (-32768) // not the start of a scroll entry
 #define PPU_OBJ_GHOST 1
+#define PPU_OBJ_BLANK 4  // an entry the game parks past the right edge to fill a line's sprite limit
+#define PPU_OBJ_LEFT 2   // the entry's object is left of centre: x past 255 wraps to the left
 #define PPU_GHOST_ALPHA 0.45f
 
 enum { ppu_pixelOutputFormatXBGR = 0, ppu_pixelOutputFormatBGRX = 1 };

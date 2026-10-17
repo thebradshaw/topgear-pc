@@ -186,9 +186,13 @@ void tg_game_unlock(TgGame* game, const uint8_t open[3]) {
   }
 }
 
+static void updateFlags(TgGame* game) {
+  game->snes->ppu->objFlags = tg_port_ghost || tg_port_wide_margin > 0 ? tg_port_obj_flags : NULL;
+}
+
 void tg_game_set_ghost(TgGame* game, bool on) {
   tg_port_ghost = on;
-  game->snes->ppu->objFlags = on ? tg_port_obj_flags : NULL;
+  updateFlags(game);
 }
 
 bool tg_game_ghosts_changed(TgGame* game) {
@@ -256,6 +260,7 @@ void tg_game_set_wide(TgGame* game, int margin) {
   if(margin > PPU_WIDE_MAX) margin = PPU_WIDE_MAX;
   tg_port_wide_margin = margin;
   updateRedraw(game);
+  updateFlags(game);
 }
 
 int tg_game_wide_margin(const TgGame* game) {

@@ -1106,7 +1106,9 @@ int main(int argc, char** argv) {
       app.vsync = highFps;
     }
     if(highFps) {
-      if(now >= next) {
+      // Every frame due runs, so the game keeps its pace when pictures take longer than a
+      // frame to draw.
+      for(int k = 0; k < 4 && now >= next; k++) {
         sampleAcc += AUDIO_RATE * FRAME_NS / 1e9;
         int samples = (int) sampleAcc;
         sampleAcc -= samples;
@@ -1119,11 +1121,15 @@ int main(int argc, char** argv) {
       if(tg_game_interp(app.game, (float) t)) uploadPicture();
       present();
     } else if(now >= next) {
-      sampleAcc += AUDIO_RATE * FRAME_NS / 1e9;
-      int samples = (int) sampleAcc;
-      sampleAcc -= samples;
-      runFrame(samples);
-      next += (Uint64) FRAME_NS;
+      // As above: frames that are late run before the next picture.
+      for(int k = 0; k < 4 && now >= next; k++) {
+        sampleAcc += AUDIO_RATE * FRAME_NS / 1e9;
+        int samples = (int) sampleAcc;
+        sampleAcc -= samples;
+        runFrame(samples);
+        next += (Uint64) FRAME_NS;
+        now = SDL_GetTicksNS();
+      }
       present();
     } else {
       SDL_DelayPrecise(next - now);
