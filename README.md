@@ -2,7 +2,7 @@
 
 A faithful PC port of the 1992 SNES game Top Gear (USA), in progress. The goal is a version that plays exactly like the cartridge first, then optional extras such as widescreen and 120 fps. See [docs/PLAN.md](docs/PLAN.md).
 
-**You need your own ROM.** No ROM data, graphics, sound or music are in this repository or its downloads; the game's code is rewritten in C here and runs only alongside an unmodified Top Gear (USA) ROM:
+**You need your own ROM.** The ROM isn't in this repository or its downloads: the game's graphics, sound and music come from your own copy. The game's code is rewritten in C here and runs only alongside an unmodified Top Gear (USA) ROM:
 
 - 524,288 bytes (a 512-byte copier header is removed automatically)
 - SHA-256 `ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788`
