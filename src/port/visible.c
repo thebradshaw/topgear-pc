@@ -105,7 +105,9 @@ static void list_view(TgRegs* r, const View* v, bool first, bool fly_in) {
     uint16_t dist = ahead(ram16(NEXT(x, 0x07)), ram16(RaceViewStart));
     if(dist >= 0x400) break;
     ram16_set((uint16_t) (v->list + y), (uint16_t) (dist + 0x80));
-    tg_port_view_car[v->list == RaceView1Cars ? 0 : 1][y >> 2] = (uint8_t) (x / RaceCarSize);
+    // Which car this is, for high frame rate: its number, which moves with it when
+    // RaceSortCars swaps records as cars overtake (the record's slot doesn't).
+    tg_port_view_car[v->list == RaceView1Cars ? 0 : 1][y >> 2] = (uint8_t) (g_ram[NEXT(x, 0x00)] & 0x1F);
     uint16_t sprite;
     if(x == ram16(v->player_car) && !hidden) {
       sprite = 0x8000;

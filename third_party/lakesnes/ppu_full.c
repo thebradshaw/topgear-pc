@@ -574,6 +574,14 @@ static const Ppu* rowOf(const uint8_t* lines, int row) { return asPpu(lines + (s
 
 static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 static uint16_t lerpScroll(int a, int b, float t) { return (uint16_t) ((a + (int) floorf(wrap10(b - a) * t + 0.5f)) & 0x3ff); }
+// The scenery's sideways scroll between two frames. Its picture repeats every tilemap width
+// (256 or 512 pixels), and the game wraps the scroll there, so it moves the short way round.
+static uint16_t lerpScenery(const BgLayer* p, const BgLayer* c, float t) {
+  int w = c->tilemapWider ? 512 : 256;
+  int d = (c->hScroll - p->hScroll) & (w - 1);
+  if(d >= w / 2) d -= w;
+  return (uint16_t) ((p->hScroll + (int) floorf(d * t + 0.5f)) & 0x3ff);
+}
 
 // In the rows first..last of a frame, the fractional row where the road is depth d ahead
 // (depth grows up the screen), or -1 when no road row is that far. Clamped to the nearest
@@ -613,7 +621,7 @@ static void blendView(PpuFullView* f, int first, int last, float t) {
     const Ppu* c = rowOf(f->cur, y);
     const Ppu* p = rowOf(f->prev, y);
     if(c->lineDepth == PPU_NO_DEPTH) {
-      b->bgLayer[1].hScroll = lerpScroll(p->bgLayer[1].hScroll, c->bgLayer[1].hScroll, t);
+      b->bgLayer[1].hScroll = lerpScenery(&p->bgLayer[1], &c->bgLayer[1], t);
       b->bgLayer[1].vScroll = lerpScroll(p->bgLayer[1].vScroll, c->bgLayer[1].vScroll, t);
       continue;
     }
@@ -654,7 +662,7 @@ static void blendView(PpuFullView* f, int first, int last, float t) {
     b->bgLayer[2].hScroll = (uint16_t) ((int) floorf(lerpf(hp, hc, t) + 0.5f) & 0x3ff);
     // Keep the HUD and the scenery of the row itself.
     b->bgLayer[0] = c->bgLayer[0];
-    b->bgLayer[1].hScroll = lerpScroll(p->bgLayer[1].hScroll, c->bgLayer[1].hScroll, t);
+    b->bgLayer[1].hScroll = lerpScenery(&p->bgLayer[1], &c->bgLayer[1], t);
     b->bgLayer[1].vScroll = c->bgLayer[1].vScroll;
   }
 }
