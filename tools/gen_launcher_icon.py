@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Draws the launcher's icon from the Top Gear box art (not in the repo; pass its path).
 
-Concept: the logo's gauge "O" as a target sight locked on the car's nose, with the box
-art's fire behind. Large sizes show the art; 16-32 pixel sizes are drawn simply (the
-ring, crosshair and fire) so they stay readable.
+The car's nose against the box art's fire, on a rounded tile.
 
 Usage: gen_launcher_icon.py box-art.png out.ico [preview.png]
 """
@@ -82,44 +80,23 @@ def ring_layer(size, cx, cy, r, w, ticks=True, lines=True, line_w=None):
     return layer
 
 
-def fire_background(size, art=None):
-    s = size
-    if art is not None:
-        # The car's nose against the fire, filling the tile.
-        crop = art.crop((268, 238, 740, 562))  # 472x324
-        scale = s / crop.width
-        car = crop.resize((s, int(crop.height * scale)), Image.LANCZOS)
-        bg = Image.new("RGB", (s, s), (0, 0, 0))
-        # the fire above the car: stretch the art's fire strip at the top right
-        top = s - car.height
-        sky = art.crop((560, 200, 800, 300)).resize((s, top + 2), Image.LANCZOS)
-        sky = sky.filter(ImageFilter.GaussianBlur(s * 0.01))
-        # darken towards the top so the ring stands out
-        fade = Image.linear_gradient("L").resize((s, top + 2)).point(lambda v: int(40 + v * 0.75))
-        sky = Image.composite(sky, Image.new("RGB", sky.size, (0, 0, 0)), fade)
-        bg.paste(sky, (0, 0))
-        bg.paste(car, (0, top))
-        return bg
-    # simple: black with a fire glow rising from the bottom
-    bg = Image.new("RGB", (s, s), (8, 6, 10))
-    glow = Image.new("L", (s, s), 0)
-    ImageDraw.Draw(glow).ellipse((-s * 0.3, s * 0.55, s * 1.3, s * 1.6), fill=255)
-    glow = glow.filter(ImageFilter.GaussianBlur(s * 0.12))
-    fire = Image.new("RGB", (s, s), (240, 110, 20))
-    return Image.composite(fire, bg, glow)
+def car_tile(size, art):
+    """The car's nose, a wheel and the fire, cropped square from the box art."""
+    a = art.copy()
+    # the poster's fold creases run down two columns here; fill them from their neighbours
+    px = a.load()
+    for left, right in ((263, 268), (531, 535)):
+        for y in range(a.height):
+            l, r = px[left, y], px[right, y]
+            for x in range(left + 1, right):
+                t = (x - left) / (right - left)
+                px[x, y] = tuple(int(l[i] + (r[i] - l[i]) * t) for i in range(3))
+    return a.crop((220, 200, 600, 580)).resize((size, size), Image.LANCZOS)
 
 
 def make(size, art):
     s = SS
-    detailed = size >= 48
-    bg = fire_background(s, art if detailed else None).convert("RGBA")
-    if detailed:
-        cx, cy, r, w = s * 0.5, s * 0.44, s * 0.27, s * 0.055
-        ring = ring_layer(s, cx, cy, r, w)
-    else:
-        cx, cy, r, w = s * 0.5, s * 0.47, s * 0.33, s * (0.12 if size <= 16 else 0.10)
-        ring = ring_layer(s, cx, cy, r, w, ticks=False, lines=size >= 24, line_w=int(s * 0.035))
-    img = Image.alpha_composite(bg, ring)
+    img = car_tile(s, art).convert("RGBA")
     # thin dark-gold edge
     edge = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     rad = int(s * 0.18)
