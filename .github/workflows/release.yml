@@ -1,8 +1,8 @@
 name: release
 
-# A v* tag (or a release created on GitHub) builds the Linux download and attaches it to
-# that tag's release, creating the release if needed. The Windows zip is attached by hand,
-# since it carries the launcher art, which isn't in the repo.
+# A v* tag builds the Windows and Linux downloads and publishes them as that tag's release.
+# The launcher's logo and icon (box art) aren't in the repo, so these builds show the plain
+# title instead; a Windows zip with the art can be attached to the release by hand.
 on:
   push:
     tags: ['v*']
@@ -16,6 +16,31 @@ permissions:
   contents: write
 
 jobs:
+  windows:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install MinGW
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64 ninja-build
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
+          cmake --build build --target topgear topgear-launcher
+      - name: Package
+        run: |
+          mkdir -p dist/topgear-pc/licenses
+          cp build/topgear.exe build/topgear-launcher.exe README.md dist/topgear-pc/
+          cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
+          cd dist && zip -qr "../topgear-pc-$TAG-windows-x64.zip" topgear-pc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: topgear-pc-*-windows-x64.zip
+
   linux:
     runs-on: ubuntu-22.04  # older glibc, so the build runs on more distributions
     env:
@@ -41,9 +66,25 @@ jobs:
           cp build/topgear build/topgear-launcher README.md dist/topgear-pc/
           cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
           tar -C dist -czf "topgear-pc-$TAG-linux-x64.tar.gz" topgear-pc
-      - name: Attach to the release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: topgear-pc-*-linux-x64.tar.gz
+
+  publish:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Top Gear PC $TAG" --notes "Made by Vibe Slop Studios."
-          gh release upload "$TAG" "topgear-pc-$TAG-linux-x64.tar.gz" --clobber
+          sed "s/TAG/$TAG/g" .github/release-notes.md > notes.md
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Top Gear PC $TAG" --notes-file notes.md
+          gh release upload "$TAG" topgear-pc-*.zip topgear-pc-*.tar.gz --clobber
