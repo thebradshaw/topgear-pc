@@ -522,12 +522,17 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
     st->wrongMode++;
     return false;
   }
+  // TG_EMULATE_WAITING=1 runs the routines that wait emulated in native mode too, and
+  // those whose time their callers rely on, as a reference for tools/shift_compare.py.
+  static int emulate = -1;
+  if(emulate < 0) emulate = getenv("TG_EMULATE_WAITING") != NULL;
+  if((f->flags & TG_TIMED) && emulate && ls->mode == TG_PORT_NATIVE) {
+    st->declined++;
+    ls->skipOnce = adr;
+    return false;
+  }
   if(f->flags & TG_WAITS) {
     // Only one routine can wait at a time, and the per-call check can't follow one.
-    // TG_EMULATE_WAITING=1 runs them emulated in native mode too, as a reference for
-    // tools/shift_compare.py.
-    static int emulate = -1;
-    if(emulate < 0) emulate = getenv("TG_EMULATE_WAITING") != NULL;
     if(ls->mode == TG_PORT_NATIVE && !emulate && ls->fiber == NULL && startFiber(ls, f, cpu)) return true;
     st->declined++;
     ls->skipOnce = adr;

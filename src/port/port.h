@@ -83,12 +83,16 @@ typedef struct TgPortFunc {
   uint8_t dead;      // TG_DEAD_*
   uint16_t bus_noise; // a low-RAM byte the original fills from open bus, where HDMA can leave
                       // a byte mid-instruction; not compared (0: none)
-  uint8_t flags;     // TG_WAITS
+  uint8_t flags;     // TG_WAITS, TG_TIMED
 } TgPortFunc;
 
 // The routine waits for interrupts (tg_port_wait). It runs on its own stack, as a fiber,
 // and only in native mode: the per-call check can't follow a call across frames.
-enum { TG_WAITS = 1 };
+// TG_TIMED: the original code that calls it relies on how long it takes (the menu fade
+// routines: a screen queued for the next NMI goes out before the fade's first step). The C code
+// that calls it allows for that; the reference run of tools/shift_compare.py, where the
+// callers run emulated, runs it emulated too.
+enum { TG_WAITS = 1, TG_TIMED = 2 };
 
 // Inside a routine marked TG_WAITS: lets the machine run until the next interrupt has
 // been handled. Use in place of the original's spin loops, checking the condition after
