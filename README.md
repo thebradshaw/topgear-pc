@@ -15,7 +15,9 @@ The C races drop the original's slowdown and loading pauses: a race updates ever
 
 ## Playing
 
-Put `Top Gear (USA).sfc` next to `topgear.exe`, or drag the ROM onto `topgear.exe`.
+Open `topgear-launcher.exe`, choose your ROM, set the options and press Play. The launcher works with a mouse, the keyboard or a gamepad (D-pad to choose, A to change, Start to play), remembers the ROM, and keeps the options in the same `settings.txt` as the game, so the options menu (Tab) in the game still changes them.
+
+You can also skip the launcher: put `Top Gear (USA).sfc` next to `topgear.exe`, or drag the ROM onto `topgear.exe`.
 
 | Action | Keyboard | Gamepad |
 |---|---|---|

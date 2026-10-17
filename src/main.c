@@ -104,8 +104,9 @@ static bool findRom(const char* romArg, TgRom* rom, char* message, size_t messag
   }
   snprintf(message, messageSize,
     "Top Gear needs your own copy of the game.\n\n"
-    "Put your Top Gear (USA) ROM next to topgear.exe and name it\n"
-    "\"Top Gear (USA).sfc\", or drag the ROM file onto topgear.exe.\n\n"
+    "Open topgear-launcher.exe and choose your Top Gear (USA) ROM,\n"
+    "or put it next to topgear.exe named \"Top Gear (USA).sfc\",\n"
+    "or drag the ROM file onto topgear.exe.\n\n"
     "Expected SHA-256:\n" TG_ROM_SHA256);
   return false;
 }

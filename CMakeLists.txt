@@ -86,8 +86,13 @@ if(TG_BUILD_FRONTEND)
   endif()
   add_executable(topgear WIN32 src/main.c)
   target_link_libraries(topgear PRIVATE tgcore SDL3::SDL3)
+  # The launcher: choose the ROM and the options, then start topgear.exe.
+  add_executable(topgear-launcher WIN32 src/launcher.c src/rom.c src/sha256.c)
+  target_include_directories(topgear-launcher PRIVATE src)
+  target_link_libraries(topgear-launcher PRIVATE SDL3::SDL3)
   if(MINGW)
     target_link_options(topgear PRIVATE -static -static-libgcc)
+    target_link_options(topgear-launcher PRIVATE -static -static-libgcc)
   endif()
 endif()
 
