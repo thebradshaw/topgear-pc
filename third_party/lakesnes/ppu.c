@@ -700,14 +700,11 @@ static int ppu_spriteX(Ppu* ppu, uint8_t index) {
 
 static void ppu_evaluateSprites(Ppu* ppu, int line) {
   // TODO: rectangular sprites, wierdness with sprites at -256
-  // Top Gear port: a wide line has room for more sprites
-  bool wide = ppu->lineRight - ppu->lineLeft > 256;
-  // The game rotates sprite priority every frame so that, past the 32-sprite limit,
-  // different sprites drop out each frame. A wide line has no such limit, so it keeps the
-  // list's own order (nearest first) and far cars never cover near ones.
-  uint8_t index = ppu->objPriority && !wide ? (ppu->oamAdr & 0xfe) : 0;
+  uint8_t index = ppu->objPriority ? (ppu->oamAdr & 0xfe) : 0;
   int spritesFound = 0;
   int tilesFound = 0;
+  // Top Gear port: a wide line has room for more sprites
+  bool wide = ppu->lineRight - ppu->lineLeft > 256;
   int maxSprites = wide ? 128 : 32, maxTiles = wide ? 1024 : 34;
   uint8_t foundSprites[128] = {};
   // iterate over oam to find sprites in range
@@ -733,26 +730,6 @@ static void ppu_evaluateSprites(Ppu* ppu, int line) {
       }
     }
     index += 2;
-  }
-  // Top Gear port: in the enhanced views, nearer objects always cover farther ones. The
-  // game's own list isn't strictly in depth order (at some starting grids bits of far cars
-  // show over near ones, on the console too), so sort by the line each object stands on:
-  // objects without one (the HUD, messages) stay in front, then nearest first.
-  if(wide || ppu->fullComposing) {
-    for(int i = 1; i < spritesFound; i++) {
-      uint8_t e = foundSprites[i];
-      int g = ppu->objGround[e >> 1];
-      int key = g == PPU_NO_GROUND ? 0x7fff : g;
-      int j = i;
-      while(j > 0) {
-        int pg = ppu->objGround[foundSprites[j - 1] >> 1];
-        int pkey = pg == PPU_NO_GROUND ? 0x7fff : pg;
-        if(pkey >= key) break;
-        foundSprites[j] = foundSprites[j - 1];
-        j--;
-      }
-      foundSprites[j] = e;
-    }
   }
   // iterate over found sprites backwards to fetch max 34 tile slivers
   for(int i = spritesFound; i > 0; i--) {
