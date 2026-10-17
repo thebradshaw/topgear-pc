@@ -90,6 +90,13 @@ if(TG_BUILD_FRONTEND)
   add_executable(topgear-launcher WIN32 src/launcher.c src/rom.c src/sha256.c)
   target_include_directories(topgear-launcher PRIVATE src)
   target_link_libraries(topgear-launcher PRIVATE SDL3::SDL3)
+  # The launcher's icon is drawn from the box art, which isn't in the repo: make it with
+  # tools/gen_launcher_icon.py and pass its path here.
+  set(TG_LAUNCHER_ICON "" CACHE FILEPATH "Icon (.ico) for topgear-launcher.exe")
+  if(WIN32 AND TG_LAUNCHER_ICON)
+    file(WRITE ${CMAKE_BINARY_DIR}/launcher_icon.rc "1 ICON \"${TG_LAUNCHER_ICON}\"\n")
+    target_sources(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/launcher_icon.rc)
+  endif()
   if(MINGW)
     target_link_options(topgear PRIVATE -static -static-libgcc)
     target_link_options(topgear-launcher PRIVATE -static -static-libgcc)
