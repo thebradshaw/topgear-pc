@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "launcher_word.h"
 #include "rom.h"
 
 #define VIEW_W 1280
@@ -372,28 +373,8 @@ static void loadLogo(void) {
   if(L.logo) SDL_SetTextureScaleMode(L.logo, SDL_SCALEMODE_LINEAR);
 }
 
-// A word of the 8x8 font as a white texture, for styled drawing.
-static SDL_Texture* wordTexture(const char* word) {
-  int w = (int) strlen(word) * 8;
-  SDL_Texture* tex = SDL_CreateTexture(L.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, 8);
-  if(tex == NULL) return NULL;
-  SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
-  SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
-  SDL_Texture* old = SDL_GetRenderTarget(L.renderer);
-  SDL_SetRenderTarget(L.renderer, tex);
-  SDL_SetRenderLogicalPresentation(L.renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
-  SDL_SetRenderDrawColor(L.renderer, 0, 0, 0, 0);
-  SDL_RenderClear(L.renderer);
-  SDL_SetRenderDrawColor(L.renderer, 255, 255, 255, 255);
-  SDL_RenderDebugText(L.renderer, 0, 0, word);
-  SDL_SetRenderTarget(L.renderer, old);
-  SDL_SetRenderLogicalPresentation(L.renderer, VIEW_W, VIEW_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-  return tex;
-}
-
 // One slanted copy of a word texture, coloured top to bottom.
-static void slanted(SDL_Texture* tex, float x, float y, float w, float h, SDL_FColor top, SDL_FColor bottom) {
-  float slant = h * 0.3f;
+static void slanted(SDL_Texture* tex, float x, float y, float w, float h, float slant, SDL_FColor top, SDL_FColor bottom) {
   SDL_Vertex v[4] = {
     {{x + slant, y}, top, {0, 0}}, {{x + w + slant, y}, top, {1, 0}},
     {{x + w, y + h}, bottom, {1, 1}}, {{x, y + h}, bottom, {0, 1}},
@@ -402,23 +383,43 @@ static void slanted(SDL_Texture* tex, float x, float y, float w, float h, SDL_FC
   SDL_RenderGeometry(L.renderer, tex, v, 4, idx, 6);
 }
 
-// A word in the style of the Top Gear logo: leaning forward, an orange-to-gold face,
-// a dark outline and a purple block underneath.
+// The PLAY word (a smooth italic, see launcher_word.h) as a white texture.
+static SDL_Texture* playTexture(void) {
+  SDL_Surface* s = SDL_CreateSurface(PLAY_WORD_W, PLAY_WORD_H, SDL_PIXELFORMAT_RGBA32);
+  if(s == NULL) return NULL;
+  for(int y = 0; y < PLAY_WORD_H; y++) {
+    Uint8* row = (Uint8*) s->pixels + y * s->pitch;
+    for(int x = 0; x < PLAY_WORD_W; x++) {
+      row[x * 4 + 0] = row[x * 4 + 1] = row[x * 4 + 2] = 255;
+      row[x * 4 + 3] = kPlayWord[y * PLAY_WORD_W + x];
+    }
+  }
+  SDL_Texture* tex = SDL_CreateTextureFromSurface(L.renderer, s);
+  SDL_DestroySurface(s);
+  if(tex) {
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+  }
+  return tex;
+}
+
+// A word in the colours of the Top Gear logo: an orange-to-gold face, a dark outline and
+// a purple block underneath.
 static void logoWord(SDL_Texture* tex, float cx, float y, float scale, bool lit) {
   if(tex == NULL) return;
   float tw, th;
   SDL_GetTextureSize(tex, &tw, &th);
-  float w = tw * scale, h = th * scale, x = cx - (w + h * 0.3f) / 2;
-  float u = scale / 3;  // outline thickness
+  float w = tw * scale, h = th * scale, x = cx - w / 2;
   SDL_FColor block = {0.36f, 0.22f, 0.78f, 1}, blockDark = {0.20f, 0.10f, 0.45f, 1};
   SDL_FColor line = {0.10f, 0.04f, 0.18f, 1};
-  for(int d = 1; d <= 4; d++) slanted(tex, x + d * u, y + d * u, w, h, block, blockDark);
-  for(int oy = -1; oy <= 1; oy++)
-    for(int ox = -1; ox <= 1; ox++)
-      if(ox || oy) slanted(tex, x + ox * u, y + oy * u, w, h, line, line);
+  for(int d = 1; d <= 4; d++) slanted(tex, x + d, y + d, w, h, 0, block, blockDark);
+  for(int k = 0; k < 8; k++) {
+    float a = k * SDL_PI_F / 4;
+    slanted(tex, x + 2 * SDL_cosf(a), y + 2 * SDL_sinf(a), w, h, 0, line, line);
+  }
   SDL_FColor top = lit ? (SDL_FColor) {1, 0.86f, 0.30f, 1} : (SDL_FColor) {0.55f, 0.55f, 0.62f, 1};
   SDL_FColor bottom = lit ? (SDL_FColor) {0.93f, 0.33f, 0.20f, 1} : (SDL_FColor) {0.35f, 0.36f, 0.44f, 1};
-  slanted(tex, x, y, w, h, top, bottom);
+  slanted(tex, x, y, w, h, 0, top, bottom);
 }
 
 static void drawRoad(Uint64 t) {
@@ -500,7 +501,7 @@ static void draw(void) {
       SDL_FRect r = {LEFT_X + k, PLAY_Y + k, LEFT_W - 2 * k, 80 - 2.0f * k};
       SDL_RenderRect(L.renderer, &r);
     }
-    logoWord(L.playWord, LEFT_X + LEFT_W / 2, PLAY_Y + 14, 6, L.romOk);
+    logoWord(L.playWord, LEFT_X + LEFT_W / 2, PLAY_Y + 15, 1, L.romOk);
   }
 
   // Options list (scrolls to keep the focused row in view)
@@ -634,7 +635,7 @@ int main(int argc, char** argv) {
   SDL_SetRenderLogicalPresentation(L.renderer, VIEW_W, VIEW_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
   SDL_SetRenderDrawBlendMode(L.renderer, SDL_BLENDMODE_BLEND);
   loadLogo();
-  L.playWord = wordTexture("PLAY");
+  L.playWord = playTexture();
 
   // For checking the layout without a display: SDL_VIDEO_DRIVER=offscreen
   // TG_LAUNCHER_SHOT=out.bmp [TG_LAUNCHER_FOCUS=n] saves a picture and quits.
