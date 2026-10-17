@@ -424,7 +424,6 @@ static void draw(void) {
   } else {
     text(LEFT_X, 22, 5, kAccent, "TOP GEAR");
   }
-  text(VIEW_W - 40 - textWidth("PC LAUNCHER", 2), 34, 2, kDim, "PC LAUNCHER");
   drawRoad(t);
   fill(0, 86, VIEW_W, 2, kAccent, 255);
 

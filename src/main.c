@@ -465,7 +465,16 @@ static void tvColours(uint32_t* p, size_t n) {
     for(int i = 0; i < 256; i++) lut[i] = (uint8_t) SDL_lroundf(255.0f * SDL_powf(i / 255.0f, 2.5f / 2.2f));
     ready = true;
   }
+  // Neighbouring pixels are usually the same colour (each game pixel is two wide), so the last
+  // answer is kept.
+  uint32_t lastIn = 0, lastOut = 0;
+  bool have = false;
   for(size_t i = 0; i < n; i++) {
+    if(have && p[i] == lastIn) {
+      p[i] = lastOut;
+      continue;
+    }
+    lastIn = p[i];
     int r = lut[(p[i] >> 16) & 0xff], g = lut[(p[i] >> 8) & 0xff], b = lut[p[i] & 0xff];
     int y = (r * 77 + g * 150 + b * 29) >> 8;
     r = y + (r - y) * 11 / 10;
@@ -474,17 +483,26 @@ static void tvColours(uint32_t* p, size_t n) {
     r = r < 0 ? 0 : r > 255 ? 255 : r;
     g = g < 0 ? 0 : g > 255 ? 255 : g;
     b = b < 0 ? 0 : b > 255 ? 255 : b;
-    p[i] = (uint32_t) (r << 16 | g << 8 | b);
+    p[i] = lastOut = (uint32_t) (r << 16 | g << 8 | b);
+    have = true;
   }
 }
 
 static void uploadPicture(void) {
-  void* pixels;
-  int pitch;
-  if(SDL_LockTexture(app.texture, NULL, &pixels, &pitch)) {
-    tg_game_get_pixels(app.game, pixels);
-    if(app.tvColour) tvColours(pixels, (size_t) TG_FB_WIDTH * TG_FB_HEIGHT);
-    SDL_UnlockTexture(app.texture);
+  if(app.tvColour) {
+    // Converted in ordinary memory: reading back from a locked texture can be very slow, as
+    // the driver may hand out memory that's only quick to write.
+    static uint32_t tv[TG_FB_WIDTH * TG_FB_HEIGHT];
+    tg_game_get_pixels(app.game, (uint8_t*) tv);
+    tvColours(tv, SDL_arraysize(tv));
+    SDL_UpdateTexture(app.texture, NULL, tv, TG_FB_WIDTH * 4);
+  } else {
+    void* pixels;
+    int pitch;
+    if(SDL_LockTexture(app.texture, NULL, &pixels, &pitch)) {
+      tg_game_get_pixels(app.game, pixels);
+      SDL_UnlockTexture(app.texture);
+    }
   }
   const uint32_t* wide = tg_game_wide_pixels(app.game);
   static uint32_t wideTv[(SNES_W + 2 * 96) * SNES_H];
