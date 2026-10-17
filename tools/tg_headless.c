@@ -30,7 +30,6 @@
 #include "input_script.h"
 #include "rom.h"
 #include "sha256.h"
-#include "remix/remix.h"
 
 static TgGame* g_game;
 
@@ -88,7 +87,6 @@ int main(int argc, char** argv) {
   const char* frameHashes = NULL;
   const char* ghostsPath = NULL;
   int interpSteps = 0;
-  int remixW = 0, remixH = 0;
   const char* traceOut = NULL;
   long traceFrame = -1;
   long traceCount = 1;
@@ -115,7 +113,6 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--frame-hashes") == 0 && next) frameHashes = argv[++i];
     else if(strcmp(argv[i], "--ghosts") == 0 && next) ghostsPath = argv[++i];
     else if(strcmp(argv[i], "--interp-steps") == 0 && next) interpSteps = (int) strtol(argv[++i], NULL, 10);
-    else if(strcmp(argv[i], "--remix-shots") == 0 && next && sscanf(argv[++i], "%dx%d", &remixW, &remixH) == 2) {}
     else if(strcmp(argv[i], "--race-frames") == 0 && next) tg_port_race_frames = (int) strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-frame") == 0 && next) traceFrame = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-out") == 0 && next) traceOut = argv[++i];
@@ -124,7 +121,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "verify") == 0) { portMode = TG_PORT_VERIFY; i++; }
     else if(strcmp(argv[i], "--port") == 0 && next && strcmp(next, "native") == 0) { portMode = TG_PORT_NATIVE; i++; }
     else {
-      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N] [--ghosts FILE] [--interp-steps K] [--remix-shots WxH]\n", argv[0]);
+      fprintf(stderr, "usage: %s --rom <file> [--frames N] [--input script] [--screenshot out.ppm] [--shots-every N --shots-dir DIR [--shots-from F]] [--expect-wram HEX] [--expect-frame HEX] [--coverage FILE] [--dump-wram FILE] [--trace-frame N [--trace-count K] --trace-out FILE] [--port off|verify|native] [--frame-hashes FILE] [--race-frames N] [--ghosts FILE] [--interp-steps K]\n", argv[0]);
       return 2;
     }
   }
@@ -214,22 +211,6 @@ int main(int argc, char** argv) {
         snprintf(path, sizeof(path), "%s/frame%06ld_%d.ppm", shotsDir, frame + 1, k);
         tg_game_get_pixels(game, pixels);
         writePpm(path, pixels);
-      }
-      if(remixW > 0 && tg_remix_active(tg_game_wram(game))) {
-        // Horizon remix prototype: the same moment drawn in the new style.
-        uint32_t* img = malloc((size_t) remixW * remixH * 4);
-        tg_remix_draw(tg_game_wram(game), img, remixW, remixH, 3);
-        snprintf(path, sizeof(path), "%s/remix%06ld.ppm", shotsDir, frame + 1);
-        FILE* f = fopen(path, "wb");
-        if(f) {
-          fprintf(f, "P6\n%d %d\n255\n", remixW, remixH);
-          for(int k = 0; k < remixW * remixH; k++) {
-            uint8_t rgb[3] = {(uint8_t) (img[k] >> 16), (uint8_t) (img[k] >> 8), (uint8_t) img[k]};
-            fwrite(rgb, 1, 3, f);
-          }
-          fclose(f);
-        }
-        free(img);
       }
     }
   }
