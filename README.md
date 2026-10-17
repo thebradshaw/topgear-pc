@@ -7,9 +7,9 @@ A faithful PC port of the 1992 SNES game Top Gear (USA), in progress. The goal i
 - 524,288 bytes (a 512-byte copier header is removed automatically)
 - SHA-256 `ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788`
 
-A fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics or Nintendo. Top Gear is a trademark of its owners.
+Made by Vibe Slop Studios. A fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics or Nintendo. Top Gear is a trademark of its owners.
 
-Downloads for Windows are on the [releases page](../../releases).
+Downloads for Windows, and an experimental Linux build, are on the [releases page](../../releases). On Linux, run `topgear-launcher` from the unpacked folder.
 
 ## Status
 

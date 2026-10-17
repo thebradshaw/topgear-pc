@@ -1,34 +1,49 @@
 name: release
 
-# Push a tag like v0.1.0 to build the Windows download and publish it as a GitHub release.
+# A v* tag (or a release created on GitHub) builds the Linux download and attaches it to
+# that tag's release, creating the release if needed. The Windows zip is attached by hand,
+# since it carries the launcher art, which isn't in the repo.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach to
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  windows:
-    runs-on: ubuntu-latest
+  linux:
+    runs-on: ubuntu-22.04  # older glibc, so the build runs on more distributions
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
-      - name: Install MinGW
-        run: sudo apt-get update && sudo apt-get install -y mingw-w64 ninja-build
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install SDL's build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libasound2-dev libpulse-dev libpipewire-0.3-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev libgl1-mesa-dev \
+            libgles2-mesa-dev libdrm-dev libgbm-dev libudev-dev libdbus-1-dev
       - name: Build
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build --target topgear topgear-launcher
       - name: Package
         run: |
           mkdir -p dist/topgear-pc/licenses
-          cp build/topgear.exe build/topgear-launcher.exe README.md dist/topgear-pc/
-          cp third_party/lakesnes/LICENSE* dist/topgear-pc/licenses/ 2>/dev/null || true
-          cd dist && zip -r "../topgear-pc-${GITHUB_REF_NAME}-windows-x64.zip" topgear-pc
-      - name: Publish
+          cp build/topgear build/topgear-launcher README.md dist/topgear-pc/
+          cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
+          tar -C dist -czf "topgear-pc-$TAG-linux-x64.tar.gz" topgear-pc
+      - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "topgear-pc-${GITHUB_REF_NAME}-windows-x64.zip" \
-            --title "Top Gear PC $GITHUB_REF_NAME" \
-            --notes "Windows build. You need your own Top Gear (USA) SNES ROM: run topgear-launcher.exe and pick it."
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Top Gear PC $TAG" --notes "Made by Vibe Slop Studios."
+          gh release upload "$TAG" "topgear-pc-$TAG-linux-x64.tar.gz" --clobber
