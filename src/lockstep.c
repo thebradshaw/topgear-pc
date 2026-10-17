@@ -204,8 +204,10 @@ static void capture(TgLockstep* ls, Result* r) {
   memcpy(r->highOam, ppu->highOam, sizeof(r->highOam));
 }
 
-static void addDetail(TgLockstep* ls, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 #include <stdarg.h>
+#ifdef __GNUC__
+static void addDetail(TgLockstep* ls, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+#endif
 static void addDetail(TgLockstep* ls, const char* fmt, ...) {
   char buf[512];
   va_list ap;
