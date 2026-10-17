@@ -244,9 +244,18 @@ static bool launch(void) {
   const char* base = SDL_GetBasePath();
   snprintf(exe, sizeof(exe), "%s%s", base ? base : "", GAME_EXE);
   const char* args[] = {exe, L.romPath, NULL};
-  SDL_Process* p = SDL_CreateProcess(args, false);
+  // No standard input or output: the launcher is a windowed program and has none to pass
+  // on (on Windows, asking to inherit them makes starting the game fail).
+  SDL_PropertiesID props = SDL_CreateProperties();
+  SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, (void*) args);
+  SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, SDL_PROCESS_STDIO_NULL);
+  SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, SDL_PROCESS_STDIO_NULL);
+  SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDERR_NUMBER, SDL_PROCESS_STDIO_NULL);
+  SDL_SetBooleanProperty(props, SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN, true);
+  SDL_Process* p = SDL_CreateProcessWithProperties(props);
+  SDL_DestroyProperties(props);
   if(p == NULL) {
-    snprintf(L.message, sizeof(L.message), "Couldn't start %s: it should be next to the launcher.", GAME_EXE);
+    snprintf(L.message, sizeof(L.message), "Couldn't start %s (%s).", GAME_EXE, SDL_GetError());
     L.messageUntil = SDL_GetTicks() + 6000;
     return false;
   }
@@ -383,15 +392,15 @@ static void slanted(SDL_Texture* tex, float x, float y, float w, float h, float 
   SDL_RenderGeometry(L.renderer, tex, v, 4, idx, 6);
 }
 
-// The PLAY word (a smooth italic, see launcher_word.h) as a white texture.
-static SDL_Texture* playTexture(void) {
-  SDL_Surface* s = SDL_CreateSurface(PLAY_WORD_W, PLAY_WORD_H, SDL_PIXELFORMAT_RGBA32);
+// The Start button's word (see launcher_word.h) as a white texture.
+static SDL_Texture* startTexture(void) {
+  SDL_Surface* s = SDL_CreateSurface(START_WORD_W, START_WORD_H, SDL_PIXELFORMAT_RGBA32);
   if(s == NULL) return NULL;
-  for(int y = 0; y < PLAY_WORD_H; y++) {
+  for(int y = 0; y < START_WORD_H; y++) {
     Uint8* row = (Uint8*) s->pixels + y * s->pitch;
-    for(int x = 0; x < PLAY_WORD_W; x++) {
+    for(int x = 0; x < START_WORD_W; x++) {
       row[x * 4 + 0] = row[x * 4 + 1] = row[x * 4 + 2] = 255;
-      row[x * 4 + 3] = kPlayWord[y * PLAY_WORD_W + x];
+      row[x * 4 + 3] = kStartWord[y * START_WORD_W + x];
     }
   }
   SDL_Texture* tex = SDL_CreateTextureFromSurface(L.renderer, s);
@@ -546,7 +555,7 @@ static void draw(void) {
   } else {
     bool pad = L.pads[0] || L.pads[1] || L.pads[2] || L.pads[3];
     text(LEFT_X, VIEW_H - 24, 2, kFaint, pad ? "D-pad: choose   A: change   Start: play   B: quit"
-                                              : "Arrows: choose   Enter: change   Space: play   Esc: quit");
+                                              : "Arrows: choose   Enter: change   Space: start   Esc: quit");
   }
 }
 
@@ -635,7 +644,7 @@ int main(int argc, char** argv) {
   SDL_SetRenderLogicalPresentation(L.renderer, VIEW_W, VIEW_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
   SDL_SetRenderDrawBlendMode(L.renderer, SDL_BLENDMODE_BLEND);
   loadLogo();
-  L.playWord = playTexture();
+  L.playWord = startTexture();
 
   // For checking the layout without a display: SDL_VIDEO_DRIVER=offscreen
   // TG_LAUNCHER_SHOT=out.bmp [TG_LAUNCHER_FOCUS=n] saves a picture and quits.
