@@ -379,8 +379,11 @@ static void close_split(TgRegs* r, const SpriteView* w, const Variant* v) {
 
 // Runs the original routine for a special object (bridges, tunnels and the like: they
 // draw sprites and adjust the 2-player window bands), as the original's JSR (table,x).
-static void run_special(TgRegs* r, uint16_t table, uint16_t ret) {
+static void run_special(TgRegs* r, const Variant* v, uint16_t table, uint16_t ret) {
   uint16_t x = ram16(0x1B86) & 0x3FFE;
+  // Enhancements: the parts it adds stand on the object's ground, like any object's.
+  uint16_t y0 = ram16(0x1B92);
+  int16_t ground = (int16_t) (ram16(0x1B8A) + v->y_add);
   TgRegs h = *r;
   h.a = x;
   h.x = x;
@@ -389,6 +392,13 @@ static void run_special(TgRegs* r, uint16_t table, uint16_t ret) {
   h.v = false;
   flags_nz16(&h, x);
   tg_call_jsr(&h, abs16(r, (uint16_t) (table + x)), ret, TG_MX_16);
+  if(tg_port_full_view || tg_port_wide_margin || tg_port_interp) {
+    uint16_t base = oam_base(r, v);
+    for(uint16_t y = y0; y < ram16(0x1B92); y = (uint16_t) (y + 4)) {
+      int16_t* g = &tg_port_obj_grounds[(uint16_t) (base + y) & 0x1FFF];
+      if(*g == PPU_NO_GROUND) *g = ground;
+    }
+  }
 }
 
 enum { END_HIDE, END_KEEP, BACK_TO_NORMAL };
@@ -418,7 +428,7 @@ static int build_split_part(TgRegs* r, const SpriteView* w, uint16_t x) {
   for(;;) {
     int res = draw_object(r, v);
     if(res == SPECIAL) {
-      run_special(r, w->special_split, w->special_split_ret);
+      run_special(r, v, w->special_split, w->special_split_ret);
       return BACK_TO_NORMAL;
     }
     if(res != DRAWN) break;
@@ -455,7 +465,7 @@ static int build_objects(TgRegs* r, const SpriteView* w) {
       int res = draw_object(r, v);
       if(res == FULL) return END_HIDE;
       if(res == FULL_IN_GROUP) return END_KEEP;
-      if(res == SPECIAL) run_special(r, w->special, w->special_ret);
+      if(res == SPECIAL) run_special(r, v, w->special, w->special_ret);
     }
     dp16_set(r, w->count_dp, (uint16_t) (dp16(r, w->count_dp) - 1));
     if(dp16(r, w->count_dp) == 0) return END_HIDE;
