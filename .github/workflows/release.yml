@@ -32,11 +32,11 @@ jobs:
           mkdir -p dist/topgear-pc/licenses
           cp build/topgear.exe build/topgear-launcher.exe build/logo.bmp README.md dist/topgear-pc/
           cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
-          cd dist && zip -qr "../topgear-pc-$TAG-windows-x64.zip" topgear-pc
+          cd dist && zip -qr "../topgear-pc-windows-x64.zip" topgear-pc
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: topgear-pc-*-windows-x64.zip
+          path: topgear-pc-windows-x64.zip
 
   linux:
     runs-on: ubuntu-22.04  # older glibc, so the build runs on more distributions
@@ -60,11 +60,11 @@ jobs:
           mkdir -p dist/topgear-pc/licenses
           cp build/topgear build/topgear-launcher build/logo.bmp README.md dist/topgear-pc/
           cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
-          tar -C dist -czf "topgear-pc-$TAG-linux-x64.tar.gz" topgear-pc
+          tar -C dist -czf "topgear-pc-linux-x64.tar.gz" topgear-pc
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: topgear-pc-*-linux-x64.tar.gz
+          path: topgear-pc-linux-x64.tar.gz
 
   publish:
     needs: [windows, linux]
@@ -82,4 +82,8 @@ jobs:
         run: |
           sed "s/TAG/$TAG/g" .github/release-notes.md > notes.md
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Top Gear PC $TAG" --notes-file notes.md
-          gh release upload "$TAG" topgear-pc-*.zip topgear-pc-*.tar.gz --clobber
+          gh release upload "$TAG" topgear-pc-windows-x64.zip topgear-pc-linux-x64.tar.gz --clobber
+          # The README's download buttons link to these fixed names; drop older, versioned ones.
+          for a in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
+            case "$a" in topgear-pc-windows-x64.zip|topgear-pc-linux-x64.tar.gz) ;; *) gh release delete-asset "$TAG" "$a" -y ;; esac
+          done

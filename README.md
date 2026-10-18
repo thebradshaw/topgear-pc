@@ -1,17 +1,26 @@
-# Top Gear for Windows
+<h1 align="center">Top Gear PC</h1>
 
-A faithful PC port of the 1992 SNES game Top Gear (USA), in progress. The goal is a version that plays exactly like the cartridge first, then optional extras such as widescreen and 120 fps. See [docs/PLAN.md](docs/PLAN.md).
+<p align="center">A faithful PC port of the 1992 SNES racer Top Gear, with optional widescreen, a full-screen 1-player view, high frame rate and more.<br>Made by Vibe Slop Studios.</p>
+
+<p align="center">
+  <a href="https://github.com/thebradshaw/topgear-pc/releases/latest/download/topgear-pc-windows-x64.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%20(x64)-e8562a?style=for-the-badge&logo=windows&logoColor=white" height="44"></a>
+  &nbsp;
+  <a href="https://github.com/thebradshaw/topgear-pc/releases/latest/download/topgear-pc-linux-x64.tar.gz"><img alt="Download for Linux (experimental)" src="https://img.shields.io/badge/Download-Linux%20(experimental)-555555?style=for-the-badge&logo=linux&logoColor=white" height="44"></a>
+</p>
+<p align="center"><a href="https://github.com/thebradshaw/topgear-pc/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/thebradshaw/topgear-pc?label=latest%20release&style=flat-square"></a></p>
+
+<p align="center"><img alt="Widescreen with the full-screen 1-player view, on the starting grid" src="docs/screenshots/grid-widescreen.png" width="820"></p>
+
+**To play:** download, unzip, run `topgear-launcher`, choose your Top Gear (USA) ROM, set the options and press Start.
 
 **You need your own ROM.** The ROM isn't in this repository or its downloads: the game's graphics, sound and music come from your own copy. The game's code is rewritten in C here and runs only alongside an unmodified Top Gear (USA) ROM:
 
 - 524,288 bytes (a 512-byte copier header is removed automatically)
 - SHA-256 `ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788`
 
-Made by Vibe Slop Studios. A fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics or Nintendo. Top Gear is a trademark of its owners.
+A fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics or Nintendo. Top Gear is a trademark of its owners.
 
-Downloads for Windows, and an experimental Linux build, are on the [releases page](../../releases). On Linux, run `topgear-launcher` from the unpacked folder.
-
-![Widescreen with the full-screen 1-player view, on the starting grid](docs/screenshots/grid-widescreen.png)
+The downloads above are always the latest release; older ones are on the [releases page](../../releases). The Linux build is new and untested on real machines, so it may not be stable.
 
 | | |
 |---|---|
