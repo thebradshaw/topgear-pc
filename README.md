@@ -1,6 +1,6 @@
 <h1 align="center">Top Gear PC</h1>
 
-<p align="center">A faithful PC port of the 1992 SNES racer Top Gear, with optional widescreen, a full-screen 1-player view, high frame rate and more.<br>Made by Vibe Slop Studios.</p>
+<p align="center">A faithful PC decomp of the 1992 SNES racer Top Gear, with optional widescreen, a full-screen 1-player view, high frame rate and more.<br>Made by Vibe Slop Studios.</p>
 
 <p align="center">
   <a href="https://github.com/thebradshaw/topgear-pc/releases/latest/download/topgear-pc-windows-x64.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%20(x64)-e8562a?style=for-the-badge&logo=windows&logoColor=white" height="44"></a>
