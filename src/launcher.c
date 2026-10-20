@@ -11,6 +11,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "launcher_start.h"
+#include "launcher_logo.h"
 #include "rom.h"
 
 #define VIEW_W 1280
@@ -368,13 +369,14 @@ static float optionY(int i) {
 #define ROMBTN_Y 236.0f
 #define PLAY_Y 592.0f
 
-// The logo, if logo.bmp sits next to the launcher (magenta is see-through); the build copies
-// it there from assets/.
+// The logo (assets/logo.bmp, built into the launcher; magenta is see-through). A logo.bmp
+// next to the launcher replaces it.
 static void loadLogo(void) {
   char path[2400];
   const char* base = SDL_GetBasePath();
   snprintf(path, sizeof(path), "%slogo.bmp", base ? base : "");
   SDL_Surface* s = SDL_LoadBMP(path);
+  if(s == NULL) s = SDL_LoadBMP_IO(SDL_IOFromConstMem(kLogoBmp, sizeof(kLogoBmp)), true);
   if(s == NULL) return;
   SDL_SetSurfaceColorKey(s, true, SDL_MapSurfaceRGB(s, 255, 0, 255));
   L.logo = SDL_CreateTextureFromSurface(L.renderer, s);

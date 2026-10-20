@@ -30,7 +30,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/topgear-pc/licenses
-          cp build/topgear.exe build/topgear-launcher.exe build/logo.bmp README.md dist/topgear-pc/
+          cp build/topgear.exe build/topgear-launcher.exe README.md dist/topgear-pc/
           cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
           cd dist && zip -qr "../topgear-pc-windows-x64.zip" topgear-pc
       - uses: actions/upload-artifact@v4
@@ -58,7 +58,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist/topgear-pc/licenses
-          cp build/topgear build/topgear-launcher build/logo.bmp README.md dist/topgear-pc/
+          cp build/topgear build/topgear-launcher README.md dist/topgear-pc/
           cp third_party/lakesnes/LICENSE.txt dist/topgear-pc/licenses/LakeSnes-LICENSE.txt
           tar -C dist -czf "topgear-pc-linux-x64.tar.gz" topgear-pc
       - uses: actions/upload-artifact@v4
