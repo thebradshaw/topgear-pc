@@ -80,7 +80,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sed "s/TAG/$TAG/g" .github/release-notes.md > notes.md
+          # .github/whats-new.md (if not empty) goes first: what changed in this release.
+          { [ -s .github/whats-new.md ] && { cat .github/whats-new.md; echo; }; sed "s/TAG/$TAG/g" .github/release-notes.md; } > notes.md
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Top Gear PC $TAG" --notes-file notes.md
           gh release upload "$TAG" topgear-pc-windows-x64.zip topgear-pc-linux-x64.tar.gz --clobber
           # The README's download buttons link to these fixed names; drop older, versioned ones.
