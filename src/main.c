@@ -62,7 +62,8 @@ static struct {
   bool smooth;  // enhancement: race logic every frame instead of every third (F6, --smooth)
   bool recordedSmooth;
   bool highFps;  // enhancement: in-between frames at the display's rate (Shift+F6, --high-fps)
-  bool vsync;
+  bool vsync;  // wait for the display's refresh before showing a picture (Tab menu, --no-vsync); on by default
+  bool vsyncNow;  // what the renderer was last set to
   bool fullView;  // enhancement: 1-player races fill the whole screen (F9, --full-view)
   bool recordedFullView;
   bool tallRoad;  // full view with the road twice as tall, filling the screen (F9 again, --tall-road)
@@ -249,6 +250,7 @@ static const Setting kSettings[] = {
   {"smooth", &app.smooth}, {"full_view", &app.fullView},
   {"tall_road", &app.tallRoad}, {"map_top", &app.mapTop}, {"speed_bottom", &app.speedBottom}, {"wide", &app.wide}, {"side_by_side", &app.sideBySide},
   {"ghost", &app.ghost}, {"auto_save", &app.autoSave}, {"high_fps", &app.highFps}, {"tv_colour", &app.tvColour},
+  {"vsync", &app.vsync},
 };
 
 static void loadSettings(void) {
@@ -644,7 +646,7 @@ static void runFrame(int samples) {
 
 typedef enum {
   MI_RESUME, MI_ASPECT, MI_FILTER, MI_INTEGER, MI_FULLSCREEN, MI_WIDE, MI_FULLVIEW, MI_MAPPOS, MI_SPEEDPOS, MI_SIDE,
-  MI_COLOUR, MI_SMOOTH, MI_HIGHFPS, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
+  MI_COLOUR, MI_VSYNC, MI_SMOOTH, MI_HIGHFPS, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
   MI_KEYS2, MI_PADS, MI_RESET, MI_QUIT, MI_COUNT
 } MenuItem;
 
@@ -758,6 +760,7 @@ static void menuItemText(int i, char* out, size_t size) {
     case MI_SIDE: snprintf(out, size, "2P side by side    %s", onOff(app.sideBySide)); break;
     case MI_SMOOTH: snprintf(out, size, "Smooth motion      %s", onOff(app.smooth)); break;
     case MI_HIGHFPS: snprintf(out, size, "High frame rate    %s", onOff(app.highFps)); break;
+    case MI_VSYNC: snprintf(out, size, "VSync              %s", onOff(app.vsync)); break;
     case MI_GHOST: snprintf(out, size, "Ghost car          %s", onOff(app.ghost)); break;
     case MI_AUTOSAVE: snprintf(out, size, "Auto-save          %s", onOff(app.autoSave)); break;
     case MI_COLOUR: snprintf(out, size, "Colours            %s", app.tvColour ? "as on a TV" : "exact"); break;
@@ -799,6 +802,7 @@ static void menuActivate(int dir) {
     case MI_SIDE: if(!locked) { app.sideBySide = !app.sideBySide; updateTitle(); } break;
     case MI_SMOOTH: if(!locked) setSmooth(!app.smooth); break;
     case MI_HIGHFPS: setHighFps(!app.highFps); break;
+    case MI_VSYNC: app.vsync = !app.vsync; saveSettings(); break;
     case MI_GHOST: if(!locked) { app.ghost = !app.ghost; updateTitle(); } break;
     case MI_AUTOSAVE: app.autoSave = !app.autoSave; updateTitle(); break;
     case MI_RUMBLE: app.rumble = !app.rumble; updateTitle(); break;
@@ -929,6 +933,7 @@ int main(int argc, char** argv) {
 
   // Remembered options first; the command line can turn more on.
   app.aspect = ASPECT_4_3;
+  app.vsync = true;
   char* prefDir = SDL_GetPrefPath("topgear-pc", "Top Gear");
   if(prefDir) {
     snprintf(app.settingsPath, sizeof(app.settingsPath), "%ssettings.txt", prefDir);
@@ -957,6 +962,8 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--auto-save") == 0) app.autoSave = true;
     else if(strcmp(argv[i], "--tv-colour") == 0) app.tvColour = true;
     else if(strcmp(argv[i], "--high-fps") == 0) app.highFps = app.smooth = true;
+    else if(strcmp(argv[i], "--vsync") == 0) app.vsync = true;
+    else if(strcmp(argv[i], "--no-vsync") == 0) app.vsync = false;
     else if(strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       i++;
       for(int f = 0; f < FILTER_COUNT; f++) if(strcmp(argv[i], filterNames[f]) == 0) app.filter = f;
@@ -1107,22 +1114,23 @@ int main(int argc, char** argv) {
     }
 
     if(menu.quit) break;
+    if(app.vsync != app.vsyncNow) {
+      // VSync only changes when pictures are shown; the game keeps its own 60 Hz clock below.
+      SDL_SetRenderVSync(app.renderer, app.vsync ? 1 : 0);
+      app.vsyncNow = app.vsync;
+    }
     Uint64 now = SDL_GetTicksNS();
     if(menu.open) {
       // The game waits; the picture stays, with the menu over it.
       present();
-      SDL_DelayPrecise((Uint64) FRAME_NS);
+      if(!app.vsyncNow) SDL_DelayPrecise((Uint64) FRAME_NS);
       next = SDL_GetTicksNS();
       continue;
     }
     if(now - next > (Uint64) (FRAME_NS * 8) && now > next) next = now;  // resync after a stall
     bool highFps = app.highFps && !app.original;
-    if(highFps != app.vsync) {
-      // High frame rate shows a picture every refresh of the display, waiting for it.
-      SDL_SetRenderVSync(app.renderer, highFps ? 1 : 0);
-      app.vsync = highFps;
-    }
     if(highFps) {
+      // A picture every refresh of the display (with vsync), or as fast as they can be drawn.
       // Every frame due runs, so the game keeps its pace when pictures take longer than a
       // frame to draw.
       for(int k = 0; k < 4 && now >= next; k++) {

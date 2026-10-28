@@ -40,7 +40,7 @@ typedef struct {
 } Option;
 
 enum {
-  O_FULLSCREEN, O_ASPECT, O_FILTER, O_INTEGER, O_COLOUR,
+  O_FULLSCREEN, O_VSYNC, O_ASPECT, O_FILTER, O_INTEGER, O_COLOUR,
   O_WIDE, O_SIDE, O_FULLVIEW, O_MAP, O_SPEED,
   O_SMOOTH, O_HIGHFPS, O_GHOST, O_AUTOSAVE, O_RUMBLE, O_COUNT
 };
@@ -48,6 +48,8 @@ enum {
 static const Option kOptions[O_COUNT] = {
   {"Display", "Fullscreen", "fullscreen", OPT_BOOL, {"Off", "On"}, 2,
    "Start in fullscreen. Esc leaves it while you play.", "F11"},
+  {NULL, "VSync", "vsync", OPT_BOOL, {"Off", "On"}, 2,
+   "Wait for the display's refresh before showing each picture, so it never tears. The game runs at the same speed either way.", "Tab menu"},
   {NULL, "Aspect", "aspect", OPT_CHOICE, {"4:3 TV", "8:7 pixels"}, 2,
    "4:3 is the shape a TV showed. 8:7 keeps the SNES pixels square.", "F2"},
   {NULL, "Filter", "filter", OPT_CHOICE, {"Sharp", "Smooth", "Scanlines"}, 3,
@@ -117,6 +119,7 @@ static int optionIndex(const char* key) {
 
 static void loadSettings(void) {
   L.value[O_FILTER] = 0;
+  L.value[O_VSYNC] = 1;  // on unless turned off
   char* text = SDL_LoadFile(L.settingsPath, NULL);
   if(text == NULL) return;
   bool tall = false;
