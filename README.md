@@ -52,7 +52,7 @@ The first gamepad is player 1 and the second is player 2 (the options menu can s
 
 | Key | Function |
 |---|---|
-| Tab (or a gamepad's guide button) | Options menu: every option below, controls for both players on the keyboard and for gamepads (press the new key or button), swapping which gamepad is player 1, colours as a TV showed them instead of exact (also `--tv-colour`), reset and quit. The game waits while it is open |
+| Tab (or a gamepad's guide button) | Options menu: every option below, controls for both players on the keyboard and for gamepads (press the new key or button), swapping which gamepad is player 1, colours as a TV showed them instead of exact (also `--tv-colour`), VSync (waits for the display's refresh so pictures never tear; on by default, `--no-vsync` turns it off; the game runs at the same speed either way), reset and quit. The game waits while it is open |
 | F11 or Alt+Enter | Fullscreen |
 | Esc | Leave fullscreen |
 | F2 | Aspect: 4:3 TV or 8:7 square pixels |
@@ -60,7 +60,7 @@ The first gamepad is player 1 and the second is player 2 (the options menu can s
 | F4 | Display filter: sharp pixels, sharp-bilinear (smooth edges without uneven pixels) or scanlines (also `--filter sharp-bilinear` or `--filter scanlines`) |
 | F5 | Reset |
 | F6 | Smooth motion: the race updates every frame instead of every third (off by default; also `--smooth`) |
-| Shift+F6 | High frame rate: on a 120 Hz or faster display, extra pictures are drawn between the game's frames, so the road, cars and roadside objects move smoothly at the display's rate (the game itself still runs at 60 frames a second). Turns on smooth motion too, and waits for the display (vsync) (off by default; also `--high-fps`) |
+| Shift+F6 | High frame rate: on a 120 Hz or faster display, extra pictures are drawn between the game's frames, so the road, cars and roadside objects move smoothly at the display's rate (the game itself still runs at 60 frames a second). Turns on smooth motion too. With VSync on it draws one picture per refresh; with VSync off, as many as it can (off by default; also `--high-fps`) |
 | F8 | Controller rumble when your car hits something and when nitro fires (off by default; also `--rumble`) |
 | F9 | Full-screen view: in 1-player races your view fills the whole screen instead of sharing it with the computer's. The horizon stays low and the road flat, as in the original. Press F9 again for a tall road that fills more of the screen, and again to turn it off (off by default; also `--full-view`, `--tall-road`). The same road height is used by side by side. In the options menu (Tab) you can put the map at the top or bottom left, and the speedometer and timer at the top or bottom right (`--map-top`, `--speed-bottom`) |
 | F10 | Widescreen: races are drawn as wide as the window (up to 21:9), with the road, scenery and roadside objects carrying on past the original edges and the HUD moved out to the sides; menus get black borders. In a window it also switches the window between 16:9 and 4:3 (off by default; also `--wide`) |
