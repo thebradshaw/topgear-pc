@@ -1,6 +1,6 @@
 Made by **Vibe Slop Studios**. Redline Atlas TAG.
 
-![Widescreen with the full-screen 1-player view](https://raw.githubusercontent.com/thebradshaw/topgear-pc/main/docs/screenshots/grid-widescreen.png)
+![The launcher](https://raw.githubusercontent.com/thebradshaw/topgear-pc/main/docs/screenshots/launcher.png)
 
 **You need your own Top Gear (USA) SNES ROM.** The ROM isn't included: the game's graphics, sound and music come from your own copy. Unzip, run `redline-atlas-launcher`, choose your ROM, set the options and press Start.
 

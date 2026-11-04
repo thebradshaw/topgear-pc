@@ -9,7 +9,8 @@
 </p>
 <p align="center"><a href="https://github.com/thebradshaw/topgear-pc/releases/latest"><img alt="Latest release of Redline Atlas" src="https://img.shields.io/github/v/release/thebradshaw/topgear-pc?label=latest%20release&style=flat-square"></a></p>
 
-<p align="center"><img alt="Widescreen with the full-screen 1-player view, on the starting grid" src="docs/screenshots/grid-widescreen.png" width="820"></p>
+<!-- docs/screenshots/launcher.png: SDL_VIDEO_DRIVER=offscreen TG_LAUNCHER_SHOT=launcher.bmp redline-atlas-launcher -->
+<p align="center"><img alt="The launcher: pick your ROM and the options, then Start" src="docs/screenshots/launcher.png" width="820"></p>
 
 **To play:** download, unzip, run `redline-atlas-launcher`, choose your Top Gear (USA) ROM, set the options and press Start.
 
@@ -22,12 +23,7 @@ A fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics or Nin
 
 The downloads above are always the latest release; older ones are on the [releases page](../../releases). The Linux build is new and untested on real machines, so it may not be stable.
 
-| | |
-|---|---|
-| ![The game in a window on Windows, widescreen and full view on](docs/screenshots/window.png) | ![The launcher: pick your ROM and the options, then Start](docs/screenshots/launcher.png) |
-| Widescreen and full view, in a window | The launcher |
-
-![Widescreen on the open road](docs/screenshots/road-widescreen.png)
+The repository has no screenshots of the game itself: everything the game shows comes from its ROM, so pictures of it stay out of the repository like the ROM does. The launcher above is the project's own.
 
 ## Status
 
