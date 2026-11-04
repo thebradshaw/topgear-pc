@@ -103,6 +103,7 @@ static struct {
   SDL_Texture* logo;  // the built-in logo, or logo.bmp next to the launcher
   bool logoBmp;  // the logo is a logo.bmp
   SDL_Texture* playWord;  // the Start button's word
+  Uint64 fixedTicks;  // when set, the animations are drawn at this moment (pictures)
 } L;
 
 // --- Settings ------------------------------------------------------------------------
@@ -412,27 +413,173 @@ static void loadLogo(void) {
   L.logo = artTexture(kLogoArt, sizeof(kLogoArt), LOGO_ART_W, LOGO_ART_H);
 }
 
-static void drawRoad(Uint64 t) {
-  // A little road running to the horizon in the header, its stripes scrolling like a race.
-  const float cx = 700, top = 30, rows = 56;
-  for(int y = 0; y < rows; y++) {
-    float z = (y + 1) / rows;  // nearer towards the bottom
-    float half = 6 + z * z * 260;
-    int band = (int) (1.0f / (z + 0.05f) * 3 - (float) t / 90.0f) & 1;
-    float edge = 1 + 5 * z;
-    fill(cx - half, top + y, half * 2, 1, band ? (Rgb) {58, 62, 80} : (Rgb) {48, 52, 68}, 255);
-    fill(cx - half - edge, top + y, edge, 1, band ? kAccent : kText, 255);
-    fill(cx + half, top + y, edge, 1, band ? kAccent : kText, 255);
-    if(band) fill(cx - edge / 2, top + y, edge, 1, kAccent2, 255);
+// --- Header art ------------------------------------------------------------------------
+// The top of a globe rising behind the header: its latitude and longitude lines turn slowly,
+// and a red racing line runs round it with a light travelling along it. Everything is drawn
+// as geometry with soft edges, so it stays smooth at any window size.
+
+#define HEADER_H 86.0f
+#define GLOBE_CX 812.0f
+#define GLOBE_R 760.0f
+#define GLOBE_TOP 22.0f  // where the globe's edge peaks
+#define GLOBE_TILT 0.42f  // radians the north pole leans towards us
+#define MAX_RIBBON 400
+
+static SDL_FColor fcolor(Rgb c, float a) { return (SDL_FColor) {c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, a}; }
+
+// A line through p[0..n-1], w wide: solid along its middle (alpha a[i]), fading to nothing at
+// its edges, which keeps it smooth without multisampling.
+static void ribbon(const SDL_FPoint* p, const float* a, int n, float w, Rgb c) {
+  static SDL_Vertex v[MAX_RIBBON * 3];
+  static int idx[MAX_RIBBON * 12];
+  if(n < 2 || n > MAX_RIBBON) return;
+  for(int i = 0; i < n; i++) {
+    SDL_FPoint p0 = p[i > 0 ? i - 1 : i], p1 = p[i < n - 1 ? i + 1 : i];
+    float dx = p1.x - p0.x, dy = p1.y - p0.y, len = SDL_sqrtf(dx * dx + dy * dy);
+    float nx = len > 0 ? -dy / len * w / 2 : 0, ny = len > 0 ? dx / len * w / 2 : 0;
+    v[i * 3] = (SDL_Vertex) {{p[i].x + nx, p[i].y + ny}, fcolor(c, 0), {0, 0}};
+    v[i * 3 + 1] = (SDL_Vertex) {p[i], fcolor(c, a[i]), {0, 0}};
+    v[i * 3 + 2] = (SDL_Vertex) {{p[i].x - nx, p[i].y - ny}, fcolor(c, 0), {0, 0}};
+  }
+  int k = 0;
+  for(int i = 0; i < n - 1; i++) {
+    for(int s = 0; s < 2; s++) {
+      int a0 = i * 3 + s, a1 = a0 + 1, b0 = a0 + 3, b1 = a1 + 3;
+      idx[k++] = a0; idx[k++] = a1; idx[k++] = b0;
+      idx[k++] = a1; idx[k++] = b1; idx[k++] = b0;
+    }
+  }
+  SDL_RenderGeometry(L.renderer, NULL, v, n * 3, idx, k);
+}
+
+// A point on the globe (latitude and longitude in radians, longitude turned by spin) on the
+// screen. Returns how squarely it faces us: 1 in the middle, 0 at the edge, below 0 behind.
+static float globePoint(float lat, float lon, float spin, SDL_FPoint* out) {
+  float cl = SDL_cosf(lat), x = cl * SDL_sinf(lon + spin), y = SDL_sinf(lat), z = cl * SDL_cosf(lon + spin);
+  float ct = SDL_cosf(GLOBE_TILT), st = SDL_sinf(GLOBE_TILT);
+  float y2 = y * ct + z * st, z2 = z * ct - y * st;
+  out->x = GLOBE_CX + GLOBE_R * x;
+  out->y = GLOBE_TOP + GLOBE_R * (1 - y2);
+  return z2;
+}
+
+// Draws a curve over the globe, f(u) giving latitude and longitude for u in [0, 1], in runs
+// that face us and fall inside the header. alpha(u, facing) gives each point's strength.
+typedef void CurveFn(float u, float* lat, float* lon);
+typedef float AlphaFn(float u, float facing);
+
+static void globeCurve(CurveFn* f, AlphaFn* alpha, int steps, float spin, float w, Rgb c) {
+  SDL_FPoint p[MAX_RIBBON];
+  float a[MAX_RIBBON];
+  int n = 0;
+  for(int i = 0; i <= steps; i++) {
+    float u = (float) i / steps, lat, lon;
+    f(u, &lat, &lon);
+    SDL_FPoint q;
+    float facing = globePoint(lat, lon, spin, &q);
+    bool shown = facing > 0 && q.y < HEADER_H + 6 && n < MAX_RIBBON;
+    if(shown) {
+      p[n] = q;
+      a[n++] = alpha(u, facing);
+    }
+    if((!shown || i == steps) && n > 0) {
+      ribbon(p, a, n, w, c);
+      n = 0;
+    }
   }
 }
 
+static float gridLat, gridLon;  // the line being drawn
+static void latitudeLine(float u, float* lat, float* lon) { *lat = gridLat; *lon = u * 2 * SDL_PI_F; }
+static void meridianLine(float u, float* lat, float* lon) { *lat = (u * 2 - 1) * SDL_PI_F / 2; *lon = gridLon; }
+// The racing line: once round the globe, weaving between latitudes.
+static void racingLine(float u, float* lat, float* lon) {
+  float s = u * 2 * SDL_PI_F;
+  *lat = 0.873f + 0.05f * SDL_sinf(3 * s) + 0.02f * SDL_sinf(7 * s + 1);
+  *lon = s;
+}
+static float edgeFade(float facing) { return facing > 0.25f ? 1 : facing / 0.25f; }
+static float gridAlpha(float u, float facing) { (void) u; return 0.16f * edgeFade(facing); }
+static float routeAlpha(float u, float facing) { (void) u; return 0.55f * edgeFade(facing); }
+static float routeGlowAlpha(float u, float facing) { (void) u; return 0.12f * edgeFade(facing); }
+static float lightPos;  // where the travelling light is on the racing line (0-1)
+static float trailAlpha(float u, float facing) {
+  float behind = lightPos - u;
+  if(behind < 0) behind += 1;
+  return behind < 0.12f ? (1 - behind / 0.12f) * edgeFade(facing) : 0;
+}
+
+static void drawGlobe(Uint64 t) {
+  SDL_Rect clip = {0, 0, VIEW_W, (int) HEADER_H};
+  SDL_SetRenderClipRect(L.renderer, &clip);
+  float spin = (float) (t % 240000) / 240000.0f * 2 * SDL_PI_F;  // a turn every four minutes
+  // The globe: a band of its surface along the edge, lighter at the rim, then a thin glow of
+  // atmosphere outside it.
+  {
+    enum { N = 96 };
+    SDL_Vertex v[(N + 1) * 4];
+    int idx[N * 18], k = 0;
+    float cy = GLOBE_TOP + GLOBE_R, reach = SDL_acosf((cy - HEADER_H - 4) / GLOBE_R);
+    for(int i = 0; i <= N; i++) {
+      float ang = -reach + 2 * reach * i / N, sx = SDL_sinf(ang), cyy = SDL_cosf(ang);
+      float radii[4] = {GLOBE_R + 16, GLOBE_R, GLOBE_R - 10, GLOBE_R - 90};
+      SDL_FColor cols[4] = {fcolor((Rgb) {70, 92, 150}, 0), fcolor((Rgb) {70, 92, 150}, 0.30f),
+                            fcolor((Rgb) {36, 42, 68}, 1), fcolor((Rgb) {22, 25, 40}, 1)};
+      for(int r = 0; r < 4; r++)
+        v[i * 4 + r] = (SDL_Vertex) {{GLOBE_CX + radii[r] * sx, cy - radii[r] * cyy}, cols[r], {0, 0}};
+    }
+    for(int i = 0; i < N; i++) {
+      for(int r = 0; r < 3; r++) {
+        int a0 = i * 4 + r, a1 = a0 + 1, b0 = a0 + 4, b1 = a1 + 4;
+        idx[k++] = a0; idx[k++] = a1; idx[k++] = b0;
+        idx[k++] = a1; idx[k++] = b1; idx[k++] = b0;
+      }
+    }
+    SDL_RenderGeometry(L.renderer, NULL, v, (N + 1) * 4, idx, k);
+  }
+  // Latitude and longitude lines.
+  for(int i = 1; i < 18; i++) {
+    gridLat = (i * 5) * SDL_PI_F / 180;
+    globeCurve(latitudeLine, gridAlpha, 240, spin, 1.6f, (Rgb) {150, 166, 206});
+  }
+  for(int i = 0; i < 36; i++) {
+    gridLon = i * 10 * SDL_PI_F / 180;
+    globeCurve(meridianLine, gridAlpha, 120, spin, 1.6f, (Rgb) {150, 166, 206});
+  }
+  // The racing line, its glow, and the light running along it (a lap every 14 seconds).
+  globeCurve(racingLine, routeGlowAlpha, 360, spin, 7, (Rgb) {255, 64, 52});
+  globeCurve(racingLine, routeAlpha, 360, spin, 2.2f, (Rgb) {255, 64, 52});
+  lightPos = (float) (t % 14000) / 14000.0f;
+  globeCurve(racingLine, trailAlpha, 360, spin, 3, (Rgb) {255, 196, 160});
+  {
+    float lat, lon;
+    racingLine(lightPos, &lat, &lon);
+    SDL_FPoint q;
+    float facing = globePoint(lat, lon, spin, &q);
+    if(facing > 0 && q.y < HEADER_H) {
+      enum { N = 24 };
+      SDL_Vertex v[N + 1];
+      int idx[N * 3];
+      float glow = edgeFade(facing);
+      v[0] = (SDL_Vertex) {q, fcolor((Rgb) {255, 236, 224}, glow), {0, 0}};
+      for(int i = 0; i < N; i++) {
+        float ang = i * 2 * SDL_PI_F / N;
+        v[i + 1] = (SDL_Vertex) {{q.x + 9 * SDL_cosf(ang), q.y + 9 * SDL_sinf(ang)}, fcolor((Rgb) {255, 64, 52}, 0), {0, 0}};
+        idx[i * 3] = 0; idx[i * 3 + 1] = i + 1; idx[i * 3 + 2] = (i + 1) % N + 1;
+      }
+      SDL_RenderGeometry(L.renderer, NULL, v, N + 1, idx, N * 3);
+    }
+  }
+  SDL_SetRenderClipRect(L.renderer, NULL);
+}
+
 static void draw(void) {
-  Uint64 t = SDL_GetTicks();
+  Uint64 t = L.fixedTicks ? L.fixedTicks : SDL_GetTicks();
   color(kBg, 255);
   SDL_RenderClear(L.renderer);
   // Header
   for(int y = 0; y < 86; y++) fill(0, (float) y, VIEW_W, 1, (Rgb) {(Uint8) (20 + y / 4), (Uint8) (22 + y / 6), (Uint8) (36 + y / 3)}, 255);
+  drawGlobe(t);
   if(L.logo && L.logoBmp) {
     float lw, lh;
     SDL_GetTextureSize(L.logo, &lw, &lh);
@@ -445,7 +592,6 @@ static void draw(void) {
   } else {
     text(LEFT_X, 30, 3, kAccent, TG_APP_NAME);
   }
-  drawRoad(t);
   fill(0, 86, VIEW_W, 2, kAccent, 255);
 
   // ROM card
@@ -638,8 +784,10 @@ int main(int argc, char** argv) {
   L.playWord = artTexture(kStartArt, sizeof(kStartArt), START_ART_W, START_ART_H);
 
   // For checking the layout without a display: SDL_VIDEO_DRIVER=offscreen
-  // TG_LAUNCHER_SHOT=out.bmp [TG_LAUNCHER_FOCUS=n] saves a picture and quits.
+  // TG_LAUNCHER_SHOT=out.bmp [TG_LAUNCHER_FOCUS=n] saves a picture and quits. The header's
+  // animation is drawn at a fixed moment, so the picture is the same every time.
   const char* shot = SDL_getenv("TG_LAUNCHER_SHOT");
+  if(shot) L.fixedTicks = 26900;
   if(SDL_getenv("TG_LAUNCHER_FOCUS")) L.focus = SDL_atoi(SDL_getenv("TG_LAUNCHER_FOCUS"));
   int frames = 0;
   bool running = true;
