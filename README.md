@@ -1,17 +1,17 @@
-<h1 align="center">Top Gear PC</h1>
+<h1 align="center">Redline Atlas</h1>
 
-<p align="center">A faithful PC decomp of the 1992 SNES racer Top Gear, with optional widescreen, a full-screen 1-player view, high frame rate and more.<br>Made by Vibe Slop Studios.</p>
+<p align="center">An unofficial PC port of the 1992 SNES racing game Top Gear, played from your own ROM, with optional widescreen, a full-screen 1-player view, high frame rate and more.<br>Made by Vibe Slop Studios.</p>
 
 <p align="center">
-  <a href="https://github.com/thebradshaw/topgear-pc/releases/latest/download/topgear-pc-windows-x64.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows%20(x64)-e8562a?style=for-the-badge&logo=windows&logoColor=white" height="44"></a>
+  <a href="https://github.com/thebradshaw/topgear-pc/releases/latest/download/redline-atlas-windows-x64.zip"><img alt="Download Redline Atlas for Windows" src="https://img.shields.io/badge/Download-Windows%20(x64)-e8562a?style=for-the-badge&logo=windows&logoColor=white" height="44"></a>
   &nbsp;
-  <a href="https://github.com/thebradshaw/topgear-pc/releases/latest/download/topgear-pc-linux-x64.tar.gz"><img alt="Download for Linux (experimental)" src="https://img.shields.io/badge/Download-Linux%20(experimental)-555555?style=for-the-badge&logo=linux&logoColor=white" height="44"></a>
+  <a href="https://github.com/thebradshaw/topgear-pc/releases/latest/download/redline-atlas-linux-x64.tar.gz"><img alt="Download Redline Atlas for Linux (experimental)" src="https://img.shields.io/badge/Download-Linux%20(experimental)-555555?style=for-the-badge&logo=linux&logoColor=white" height="44"></a>
 </p>
-<p align="center"><a href="https://github.com/thebradshaw/topgear-pc/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/thebradshaw/topgear-pc?label=latest%20release&style=flat-square"></a></p>
+<p align="center"><a href="https://github.com/thebradshaw/topgear-pc/releases/latest"><img alt="Latest release of Redline Atlas" src="https://img.shields.io/github/v/release/thebradshaw/topgear-pc?label=latest%20release&style=flat-square"></a></p>
 
 <p align="center"><img alt="Widescreen with the full-screen 1-player view, on the starting grid" src="docs/screenshots/grid-widescreen.png" width="820"></p>
 
-**To play:** download, unzip, run `topgear-launcher`, choose your Top Gear (USA) ROM, set the options and press Start.
+**To play:** download, unzip, run `redline-atlas-launcher`, choose your Top Gear (USA) ROM, set the options and press Start.
 
 **You need your own ROM.** The ROM isn't in this repository or its downloads: the game's graphics, sound and music come from your own copy. The game's code is rewritten in C here and runs only alongside an unmodified Top Gear (USA) ROM:
 
@@ -33,13 +33,13 @@ The downloads above are always the latest release; older ones are on the [releas
 
 Phase 3. The races run in translated C: the race program, the per-frame update, the renderer, the cars, the sprites and the raster interrupts. The menus and a few routines still run as the original game on the embedded reference emulator ([LakeSnes](https://github.com/angelo-wf/LakeSnes), MIT), which also checks the C code call by call against the original.
 
-The C races drop the original's slowdown and loading pauses: a race updates every three frames, the original's normal pace, and loads at once. Run `topgear.exe --original` to play the game's own code throughout, slowdown included.
+The C races drop the original's slowdown and loading pauses: a race updates every three frames, the original's normal pace, and loads at once. Run `redline-atlas.exe --original` to play the game's own code throughout, slowdown included.
 
 ## Playing
 
-Open `topgear-launcher.exe`, choose your ROM, set the options and press Start. The launcher works with a mouse, the keyboard or a gamepad (D-pad to choose, A to change, Start to play), remembers the ROM, and keeps the options in the same `settings.txt` as the game, so the options menu (Tab) in the game still changes them.
+Open `redline-atlas-launcher.exe`, choose your ROM, set the options and press Start. The launcher works with a mouse, the keyboard or a gamepad (D-pad to choose, A to change, Start to play), remembers the ROM, and keeps the options in the same `settings.txt` as the game, so the options menu (Tab) in the game still changes them.
 
-You can also skip the launcher: put `Top Gear (USA).sfc` next to `topgear.exe`, or drag the ROM onto `topgear.exe`.
+You can also skip the launcher: put `Top Gear (USA).sfc` next to `redline-atlas.exe`, or drag the ROM onto `redline-atlas.exe`.
 
 | Action | Keyboard | Gamepad |
 |---|---|---|
@@ -48,7 +48,7 @@ You can also skip the launcher: put `Top Gear (USA).sfc` next to `topgear.exe`, 
 | L / R | Q / W | Shoulders or triggers |
 | Start / Select | Enter / Right Shift | Start / Back |
 
-The first gamepad is player 1 and the second is player 2 (the options menu can swap them). Player 2 can also use the keyboard once you give them keys in the options menu. Controls are kept in `controls.txt` next to `topgear.exe` (written with these defaults on first run).
+The first gamepad is player 1 and the second is player 2 (the options menu can swap them). Player 2 can also use the keyboard once you give them keys in the options menu. Controls are kept in `controls.txt` next to `redline-atlas.exe` (written with these defaults on first run).
 
 | Key | Function |
 |---|---|
@@ -68,13 +68,13 @@ The first gamepad is player 1 and the second is player 2 (the options menu can s
 | Shift+F1 | Auto-save: the countries you have reached at each skill level are remembered, so you don't need passwords after restarting (off by default; also `--auto-save`). Kept in `progress.txt` in the settings folder |
 | F1 | Ghost car: in 1-player races, your best finished race on each course is replayed as a see-through car you can race against. Best races are saved as `ghosts.bin` in the settings folder (`%APPDATA%\topgear-pc\Top Gear`) as soon as you set one (off by default; also `--ghost`) |
 
-Your choices for these keys are remembered between sessions in `settings.txt` in the settings folder (`%APPDATA%\topgear-pc\Top Gear`).
+Your choices for these keys are remembered between sessions in `settings.txt` in the settings folder (`%APPDATA%\topgear-pc\Top Gear`; the folder keeps the name earlier versions used, so existing settings, progress and ghost cars carry over).
 
 ## Recordings
 
-Each session writes to `recordings/` next to `topgear.exe`:
+Each session writes to `recordings/` next to `redline-atlas.exe`:
 
-- `session-<date>.txt`: every button change from power-on. Replaying one reproduces the session exactly (`tg_headless --input <file>`, or `topgear --replay <file>`), so recordings become regression tests.
+- `session-<date>.txt`: every button change from power-on. Replaying one reproduces the session exactly (`tg_headless --input <file>`, or `redline-atlas --replay <file>`), so recordings become regression tests.
 - `coverage.tgcov`: which parts of the ROM ran or were read, accumulated across sessions. It guides the disassembly.
 
 Run with `--no-record` to turn this off. Sessions played with `--original` can be checked call by call (`tg_headless --port verify`), so they make the best test recordings.
@@ -85,7 +85,7 @@ Run with `--no-record` to turn this off. Sessions played with `--original` can b
 
 ## Building
 
-Needs CMake 3.20+. SDL3 is downloaded and linked statically, so `topgear.exe` has no DLL dependencies.
+Needs CMake 3.20+. SDL3 is downloaded and linked statically, so `redline-atlas.exe` has no DLL dependencies. The project's name is set in one place, at the top of `CMakeLists.txt` (`TG_APP_NAME`, `TG_EXE_NAME`).
 
 Windows (Visual Studio 2022 or newer, run from a Developer Command Prompt):
 
@@ -118,6 +118,7 @@ ctest --test-dir build -C Release --output-on-failure
 |---|---|
 | `src/game.c` | The game as the frontend sees it; translated C will land behind this interface |
 | `src/main.c` | SDL3 frontend: window, fullscreen, scaling, input, audio |
+| `src/launcher.c` | The launcher: choose the ROM and the options |
 | `src/rom.c` | Loads and verifies your ROM |
 | `third_party/lakesnes` | Reference emulator (MIT, see its LICENSE.txt) |
 | `src/coverage.c` | Execution and data coverage of the original ROM |

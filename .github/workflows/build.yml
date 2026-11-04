@@ -25,9 +25,9 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure
       - uses: actions/upload-artifact@v4
         with:
-          name: topgear-windows-x64
+          name: redline-atlas-windows-x64
           path: |
-            build/Release/topgear.exe
+            build/Release/redline-atlas.exe
             build/Release/tg_headless.exe
             README.md
 

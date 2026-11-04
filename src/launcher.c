@@ -1,6 +1,6 @@
-// Launcher: choose your Top Gear ROM, set the optional enhancements, then start the game.
+// Launcher: choose your Top Gear (USA) ROM, set the optional enhancements, then start the game.
 //
-// Works with a mouse, the keyboard or a gamepad. The options are the ones topgear.exe keeps
+// Works with a mouse, the keyboard or a gamepad. The options are the ones the game keeps
 // in settings.txt (in the settings folder), so the game starts with them and its own
 // options menu (Tab) still changes them. The chosen ROM is remembered in launcher.txt there.
 
@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "brand.h"
 #include "launcher_start.h"
 #include "launcher_logo.h"
 #include "rom.h"
@@ -18,11 +19,7 @@
 #define VIEW_H 720
 #define TEXT 16  // 8x8 debug font drawn at twice its size
 
-#ifdef _WIN32
-#define GAME_EXE "topgear.exe"
-#else
-#define GAME_EXE "topgear"
-#endif
+#define GAME_EXE TG_GAME_EXE
 
 // --- Options -------------------------------------------------------------------------
 
@@ -424,7 +421,7 @@ static void draw(void) {
     SDL_FRect r = {LEFT_X - 8, 5, 78 * lw / lh, 78};
     SDL_RenderTexture(L.renderer, L.logo, NULL, &r);
   } else {
-    text(LEFT_X, 22, 5, kAccent, "TOP GEAR");
+    text(LEFT_X, 30, 3, kAccent, TG_APP_NAME);
   }
   drawRoad(t);
   fill(0, 86, VIEW_W, 2, kAccent, 255);
@@ -589,15 +586,15 @@ static void pollPadRepeat(void) {
 int main(int argc, char** argv) {
   (void) argc;
   (void) argv;
-  SDL_SetAppMetadata("Top Gear Launcher", "0.1", "topgear-pc");
+  SDL_SetAppMetadata(TG_APP_NAME " Launcher", "0.1", TG_APP_ID);
   SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "0");
   if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", SDL_GetError(), NULL);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, TG_APP_NAME, SDL_GetError(), NULL);
     return 1;
   }
   L.lock = SDL_CreateMutex();
   L.hover = -1;
-  char* pref = SDL_GetPrefPath("topgear-pc", "Top Gear");
+  char* pref = SDL_GetPrefPath(TG_PREF_ORG, TG_PREF_APP);
   if(pref) {
     snprintf(L.settingsPath, sizeof(L.settingsPath), "%ssettings.txt", pref);
     snprintf(L.launcherPath, sizeof(L.launcherPath), "%slauncher.txt", pref);
@@ -607,8 +604,8 @@ int main(int argc, char** argv) {
   findRom();
   L.focus = L.romOk ? F_PLAY : F_ROM;
 
-  if(!SDL_CreateWindowAndRenderer("Top Gear", VIEW_W, VIEW_H, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &L.window, &L.renderer)) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", SDL_GetError(), NULL);
+  if(!SDL_CreateWindowAndRenderer(TG_APP_NAME, VIEW_W, VIEW_H, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &L.window, &L.renderer)) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, TG_APP_NAME, SDL_GetError(), NULL);
     return 1;
   }
   SDL_SetRenderVSync(L.renderer, 1);

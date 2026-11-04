@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Coverage-driven disassembler for Top Gear (USA).
 
-Turns your ROM plus a coverage file (recorded by topgear / tg_headless) into ca65
+Turns your ROM plus a coverage file (recorded by the game or tg_headless) into ca65
 source that reassembles to the identical ROM. Bytes the game was seen executing are
 decoded as instructions with the register widths it actually used; everything else is
 emitted as data. Names and comments come from disasm/symbols.txt.

@@ -1,0 +1,20 @@
+// The project's name, set once in CMakeLists.txt (TG_APP_NAME, TG_EXE_NAME); CMake writes
+// brand.h from this file.
+#pragma once
+
+#define TG_APP_NAME "@TG_APP_NAME@"   // window titles, message boxes
+#define TG_APP_ID "@TG_EXE_NAME@"     // SDL's app identifier
+
+// The programs' file names: the game, which the launcher starts, and the launcher.
+#ifdef _WIN32
+#define TG_GAME_EXE "@TG_EXE_NAME@.exe"
+#define TG_LAUNCHER_EXE "@TG_EXE_NAME@-launcher.exe"
+#else
+#define TG_GAME_EXE "@TG_EXE_NAME@"
+#define TG_LAUNCHER_EXE "@TG_EXE_NAME@-launcher"
+#endif
+
+// The settings folder (settings.txt, progress.txt, ghosts.bin, launcher.txt). Kept as it was
+// before the rename, so existing settings, progress and ghost cars carry over.
+#define TG_PREF_ORG "topgear-pc"
+#define TG_PREF_APP "Top Gear"

@@ -2,7 +2,7 @@
 //
 // Every session is recorded to recordings/ next to the executable: the inputs (which
 // replay exactly, for regression tests) and which parts of the ROM ran (for the
-// disassembly). Command line: topgear [rom] [--no-record] [--replay file.txt]
+// disassembly). Command line: <game> [rom] [--no-record] [--replay file.txt]
 
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "brand.h"
 #include "coverage.h"
 #include "game.h"
 #include "input_script.h"
@@ -103,15 +104,15 @@ static bool findRom(const char* romArg, TgRom* rom, char* message, size_t messag
     }
   }
   snprintf(message, messageSize,
-    "Top Gear needs your own copy of the game.\n\n"
-    "Open topgear-launcher.exe and choose your Top Gear (USA) ROM,\n"
-    "or put it next to topgear.exe named \"Top Gear (USA).sfc\",\n"
-    "or drag the ROM file onto topgear.exe.\n\n"
+    TG_APP_NAME " needs your own copy of the game's ROM.\n\n"
+    "Open " TG_LAUNCHER_EXE " and choose your Top Gear (USA) ROM,\n"
+    "or put it next to " TG_GAME_EXE " named \"Top Gear (USA).sfc\",\n"
+    "or drag the ROM file onto " TG_GAME_EXE ".\n\n"
     "Expected SHA-256:\n" TG_ROM_SHA256);
   return false;
 }
 
-// Controls: controls.txt next to topgear.exe maps keys and gamepad buttons to SNES
+// Controls: controls.txt next to the game's executable maps keys and gamepad buttons to SNES
 // buttons (written with the defaults when missing).
 static const char* kButtonNames[12] = {"B", "Y", "SELECT", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "X", "L", "R"};
 
@@ -126,7 +127,7 @@ static Binding bindings[96];
 static int bindingCount;
 
 static const char* kDefaultControls =
-  "# Top Gear controls: one binding per line, <SNES button> key <key name> or\n"
+  "# " TG_APP_NAME " controls: one binding per line, <SNES button> key <key name> or\n"
   "# <SNES button> pad <gamepad button>. A button can have several bindings.\n"
   "# SNES buttons: B Y SELECT START UP DOWN LEFT RIGHT A X L R\n"
   "# Key names as SDL writes them (Z, Return, Right Shift, Keypad Enter, Space, ...).\n"
@@ -300,7 +301,7 @@ static void loadProgress(void) {
 static void updateTitle(void) {
   saveSettings();
   char title[128];
-  snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
+  snprintf(title, sizeof(title), TG_APP_NAME "  |  %s, %s%s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
            app.integerScale ? ", integer scale" : "",
            app.smooth && !app.original ? ", smooth motion" : "",
            app.fullView && !app.original ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
@@ -380,7 +381,7 @@ static void startRecording(void) {
   char dir[2048];
   snprintf(dir, sizeof(dir), "%srecordings", base ? base : "");
   if(!SDL_CreateDirectory(dir)) {
-    char* pref = SDL_GetPrefPath("topgear-pc", "Top Gear");
+    char* pref = SDL_GetPrefPath(TG_PREF_ORG, TG_PREF_APP);
     if(pref == NULL) return;
     snprintf(dir, sizeof(dir), "%srecordings", pref);
     SDL_free(pref);
@@ -394,7 +395,7 @@ static void startRecording(void) {
   snprintf(path, sizeof(path), "%s/session-%04d%02d%02d-%02d%02d%02d.txt", dir, t.year, t.month, t.day, t.hour, t.minute, t.second);
   app.record = fopen(path, "w");
   if(app.record) {
-    fprintf(app.record, "# Top Gear input recording from power-on. Replay: tg_headless --input <this file>\n");
+    fprintf(app.record, "# " TG_APP_NAME " input recording from power-on. Replay: tg_headless --input <this file>\n");
     fprintf(app.record, "# ROM SHA-256 %s\n", TG_ROM_SHA256);
     fprintf(app.record, app.original ? "# Played with the original code (--original)\n"
                                      : "# Played with the C race code: replay with tg_headless --port native\n");
@@ -921,15 +922,15 @@ static void drawMenu(void) {
 }
 
 int main(int argc, char** argv) {
-  SDL_SetAppMetadata("Top Gear", "0.1", "topgear-pc");
+  SDL_SetAppMetadata(TG_APP_NAME, "0.1", TG_APP_ID);
   if(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", SDL_GetError(), NULL);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, TG_APP_NAME, SDL_GetError(), NULL);
     return 1;
   }
 
   // Remembered options first; the command line can turn more on.
   app.aspect = ASPECT_4_3;
-  char* prefDir = SDL_GetPrefPath("topgear-pc", "Top Gear");
+  char* prefDir = SDL_GetPrefPath(TG_PREF_ORG, TG_PREF_APP);
   if(prefDir) {
     snprintf(app.settingsPath, sizeof(app.settingsPath), "%ssettings.txt", prefDir);
     snprintf(app.progressPath, sizeof(app.progressPath), "%sprogress.txt", prefDir);
@@ -968,13 +969,13 @@ int main(int argc, char** argv) {
   TgRom rom;
   char message[4096];
   if(!findRom(romArg, &rom, message, sizeof(message))) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", message, NULL);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, TG_APP_NAME, message, NULL);
     SDL_Quit();
     return 1;
   }
   app.game = tg_game_create(&rom);
   if(app.game == NULL) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", "Failed to start the game.", NULL);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, TG_APP_NAME, "Failed to start the game.", NULL);
     return 1;
   }
   // The translated C code runs the races; --original runs the game's own code throughout,
@@ -985,7 +986,7 @@ int main(int argc, char** argv) {
 
   if(replayPath) {
     if(!tg_input_script_load(replayPath, &app.replay, message, sizeof(message))) {
-      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", message, NULL);
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, TG_APP_NAME, message, NULL);
       return 1;
     }
     app.replaying = true;
@@ -993,7 +994,7 @@ int main(int argc, char** argv) {
   }
   if(record) startRecording();
   // Ghost cars: the best race on each course, kept with the settings.
-  char* pref = SDL_GetPrefPath("topgear-pc", "Top Gear");
+  char* pref = SDL_GetPrefPath(TG_PREF_ORG, TG_PREF_APP);
   if(pref) {
     snprintf(app.ghostPath, sizeof(app.ghostPath), "%sghosts.bin", pref);
     SDL_free(pref);
@@ -1001,8 +1002,8 @@ int main(int argc, char** argv) {
   }
 
   loadControls();
-  if(!SDL_CreateWindowAndRenderer("Top Gear", app.wide ? 1366 : 1024, 768, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &app.window, &app.renderer)) {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", SDL_GetError(), NULL);
+  if(!SDL_CreateWindowAndRenderer(TG_APP_NAME, app.wide ? 1366 : 1024, 768, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &app.window, &app.renderer)) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, TG_APP_NAME, SDL_GetError(), NULL);
     return 1;
   }
   SDL_SetWindowMinimumSize(app.window, SNES_W, SNES_H);

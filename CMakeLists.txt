@@ -8,6 +8,13 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# The project's name, in one place: window titles and message boxes (TG_APP_NAME) and the
+# programs' file names (TG_EXE_NAME, TG_EXE_NAME-launcher). src/brand.h.in passes them to the
+# code. The launcher's logo is drawn by tools/gen_launcher_art.py.
+set(TG_APP_NAME "Redline Atlas")
+set(TG_EXE_NAME "redline-atlas")
+configure_file(src/brand.h.in ${CMAKE_BINARY_DIR}/gen/brand.h @ONLY)
+
 option(TG_BUILD_FRONTEND "Build the SDL3 game executable" ON)
 option(TG_FETCH_SDL "Download and statically link SDL3 if it is not installed" ON)
 set(TG_TEST_ROM "" CACHE FILEPATH "Your Top Gear (USA) ROM, for ROM-dependent tests")
@@ -86,13 +93,16 @@ if(TG_BUILD_FRONTEND)
   endif()
   add_executable(topgear WIN32 src/main.c)
   target_link_libraries(topgear PRIVATE tgcore SDL3::SDL3)
-  # The launcher: choose the ROM and the options, then start topgear.exe.
+  target_include_directories(topgear PRIVATE ${CMAKE_BINARY_DIR}/gen)
+  set_target_properties(topgear PROPERTIES OUTPUT_NAME ${TG_EXE_NAME})
+  # The launcher: choose the ROM and the options, then start the game.
   add_executable(topgear-launcher WIN32 src/launcher.c src/rom.c src/sha256.c)
   target_include_directories(topgear-launcher PRIVATE src)
   target_link_libraries(topgear-launcher PRIVATE SDL3::SDL3)
+  set_target_properties(topgear-launcher PROPERTIES OUTPUT_NAME ${TG_EXE_NAME}-launcher)
   # The launcher's icon (assets/launcher-icon.ico, made by tools/gen_launcher_icon.py from the
   # box art) and its logo (assets/logo.bmp, built in).
-  set(TG_LAUNCHER_ICON "${CMAKE_SOURCE_DIR}/assets/launcher-icon.ico" CACHE FILEPATH "Icon (.ico) for topgear-launcher.exe")
+  set(TG_LAUNCHER_ICON "${CMAKE_SOURCE_DIR}/assets/launcher-icon.ico" CACHE FILEPATH "Icon (.ico) for the launcher")
   if(WIN32 AND EXISTS "${TG_LAUNCHER_ICON}")
     file(WRITE ${CMAKE_BINARY_DIR}/launcher_icon.rc "1 ICON \"${TG_LAUNCHER_ICON}\"\n")
     target_sources(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/launcher_icon.rc)
