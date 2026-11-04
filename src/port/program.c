@@ -336,6 +336,9 @@ static bool race_main(TgRegs* r) {
       fade_done(r, 0xE2, 0x65);
       if(dp16(r, 0xE1) != 0) continue;
     } else {
+      // Smooth motion (an enhancement): the wait counts down every third update.
+      static unsigned thirds;
+      if(tg_port_race_frames == 1 && ++thirds % 3 != 0) continue;
       ram16_set(0x1EE0, (uint16_t) (countdown - 1));
       if(countdown - 1 != 0) continue;
     }

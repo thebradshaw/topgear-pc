@@ -147,6 +147,18 @@ static inline uint16_t rom16(uint32_t adr) { const uint8_t* p = tg_rom(adr); ret
 // time, which is how the comparison tests run it.
 extern int tg_port_race_frames;
 
+// Smooth motion (an enhancement) runs three race updates where the original runs one.
+// Changes the original makes once per update, whatever its length, go through this so
+// they keep the original's pace: it returns a third of a signed step, keeping the
+// remainder in *carry for the next update. Without smooth motion it returns the step.
+static inline uint16_t tg_port_smooth_step(int16_t* carry, uint16_t step) {
+  if(tg_port_race_frames != 1) return step;
+  int32_t total = (int32_t) (int16_t) step + *carry;
+  int32_t third = total / 3;
+  *carry = (int16_t) (total - third * 3);
+  return (uint16_t) third;
+}
+
 // Counts the race's top-of-frame interrupts (RaceIrqTop): changes every frame of a race.
 extern uint32_t tg_port_race_irqs;
 // Full-screen 1-player view and widescreen (sprites.c, LakeSnes ppu_full.c), enhancements:

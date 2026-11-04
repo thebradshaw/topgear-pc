@@ -141,11 +141,18 @@ void RaceMoveCars(TgRegs* r) {
   do {
     uint16_t speed = ram16(CAR(x, 0x0A));
     if(speed != 0) {
-      speed = (uint16_t) (speed + ram16(CAR(x, 0x0C)));
+      // Smooth motion (an enhancement) spreads each step over three updates, keyed by car
+      // number since RaceSortCars moves records around.
+      static int16_t carry[32];
+      static uint8_t thirds[32];
+      uint8_t id = g_ram[CAR(x, 0x00)] & 0x1F;
+      speed = (uint16_t) (speed + tg_port_smooth_step(&carry[id], ram16(CAR(x, 0x0C))));
       ram16_set(CAR(x, 0x0A), speed);
-      uint16_t left = (uint16_t) (ram16(CAR(x, 0x0E)) - 1);
-      ram16_set(CAR(x, 0x0E), left);
-      if(left == 0) ram16_set(CAR(x, 0x0C), 0);
+      if(tg_port_race_frames != 1 || ++thirds[id] % 3 == 0) {
+        uint16_t left = (uint16_t) (ram16(CAR(x, 0x0E)) - 1);
+        ram16_set(CAR(x, 0x0E), left);
+        if(left == 0) ram16_set(CAR(x, 0x0C), 0);
+      }
       uint32_t product = ppu_multiply(speed, g_ram[RaceFramesElapsed]);
       uint32_t pos = (uint32_t) (g_ram[CAR(x, 0x06)] | ram16(CAR(x, 0x07)) << 8);
       ram16_set(0x001A, ram16(CAR(x, 0x07)));

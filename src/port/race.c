@@ -346,7 +346,8 @@ static void pit_stop(TgRegs* r, const PitStop* p) {
     next = (uint16_t) (s - 2);
     break;
   case 5: {  // refuelling
-    uint16_t fuel = (uint16_t) (ram16(p->fuel) + 0x7F);
+    static int16_t carry[2];
+    uint16_t fuel = (uint16_t) (ram16(p->fuel) + tg_port_smooth_step(&carry[p == &kPitStops[0] ? 0 : 1], 0x7F));
     if(fuel >= 0xA7FF) {
       ram16_set(p->fuel, 0xA7FF);
       break;

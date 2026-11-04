@@ -257,22 +257,32 @@ static uint16_t smooth_fuel(const Driver* d, uint16_t a) {
   return (uint16_t) (total / 3);
 }
 
+// Per-driver remainders for tg_port_smooth_step, so smooth motion keeps the original's
+// pace for changes it makes once per update.
+typedef struct SmoothCarry { int16_t rpm, speed, off_road, skid; } SmoothCarry;
+static SmoothCarry g_smooth[2];
+static SmoothCarry* smooth_of(const Driver* d) { return &g_smooth[d == &kDrivers[0] ? 0 : 1]; }
+
+// Sets a word to old plus the smoothed change from old to new.
+static void smooth_set(uint16_t adr, uint16_t old, uint16_t now, int16_t* carry) {
+  ram16_set(adr, (uint16_t) (old + tg_port_smooth_step(carry, (uint16_t) (now - old))));
+}
+
 // Engine and speed: gears, revs on the start line, nitro, acceleration, braking, fuel.
 // Returns y, the gear's table offset that later steps use.
 static uint16_t drive_engine(const Driver* d, bool* c_out) {
   bool c = *c_out;
+  SmoothCarry* k = smooth_of(d);
   // $D30F: revved engine settling on the start line.
   if(ram16(d->state) & 0x0010) {
-    uint16_t rpm = ram16(d->rpm);
-    rpm = rpm >= 0x0030 ? (uint16_t) (rpm - 0x0030) : 0;
-    ram16_set(d->rpm, rpm);
+    uint16_t rpm0 = ram16(d->rpm);
+    uint16_t rpm = rpm0 >= 0x0030 ? (uint16_t) (rpm0 - 0x0030) : 0;
     if(rpm != 0) {
       ram16_set(d->smoke, (uint16_t) ~ram16(d->smoke));
-      if(!(ram16(d->accel) & dp16(d->revving_held))) {
-        rpm = ram16(d->rpm);
-        ram16_set(d->rpm, rpm >= 0x0100 ? (uint16_t) (rpm - 0x0100) : 0);
-      }
+      if(!(ram16(d->accel) & dp16(d->revving_held))) rpm = rpm >= 0x0100 ? (uint16_t) (rpm - 0x0100) : 0;
+      smooth_set(d->rpm, rpm0, rpm, &k->rpm);
     } else {
+      ram16_set(d->rpm, 0);
       trb16(d->state, 0x0010);
       ram16_set(d->smoke, 0);
     }
@@ -306,6 +316,7 @@ static uint16_t drive_engine(const Driver* d, bool* c_out) {
     else if(speed >= tab16((uint16_t) (0x9A15 + y))) ram16_set(d->gear, (uint16_t) (g + 1));
   }
   // $D3D6: top speed for the fuel load, and the hill's pull.
+  uint16_t speed0 = ram16(d->speed);
   if(ram16(d->nitro) & 0x8000) y = (uint16_t) (y + 0x003A);
   uint16_t top = (uint16_t) ((uint16_t) (0xA7FF - ram16(d->fuel)) >> 6);
   top = (uint16_t) (top + tab16((uint16_t) (0x9597 + y)));
@@ -402,6 +413,7 @@ static uint16_t drive_engine(const Driver* d, bool* c_out) {
     }
   }
   ram16_set(0x0108, brake);
+  smooth_set(d->speed, speed0, ram16(d->speed), &k->speed);
   // $D5EB: revs from speed, and fuel used.
   if(!(ram16(d->state) & 0x0020)) {
     m7a(ram16(d->speed));
@@ -632,11 +644,12 @@ static void drive_steer(const Driver* d, uint16_t y) {
       throw_aside(d, 0xB000);
     }
   }
+  SmoothCarry* k = smooth_of(d);
   if(off) {
     m7a(ram16(d->speed));
     m7b(0x06);
     m7b(0x06);
-    ram16_set(d->speed, (uint16_t) (ram16(d->speed) - mpy_mh()));
+    ram16_set(d->speed, (uint16_t) (ram16(d->speed) - tg_port_smooth_step(&k->off_road, mpy_mh())));
   }
   // $D85B: steering, or the slide after being pushed sideways.
   uint16_t skid = ram16(d->skid);
@@ -644,13 +657,15 @@ static void drive_steer(const Driver* d, uint16_t y) {
     ram16_set(d->smoke, 0xFFFF);
     uint16_t a = ram16(d->steer);
     if(a != 0) {
+      uint16_t a0 = a;
       if(a & 0x8000) {
         uint32_t sum = (uint32_t) a + skid;
         a = sum > 0xFFFF ? 0 : (uint16_t) sum;
       } else {
         a = a >= skid ? (uint16_t) (a - skid) : 0;  // the clamp never happens in the recordings
       }
-      ram16_set(d->steer, a);
+      smooth_set(d->steer, a0, a, &k->skid);
+      a = ram16(d->steer);
     }
     x = swap(a);
     if(x == 0) ram16_set(d->skid, 0);
@@ -855,6 +870,8 @@ static void drive_rival(void) {
     else if(speed >= tab16((uint16_t) (0x9A89 + y))) ram16_set(d->gear, (uint16_t) (ram16(d->gear) + 1));
   }
   rival_top_speed(y);
+  SmoothCarry* k = smooth_of(d);
+  uint16_t speed0 = ram16(d->speed);
   // Hills.
   uint16_t pos = ram16((uint16_t) (d->pos + 1));
   uint16_t hill = neg(ram16((uint16_t) (0x4000 + ((pos >> 4) & 0xFFFE))));
@@ -900,6 +917,7 @@ static void drive_rival(void) {
       ram16_set(d->speed, (uint16_t) (ram16(d->speed) - a));
     }
   }
+  smooth_set(d->speed, speed0, ram16(d->speed), &k->speed);
   // Revs, and fuel used by them.
   m7a(ram16(d->speed));
   m7b(0);
@@ -968,7 +986,7 @@ static void drive_rival(void) {
     // Skidding: the steering straightens by $280 plus the skid each update.
     ram16_set(d->smoke, 0xFFFF);
     a = ram16(d->steer);
-    uint16_t skid = ram16(d->skid);
+    uint16_t skid = ram16(d->skid), a0 = a;
     if(a != 0) {
       if(a & 0x8000) {
         uint32_t sum = (uint32_t) a + 0x0280;
@@ -981,7 +999,8 @@ static void drive_rival(void) {
         a = a >= skid ? (uint16_t) (a - skid) : 0;
       }
     }
-    ram16_set(d->steer, a);
+    smooth_set(d->steer, a0, a, &k->skid);
+    a = ram16(d->steer);
     x = swap(a);
     if(x == 0) ram16_set(d->skid, 0);
   }

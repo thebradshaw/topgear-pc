@@ -25,7 +25,10 @@ static void steer_car(TgRegs* r, uint16_t x) {
   uint16_t left = asr16((uint16_t) (edges << 8));
   ram16_set((uint16_t) (r->d + 0x1A), right);  // direct page scratch, as in the original
   ram16_set((uint16_t) (r->d + 0x1C), left);
-  uint16_t side = (uint16_t) (ram16(NEXT(x, 0x02)) + ram16(NEXT(x, 0x04)));
+  // Smooth motion (an enhancement) moves a third as far per update, keyed by car number.
+  static int16_t carry[32];
+  uint16_t move = tg_port_smooth_step(&carry[g_ram[NEXT(x, 0x00)] & 0x1F], ram16(NEXT(x, 0x04)));
+  uint16_t side = (uint16_t) (ram16(NEXT(x, 0x02)) + move);
   ram16_set(NEXT(x, 0x02), side);
   uint16_t a = asr16(side);
   bool reverse;
