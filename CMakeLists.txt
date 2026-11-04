@@ -100,19 +100,14 @@ if(TG_BUILD_FRONTEND)
   target_include_directories(topgear-launcher PRIVATE src)
   target_link_libraries(topgear-launcher PRIVATE SDL3::SDL3)
   set_target_properties(topgear-launcher PROPERTIES OUTPUT_NAME ${TG_EXE_NAME}-launcher)
-  # The launcher's icon (assets/launcher-icon.ico, made by tools/gen_launcher_icon.py from the
-  # box art) and its logo (assets/logo.bmp, built in).
+  # The launcher's icon. It, the logo and the Start word (src/launcher_art.h) are drawn by
+  # tools/gen_launcher_art.py.
   set(TG_LAUNCHER_ICON "${CMAKE_SOURCE_DIR}/assets/launcher-icon.ico" CACHE FILEPATH "Icon (.ico) for the launcher")
   if(WIN32 AND EXISTS "${TG_LAUNCHER_ICON}")
     file(WRITE ${CMAKE_BINARY_DIR}/launcher_icon.rc "1 ICON \"${TG_LAUNCHER_ICON}\"\n")
     target_sources(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/launcher_icon.rc)
     set_source_files_properties(${CMAKE_BINARY_DIR}/launcher_icon.rc PROPERTIES OBJECT_DEPENDS "${TG_LAUNCHER_ICON}")
   endif()
-  add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/gen/launcher_logo.h
-    COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_SOURCE_DIR}/assets/logo.bmp -DOUT=${CMAKE_BINARY_DIR}/gen/launcher_logo.h
-      -DNAME=kLogoBmp -P ${CMAKE_SOURCE_DIR}/cmake/bin2h.cmake
-    DEPENDS ${CMAKE_SOURCE_DIR}/assets/logo.bmp ${CMAKE_SOURCE_DIR}/cmake/bin2h.cmake)
-  target_sources(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/gen/launcher_logo.h)
   target_include_directories(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/gen)
   if(MINGW)
     target_link_options(topgear PRIVATE -static -static-libgcc)

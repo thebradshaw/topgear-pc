@@ -1,0 +1,6 @@
+Barlow typeface by Jeremy Tribby, version 1.408, SIL Open Font License 1.1 (OFL.txt).
+Files taken unmodified from https://github.com/google/fonts/tree/main/ofl/barlow
+(upstream: https://github.com/jpt/barlow). No Reserved Font Name.
+
+Used only by tools/gen_launcher_art.py, which draws the launcher's logo, Start word and icon
+from them. The fonts themselves are not built into the programs.

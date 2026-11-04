@@ -119,6 +119,8 @@ ctest --test-dir build -C Release --output-on-failure
 | `src/game.c` | The game as the frontend sees it; translated C will land behind this interface |
 | `src/main.c` | SDL3 frontend: window, fullscreen, scaling, input, audio |
 | `src/launcher.c` | The launcher: choose the ROM and the options |
+| `tools/gen_launcher_art.py` | Draws the launcher's logo and Start word (`src/launcher_art.h`) and its icon (`assets/launcher-icon.ico`) from the Barlow typeface |
+| `third_party/barlow` | Barlow typeface (SIL Open Font License 1.1), used only by `tools/gen_launcher_art.py` |
 | `src/rom.c` | Loads and verifies your ROM |
 | `third_party/lakesnes` | Reference emulator (MIT, see its LICENSE.txt) |
 | `src/coverage.c` | Execution and data coverage of the original ROM |

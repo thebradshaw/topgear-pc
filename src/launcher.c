@@ -11,8 +11,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "brand.h"
-#include "launcher_start.h"
-#include "launcher_logo.h"
+#include "launcher_art.h"
 #include "rom.h"
 
 #define VIEW_W 1280
@@ -101,8 +100,9 @@ static struct {
   Uint64 heldSince;
   int heldDir;
   Uint64 nextRepeat;
-  SDL_Texture* logo;  // logo.bmp next to the launcher, when there is one
-  SDL_Texture* playWord;  // "PLAY", drawn in the logo's style
+  SDL_Texture* logo;  // the built-in logo, or logo.bmp next to the launcher
+  bool logoBmp;  // the logo is a logo.bmp
+  SDL_Texture* playWord;  // the Start button's word
 } L;
 
 // --- Settings ------------------------------------------------------------------------
@@ -366,32 +366,50 @@ static float optionY(int i) {
 #define ROMBTN_Y 236.0f
 #define PLAY_Y 592.0f
 
-// The logo (assets/logo.bmp, built into the launcher; magenta is see-through). A logo.bmp
-// next to the launcher replaces it.
+// The built-in art (launcher_art.h, drawn by tools/gen_launcher_art.py): premultiplied RGBA at
+// LAUNCHER_ART_SCALE texels a launcher pixel, run-length packed (a byte c < 128: the next
+// pixel c + 1 times; c >= 128: the next c - 127 pixels as they are).
+static SDL_Texture* artTexture(const unsigned char* packed, size_t size, int w, int h) {
+  SDL_Surface* s = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGBA32);
+  if(s == NULL) return NULL;
+  size_t n = 0, total = (size_t) w * (size_t) h;
+  for(size_t i = 0; i < size && n < total; ) {
+    unsigned c = packed[i++];
+    size_t count = c < 128 ? c + 1 : c - 127, bytes = c < 128 ? 4 : 4 * count;
+    if(i + bytes > size) break;
+    for(size_t k = 0; k < count && n < total; k++, n++) {
+      Uint8* dst = (Uint8*) s->pixels + (n / (size_t) w) * (size_t) s->pitch + (n % (size_t) w) * 4;
+      memcpy(dst, packed + i + (c < 128 ? 0 : 4 * k), 4);
+    }
+    i += bytes;
+  }
+  SDL_Texture* tex = SDL_CreateTextureFromSurface(L.renderer, s);
+  SDL_DestroySurface(s);
+  if(tex) {
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND_PREMULTIPLIED);
+    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_LINEAR);
+  }
+  return tex;
+}
+
+// The logo (launcher_art.h). A logo.bmp next to the launcher replaces it (magenta is
+// see-through).
 static void loadLogo(void) {
   char path[2400];
   const char* base = SDL_GetBasePath();
   snprintf(path, sizeof(path), "%slogo.bmp", base ? base : "");
   SDL_Surface* s = SDL_LoadBMP(path);
-  if(s == NULL) s = SDL_LoadBMP_IO(SDL_IOFromConstMem(kLogoBmp, sizeof(kLogoBmp)), true);
-  if(s == NULL) return;
-  SDL_SetSurfaceColorKey(s, true, SDL_MapSurfaceRGB(s, 255, 0, 255));
-  L.logo = SDL_CreateTextureFromSurface(L.renderer, s);
-  SDL_DestroySurface(s);
-  if(L.logo) SDL_SetTextureScaleMode(L.logo, SDL_SCALEMODE_LINEAR);
-}
-
-// The Start button's word, drawn in the spirit of the Top Gear logo (launcher_start.h).
-static SDL_Texture* startTexture(void) {
-  SDL_Surface* s = SDL_CreateSurfaceFrom(START_ART_W, START_ART_H, SDL_PIXELFORMAT_RGBA32, (void*) kStartArt, START_ART_W * 4);
-  if(s == NULL) return NULL;
-  SDL_Texture* tex = SDL_CreateTextureFromSurface(L.renderer, s);
-  SDL_DestroySurface(s);
-  if(tex) {
-    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
-    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+  if(s) {
+    SDL_SetSurfaceColorKey(s, true, SDL_MapSurfaceRGB(s, 255, 0, 255));
+    L.logo = SDL_CreateTextureFromSurface(L.renderer, s);
+    SDL_DestroySurface(s);
+    if(L.logo) {
+      SDL_SetTextureScaleMode(L.logo, SDL_SCALEMODE_LINEAR);
+      L.logoBmp = true;
+      return;
+    }
   }
-  return tex;
+  L.logo = artTexture(kLogoArt, sizeof(kLogoArt), LOGO_ART_W, LOGO_ART_H);
 }
 
 static void drawRoad(Uint64 t) {
@@ -415,10 +433,14 @@ static void draw(void) {
   SDL_RenderClear(L.renderer);
   // Header
   for(int y = 0; y < 86; y++) fill(0, (float) y, VIEW_W, 1, (Rgb) {(Uint8) (20 + y / 4), (Uint8) (22 + y / 6), (Uint8) (36 + y / 3)}, 255);
-  if(L.logo) {
+  if(L.logo && L.logoBmp) {
     float lw, lh;
     SDL_GetTextureSize(L.logo, &lw, &lh);
     SDL_FRect r = {LEFT_X - 8, 5, 78 * lw / lh, 78};
+    SDL_RenderTexture(L.renderer, L.logo, NULL, &r);
+  } else if(L.logo) {
+    float lw = (float) LOGO_ART_W / LAUNCHER_ART_SCALE, lh = (float) LOGO_ART_H / LAUNCHER_ART_SCALE;
+    SDL_FRect r = {LEFT_X - 6, SDL_floorf((86 - lh) / 2), lw, lh};
     SDL_RenderTexture(L.renderer, L.logo, NULL, &r);
   } else {
     text(LEFT_X, 30, 3, kAccent, TG_APP_NAME);
@@ -461,7 +483,7 @@ static void draw(void) {
       "Starts the game with these options. Tab (or the gamepad's guide button) opens the options menu while you play.");
   }
 
-  // Play: a dark button with a thin orange edge, the word in the logo's style
+  // Play: a dark button with a thin orange edge and the Start word
   {
     bool f = L.focus == F_PLAY;
     float pulse = f ? 0.5f + 0.5f * SDL_sinf((float) t / 260.0f) : 0;
@@ -476,7 +498,8 @@ static void draw(void) {
       // Greyed out until there is a ROM to play.
       Uint8 v = L.romOk ? 255 : 110;
       SDL_SetTextureColorMod(L.playWord, v, v, v);
-      SDL_FRect r = {LEFT_X + (LEFT_W - START_ART_W) / 2, PLAY_Y + (80 - START_ART_H) / 2.0f + 1, START_ART_W, START_ART_H};
+      float sw = (float) START_ART_W / LAUNCHER_ART_SCALE, sh = (float) START_ART_H / LAUNCHER_ART_SCALE;
+      SDL_FRect r = {SDL_floorf(LEFT_X + (LEFT_W - sw) / 2), SDL_floorf(PLAY_Y + (80 - sh) / 2 + 1), sw, sh};
       SDL_RenderTexture(L.renderer, L.playWord, NULL, &r);
     }
   }
@@ -612,7 +635,7 @@ int main(int argc, char** argv) {
   SDL_SetRenderLogicalPresentation(L.renderer, VIEW_W, VIEW_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
   SDL_SetRenderDrawBlendMode(L.renderer, SDL_BLENDMODE_BLEND);
   loadLogo();
-  L.playWord = startTexture();
+  L.playWord = artTexture(kStartArt, sizeof(kStartArt), START_ART_W, START_ART_H);
 
   // For checking the layout without a display: SDL_VIDEO_DRIVER=offscreen
   // TG_LAUNCHER_SHOT=out.bmp [TG_LAUNCHER_FOCUS=n] saves a picture and quits.
