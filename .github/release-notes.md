@@ -10,4 +10,4 @@ Downloads:
 
 What's in it: a faithful port of the races, plus optional extras that are all off by default. These include widescreen, a full-screen 1-player view, smooth motion and high frame rate, a ghost car, auto-save, display filters, TV colours, rumble and button remapping. The README has the details.
 
-A fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics or Nintendo.
+An independent fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics, Nintendo, the BBC or anyone else who holds rights in Top Gear. "Top Gear" is a trademark of its owners and is used here only to say which game's ROM the program needs. The downloads contain nothing from the game.

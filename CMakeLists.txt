@@ -90,6 +90,8 @@ if(TG_BUILD_FRONTEND)
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(SDL3)
+    # SDL3's licence (zlib), which the release downloads ship with.
+    configure_file(${sdl3_SOURCE_DIR}/LICENSE.txt ${CMAKE_BINARY_DIR}/licenses/SDL3-LICENSE.txt COPYONLY)
   endif()
   add_executable(topgear WIN32 src/main.c)
   target_link_libraries(topgear PRIVATE tgcore SDL3::SDL3)

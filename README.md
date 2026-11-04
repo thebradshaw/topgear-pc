@@ -19,7 +19,7 @@
 - 524,288 bytes (a 512-byte copier header is removed automatically)
 - SHA-256 `ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788`
 
-A fan project, not affiliated with or endorsed by Kemco, Gremlin Graphics or Nintendo. Top Gear is a trademark of its owners.
+An independent fan project, not affiliated with or endorsed by the owners of Top Gear. "Top Gear" is used only to name the game whose ROM the program needs; see [Legal](#legal).
 
 The downloads above are always the latest release; older ones are on the [releases page](../../releases). The Linux build is new and untested on real machines, so it may not be stable.
 
@@ -127,3 +127,11 @@ ctest --test-dir build -C Release --output-on-failure
 | `tests/inputs/` | Input recordings replayed by the regression tests |
 | `disasm/` | Symbols and accumulated coverage (no ROM content) |
 | `tests/` | Tests |
+
+## Legal
+
+- **Not affiliated.** Redline Atlas is an independent, non-commercial fan project. It is not affiliated with, endorsed by, sponsored by or approved by Kemco, Gremlin Graphics, Nintendo, the BBC or anyone else who holds or has held rights in the 1992 game *Top Gear* or in the name "Top Gear".
+- **Trademarks.** Top Gear, Nintendo, Super Nintendo Entertainment System and SNES are trademarks of their respective owners. This project uses "Top Gear" only to say which game's ROM the program works with.
+- **No game data.** This repository and its downloads contain no ROM and nothing taken from the game: no graphics, music, sound samples, text or data tables. The program reads all of that at run time from the ROM you supply. Tools that work from your ROM (such as `tools/disasm.py`) write their output on your machine and it is never committed.
+- **Your own copy.** The program needs a copy of the Top Gear (USA) ROM that you have obtained legally. The project does not provide ROMs or point to places to get them.
+- **Third-party parts.** LakeSnes (MIT, `third_party/lakesnes/LICENSE.txt`) and SDL3 (zlib) are built into the programs; their licences come with the downloads. The Barlow typeface (SIL Open Font License 1.1, `third_party/barlow/OFL.txt`) is used only to draw the launcher's logo, Start word and icon, which are the project's own design (`tools/gen_launcher_art.py`).
