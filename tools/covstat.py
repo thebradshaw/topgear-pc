@@ -4,14 +4,14 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from tgcov import ROM, Coverage  # noqa: E402
+from tgcov import Coverage  # noqa: E402
 
 OPCODE, OPERAND, READ = 1, 2, 4
 
 
 def main():
     cov = Coverage.load(sys.argv[1])
-    flags, entry, ram = cov.flags, cov.entry, cov.ram
+    flags, entry, ram, ROM = cov.flags, cov.entry, cov.ram, cov.rom_size
     code = sum(1 for f in flags if f & (OPCODE | OPERAND))
     data = sum(1 for f in flags if f & READ and not f & (OPCODE | OPERAND))
     targets = sum(1 for e in entry if e & 1)

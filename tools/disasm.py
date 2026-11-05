@@ -21,9 +21,15 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tgcov import Coverage  # noqa: E402
 
-ROM_SIZE = 0x80000
+# The supported dumps (all USA): SHA-256 -> (name, output prefix, folder under disasm/).
+GAMES = {
+    "ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788": ("Top Gear", "topgear", ""),
+    "76b2702c4be8b668c1017f2817c280283c275eaa41535bf6ffa2b8d2220b68c6": ("Top Gear 2", "topgear2", "topgear2"),
+    "6be49983976564f1fd9eff2f14f5bb41d3a0ff48573e39318088ecce286aca62": ("Top Gear 3000", "topgear3000", "topgear3000"),
+}
+ROM_SIZE = 0x80000  # set from the ROM in main()
 BANKS = ROM_SIZE // 0x8000
-ROM_SHA256 = "ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788"
+PREFIX = "topgear"
 
 OPCODE, OPERAND, READ = 1, 2, 4
 M16X16, M16X8, M8X16, M8X8, EMU = 8, 16, 32, 64, 128
@@ -390,14 +396,14 @@ class Disassembler:
                     off += 1
             flush()
             lines.append("")
-        with open(os.path.join(out_dir, "topgear.s"), "w") as f:
+        with open(os.path.join(out_dir, PREFIX + ".s"), "w") as f:
             f.write("\n".join(lines) + "\n")
         cfg = ["MEMORY {"]
         cfg += [f"  ROM{b:02X}: start = $8000, size = $8000, fill = yes;" for b in range(BANKS)]
         cfg += ["}", "SEGMENTS {"]
         cfg += [f"  BANK{b:02X}: load = ROM{b:02X}, type = ro;" for b in range(BANKS)]
         cfg += ["}"]
-        with open(os.path.join(out_dir, "topgear.cfg"), "w") as f:
+        with open(os.path.join(out_dir, PREFIX + ".cfg"), "w") as f:
             f.write("\n".join(cfg) + "\n")
         return stats
 
@@ -406,16 +412,22 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rom", required=True)
     ap.add_argument("--coverage", required=True)
-    ap.add_argument("--symbols", default=os.path.join(os.path.dirname(__file__), "..", "disasm", "symbols.txt"))
-    ap.add_argument("--ram", default=os.path.join(os.path.dirname(__file__), "..", "disasm", "ram.txt"))
+    ap.add_argument("--symbols", help="default: disasm/[game/]symbols.txt")
+    ap.add_argument("--ram", help="default: disasm/[game/]ram.txt")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
+    global ROM_SIZE, BANKS, PREFIX
     rom = open(args.rom, "rb").read()
     if len(rom) % 1024 == 512:
         rom = rom[512:]
-    if hashlib.sha256(rom).hexdigest() != ROM_SHA256:
-        sys.exit("not an unmodified Top Gear (USA) ROM")
+    game = GAMES.get(hashlib.sha256(rom).hexdigest())
+    if game is None:
+        sys.exit("not an unmodified Top Gear, Top Gear 2 or Top Gear 3000 (USA) ROM")
+    ROM_SIZE, BANKS, PREFIX = len(rom), len(rom) // 0x8000, game[1]
+    folder = os.path.join(os.path.dirname(__file__), "..", "disasm", game[2])
+    args.symbols = args.symbols or os.path.join(folder, "symbols.txt")
+    args.ram = args.ram or os.path.join(folder, "ram.txt")
     flags, entry, db, dp = load_coverage(args.coverage)
     names, comments = load_symbols(args.symbols)
     d = Disassembler(rom, flags, entry, names, comments, db, dp, load_ram_names(args.ram))

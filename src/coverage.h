@@ -33,10 +33,11 @@ enum {
 #define TG_COV_RAM_OPS 16384
 
 struct TgCoverage {
-  uint8_t flags[TG_ROM_SIZE];
-  uint8_t entry[TG_ROM_SIZE];
-  uint8_t db[TG_ROM_SIZE];
-  uint16_t dp[TG_ROM_SIZE];
+  uint32_t romSize;  // tg_rom_size when the coverage was started
+  uint8_t flags[TG_ROM_MAX];
+  uint8_t entry[TG_ROM_MAX];
+  uint8_t db[TG_ROM_MAX];
+  uint16_t dp[TG_ROM_MAX];
   uint8_t ramFlags[TG_COV_RAM_SIZE];  // same bits as flags[], for code run from work RAM
   uint32_t ramOps[TG_COV_RAM_OPS];  // hash set: 1 << 31 | ramAddr << 13 | opcode << 5 | mode >> 3
   // tracking state, not saved
@@ -57,5 +58,7 @@ void tg_coverage_on_read(TgCoverage* cov, uint32_t adr);
 int tg_w65816_length(uint8_t opcode, bool m8, bool x8);
 // LoROM CPU address to ROM offset, or -1.
 int32_t tg_lorom_offset(uint32_t adr);
+// Size of the loaded ROM, for mirroring LoROM addresses (set by tg_game_create).
+extern uint32_t tg_rom_size;
 
 #endif

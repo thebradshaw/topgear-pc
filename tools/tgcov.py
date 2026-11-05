@@ -1,14 +1,14 @@
 """Reads and writes coverage files (.tgcov) produced by src/coverage.c."""
 import struct
 
-ROM = 0x80000
 RAM = 0x20000
 RAM_OPS = 16384
-V1, V2 = b"TGCOV01\0", b"TGCOV02\0"
+V1, V2, V3 = b"TGCOV01\0", b"TGCOV02\0", b"TGCOV03\0"  # V3 adds the ROM size; V1/V2 are Top Gear's
 
 
 class Coverage:
-    def __init__(self):
+    def __init__(self, rom_size=0x80000):
+        ROM = self.rom_size = rom_size
         self.flags = bytearray(ROM)
         self.entry = bytearray(ROM)
         self.db = bytearray(ROM)
@@ -19,14 +19,18 @@ class Coverage:
     @classmethod
     def load(cls, path):
         d = open(path, "rb").read()
-        if d[:8] not in (V1, V2):
+        if d[:8] not in (V1, V2, V3):
             raise ValueError(f"{path}: not a coverage file")
-        c = cls()
         o = 8
+        ROM = 0x80000
+        if d[:8] == V3:
+            ROM = struct.unpack_from("<I", d, 8)[0]
+            o = 12
+        c = cls(ROM)
         for name, n in (("flags", ROM), ("entry", ROM), ("db", ROM), ("dp", 2 * ROM), ("ram", RAM)):
             setattr(c, name, bytearray(d[o:o + n]))
             o += n
-        if d[:8] == V2:
+        if d[:8] != V1:
             for (k,) in struct.iter_unpack("<I", d[o:o + 4 * RAM_OPS]):
                 if k:
                     c.ram_ops.add(((k >> 13) & 0x1FFFF, (k >> 5) & 0xFF, k & 0x1F))
@@ -46,14 +50,16 @@ class Coverage:
                     table[j] = key
                     break
         with open(path, "wb") as f:
-            f.write(V2)
+            f.write(V3 + struct.pack("<I", self.rom_size))
             for b in (self.flags, self.entry, self.db, self.dp, self.ram):
                 f.write(b)
             f.write(struct.pack(f"<{RAM_OPS}I", *table))
 
     def merge(self, other):
+        if other.rom_size != self.rom_size:
+            raise ValueError("coverage of different games")
         old = bytes(self.flags)
-        for i in range(ROM):
+        for i in range(self.rom_size):
             if other.flags[i] & 1 and not old[i] & 1:
                 self.db[i] = other.db[i]
                 self.dp[2 * i:2 * i + 2] = other.dp[2 * i:2 * i + 2]

@@ -11,7 +11,7 @@
 
 struct TgGame {
   Snes* snes;
-  uint8_t rom[TG_ROM_SIZE];
+  uint8_t rom[TG_ROM_MAX];
   TgCoverage* coverage;
   FILE* trace;
   TgLockstep* lockstep;
@@ -22,7 +22,8 @@ TgGame* tg_game_create(const TgRom* rom) {
   if(game == NULL) return NULL;
   game->snes = snes_init();
   snes_setPixelFormat(game->snes, pixelFormatXRGB);
-  memcpy(game->rom, rom->data, TG_ROM_SIZE);
+  memcpy(game->rom, rom->data, rom->size);
+  tg_rom_size = (uint32_t) rom->size;
   if(!snes_loadRom(game->snes, rom->data, (int) rom->size)) {
     tg_game_destroy(game);
     return NULL;

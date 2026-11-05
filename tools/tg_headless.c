@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
   }
 
   TgRom rom;
-  TgRomStatus status = tg_rom_load(romPath, &rom);
+  TgRomStatus status = tg_rom_load_any(romPath, &rom);
   if(status != TG_ROM_OK) {
     fprintf(stderr, "%s: %s\n", romPath, tg_rom_status_message(status));
     return 1;
@@ -149,6 +149,10 @@ int main(int argc, char** argv) {
     }
   }
 
+  if(rom.game != TG_GAME_TOPGEAR && (portMode != TG_PORT_OFF || nativeFrom >= 0)) {
+    fprintf(stderr, "%s runs emulated only: use --port off\n", tg_games[rom.game].name);
+    return 2;
+  }
   TgGame* game = tg_game_create(&rom);
 
   g_game = game;

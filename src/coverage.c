@@ -34,11 +34,13 @@ int tg_w65816_length(uint8_t opcode, bool m8, bool x8) {
   return c - '0';
 }
 
+uint32_t tg_rom_size = TG_ROM_SIZE;
+
 int32_t tg_lorom_offset(uint32_t adr) {
   uint8_t bank = (uint8_t) (adr >> 16);
   if((bank & 0x7e) == 0x7e && bank < 0x80) return -1;  // work RAM
   if((adr & 0x8000) == 0) return -1;
-  return (int32_t) ((((uint32_t) (bank & 0x7f) << 15) | (adr & 0x7fff)) % TG_ROM_SIZE);
+  return (int32_t) ((((uint32_t) (bank & 0x7f) << 15) | (adr & 0x7fff)) % tg_rom_size);
 }
 
 static int32_t ramOffset(uint32_t adr) {
@@ -50,6 +52,7 @@ static int32_t ramOffset(uint32_t adr) {
 
 void tg_coverage_init(TgCoverage* cov) {
   memset(cov, 0, sizeof(*cov));
+  cov->romSize = tg_rom_size;
   cov->prevNext = 0xffffffff;
 }
 
@@ -106,17 +109,21 @@ void tg_coverage_on_read(TgCoverage* cov, uint32_t adr) {
   if(off >= 0) cov->flags[off] |= TG_COV_READ;
 }
 
-static const char magic[8] = "TGCOV02";
+// Version 3 adds the ROM size after the magic; versions 1 and 2 are always Top Gear's.
+static const char magic[8] = "TGCOV03";
+static const char magicV2[8] = "TGCOV02";
 static const char magicV1[8] = "TGCOV01";
 
 bool tg_coverage_save(const TgCoverage* cov, const char* path) {
   FILE* f = fopen(path, "wb");
   if(f == NULL) return false;
-  bool ok = fwrite(magic, 1, 8, f) == 8 &&
-    fwrite(cov->flags, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
-    fwrite(cov->entry, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
-    fwrite(cov->db, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
-    fwrite(cov->dp, 2, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
+  size_t n = cov->romSize;
+  uint8_t size[4] = { (uint8_t) n, (uint8_t) (n >> 8), (uint8_t) (n >> 16), (uint8_t) (n >> 24) };
+  bool ok = fwrite(magic, 1, 8, f) == 8 && fwrite(size, 1, 4, f) == 4 &&
+    fwrite(cov->flags, 1, n, f) == n &&
+    fwrite(cov->entry, 1, n, f) == n &&
+    fwrite(cov->db, 1, n, f) == n &&
+    fwrite(cov->dp, 2, n, f) == n &&
     fwrite(cov->ramFlags, 1, TG_COV_RAM_SIZE, f) == TG_COV_RAM_SIZE &&
     fwrite(cov->ramOps, 4, TG_COV_RAM_OPS, f) == TG_COV_RAM_OPS;
   return fclose(f) == 0 && ok;
@@ -127,13 +134,22 @@ bool tg_coverage_load(TgCoverage* cov, const char* path) {
   FILE* f = fopen(path, "rb");
   if(f == NULL) return false;
   char m[8];
-  bool ok = fread(m, 1, 8, f) == 8 && (memcmp(m, magic, 8) == 0 || memcmp(m, magicV1, 8) == 0) &&
-    fread(cov->flags, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
-    fread(cov->entry, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
-    fread(cov->db, 1, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
-    fread(cov->dp, 2, TG_ROM_SIZE, f) == TG_ROM_SIZE &&
+  bool ok = fread(m, 1, 8, f) == 8 &&
+    (memcmp(m, magic, 8) == 0 || memcmp(m, magicV2, 8) == 0 || memcmp(m, magicV1, 8) == 0);
+  size_t n = TG_ROM_SIZE;
+  if(ok && memcmp(m, magic, 8) == 0) {
+    uint8_t size[4];
+    ok = fread(size, 1, 4, f) == 4;
+    n = (size_t) size[0] | (size_t) size[1] << 8 | (size_t) size[2] << 16 | (size_t) size[3] << 24;
+    ok = ok && n == tg_rom_size;  // coverage of another game
+  }
+  ok = ok &&
+    fread(cov->flags, 1, n, f) == n &&
+    fread(cov->entry, 1, n, f) == n &&
+    fread(cov->db, 1, n, f) == n &&
+    fread(cov->dp, 2, n, f) == n &&
     fread(cov->ramFlags, 1, TG_COV_RAM_SIZE, f) == TG_COV_RAM_SIZE;
-  if(ok && memcmp(m, magic, 8) == 0) ok = fread(cov->ramOps, 4, TG_COV_RAM_OPS, f) == TG_COV_RAM_OPS;
+  if(ok && memcmp(m, magicV1, 8) != 0) ok = fread(cov->ramOps, 4, TG_COV_RAM_OPS, f) == TG_COV_RAM_OPS;
   fclose(f);
   if(!ok) tg_coverage_init(cov);
   return ok;

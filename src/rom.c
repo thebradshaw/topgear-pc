@@ -1,12 +1,19 @@
 #include "rom.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "sha256.h"
 
-TgRomStatus tg_rom_load(const char* path, TgRom* rom) {
+const TgGameInfo tg_games[TG_GAME_COUNT] = {
+  { "Top Gear", TG_ROM_SHA256, TG_ROM_SIZE },
+  { "Top Gear 2", "76b2702c4be8b668c1017f2817c280283c275eaa41535bf6ffa2b8d2220b68c6", 0x100000 },
+  { "Top Gear 3000", "6be49983976564f1fd9eff2f14f5bb41d3a0ff48573e39318088ecce286aca62", 0x100000 },
+};
+
+static TgRomStatus load(const char* path, TgRom* rom, bool any) {
   memset(rom, 0, sizeof(*rom));
   FILE* f = fopen(path, "rb");
   if(f == NULL) return TG_ROM_NOT_FOUND;
@@ -34,18 +41,24 @@ TgRomStatus tg_rom_load(const char* path, TgRom* rom) {
   tg_sha256(data, size, digest);
   for(int i = 0; i < 32; i++) sprintf(rom->sha256 + i * 2, "%02x", digest[i]);
 
-  if(size != TG_ROM_SIZE) {
-    free(data);
-    return TG_ROM_WRONG_SIZE;
+  int game = -1;
+  for(int g = 0; g < (any ? TG_GAME_COUNT : 1); g++) {
+    if(size == tg_games[g].size && strcmp(rom->sha256, tg_games[g].sha256) == 0) game = g;
   }
-  if(strcmp(rom->sha256, TG_ROM_SHA256) != 0) {
+  if(game < 0) {
+    bool sized = false;
+    for(int g = 0; g < (any ? TG_GAME_COUNT : 1); g++) sized |= size == tg_games[g].size;
     free(data);
-    return TG_ROM_WRONG_HASH;
+    return sized ? TG_ROM_WRONG_HASH : TG_ROM_WRONG_SIZE;
   }
+  rom->game = (TgGameId) game;
   rom->data = data;
   rom->size = size;
   return TG_ROM_OK;
 }
+
+TgRomStatus tg_rom_load(const char* path, TgRom* rom) { return load(path, rom, false); }
+TgRomStatus tg_rom_load_any(const char* path, TgRom* rom) { return load(path, rom, true); }
 
 void tg_rom_free(TgRom* rom) {
   free(rom->data);
