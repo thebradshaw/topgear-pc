@@ -39,6 +39,8 @@ void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx);
 // with stack-relative addressing), and pulls it back off.
 void tg_push16(uint16_t v);
 uint16_t tg_pull16(void);
+void tg_push8(uint8_t v);
+uint8_t tg_pull8(void);
 // The same for a JSL to bank:address from the routine's bank.
 void tg_call_jsl(TgRegs* r, uint32_t target, uint16_t ret, uint8_t mx);
 // CLI: lets IRQs in.

@@ -163,6 +163,18 @@ uint16_t tg_pull16(void) {
   return (uint16_t) (snes_read(g_snes, (uint16_t) (cpu->sp - 1)) | snes_read(g_snes, cpu->sp) << 8);
 }
 
+void tg_push8(uint8_t v) {
+  Cpu* cpu = g_snes->cpu;
+  snes_write(g_snes, cpu->sp, v);
+  cpu->sp = (uint16_t) (cpu->sp - 1);
+  if(cpu->sp < g_minSp) g_minSp = cpu->sp;
+}
+uint8_t tg_pull8(void) {
+  Cpu* cpu = g_snes->cpu;
+  cpu->sp = (uint16_t) (cpu->sp + 1);
+  return snes_read(g_snes, cpu->sp);
+}
+
 void tg_cpu_cli(void) { g_snes->cpu->i = false; }
 
 uint8_t tg_port_set_bank(uint8_t bank) {
