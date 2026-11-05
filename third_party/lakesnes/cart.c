@@ -23,17 +23,28 @@ Cart* cart_init(Snes* snes) {
   cart->romSize = 0;
   cart->ram = NULL;
   cart->ramSize = 0;
+  cart->dsp = NULL;
   return cart;
 }
 
 void cart_free(Cart* cart) {
   if(cart->rom != NULL) free(cart->rom);
   if(cart->ram != NULL) free(cart->ram);
+  free(cart->dsp);
   free(cart);
 }
 
 void cart_reset(Cart* cart) {
   // do not reset ram, assumed to be battery backed
+  if(cart->dsp) {
+    necdsp_reset(cart->dsp);
+    cart->dsp->cycles = cart->snes->cycles;
+  }
+}
+
+// LoROM DSP chips at banks 30-3f / b0-bf, $8000-$ffff: data register below $c000, status above.
+static bool isDsp(Cart* cart, uint8_t bank, uint16_t adr) {
+  return cart->dsp != NULL && (bank & 0x7f) >= 0x30 && (bank & 0x7f) < 0x40 && adr >= 0x8000;
 }
 
 bool cart_handleTypeState(Cart* cart, StateHandler* sh) {
@@ -106,6 +117,10 @@ void cart_write(Cart* cart, uint8_t bank, uint16_t adr, uint8_t val) {
 }
 
 static uint8_t cart_readLorom(Cart* cart, uint8_t bank, uint16_t adr) {
+  if(isDsp(cart, bank, adr)) {
+    necdsp_catchUp(cart->dsp, cart->snes->cycles);
+    return adr < 0xc000 ? necdsp_readDr(cart->dsp) : necdsp_readSr(cart->dsp);
+  }
   if(((bank >= 0x70 && bank < 0x7e) || bank >= 0xf0) && adr < 0x8000 && cart->ramSize > 0) {
     // banks 70-7e and f0-ff, adr 0000-7fff
     return cart->ram[(((bank & 0xf) << 15) | adr) & (cart->ramSize - 1)];
@@ -119,6 +134,11 @@ static uint8_t cart_readLorom(Cart* cart, uint8_t bank, uint16_t adr) {
 }
 
 static void cart_writeLorom(Cart* cart, uint8_t bank, uint16_t adr, uint8_t val) {
+  if(isDsp(cart, bank, adr)) {
+    necdsp_catchUp(cart->dsp, cart->snes->cycles);
+    if(adr < 0xc000) necdsp_writeDr(cart->dsp, val);
+    return;
+  }
   if(((bank >= 0x70 && bank < 0x7e) || bank > 0xf0) && adr < 0x8000 && cart->ramSize > 0) {
     // banks 70-7e and f0-ff, adr 0000-7fff
     cart->ram[(((bank & 0xf) << 15) | adr) & (cart->ramSize - 1)] = val;

@@ -98,6 +98,8 @@ void snes_setButtonState(Snes* snes, int player, int button, bool pressed);
 void snes_setPixelFormat(Snes* snes, int pixelFormat);
 void snes_setPixels(Snes* snes, uint8_t* pixelData);
 void snes_setSamples(Snes* snes, int16_t* sampleData, int samplesPerFrame);
+// Firmware for a LoROM DSP chip (8192 bytes); false if not valid. Call after snes_loadRom.
+bool snes_setDspFirmware(Snes* snes, const uint8_t* data, int size);
 int snes_saveBattery(Snes* snes, uint8_t* data);
 bool snes_loadBattery(Snes* snes, uint8_t* data, int size);
 int snes_saveState(Snes* snes, uint8_t* data);

@@ -1,0 +1,3 @@
+# Top Gear 3000: no input; the intro, title and the 4-player demo race (needs --dsp dsp4.bin).
+# Runs emulated: --port off --frames 10000
+0 1 -

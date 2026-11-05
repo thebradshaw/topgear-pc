@@ -32,6 +32,8 @@ enum {
 typedef struct TgGame TgGame;
 
 TgGame* tg_game_create(const TgRom* rom);
+// The DSP-4 chip's firmware (8192 bytes), which Top Gear 3000 needs. False if not valid.
+bool tg_game_set_dsp_firmware(TgGame* game, const uint8_t* data, size_t size);
 void tg_game_destroy(TgGame* game);
 void tg_game_reset(TgGame* game, bool hard);
 

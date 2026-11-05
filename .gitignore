@@ -4,6 +4,8 @@
 *.SFC
 *.SMC
 *.zip
+# DSP chip firmware (Top Gear 3000), which players supply like the ROM
+dsp*.bin
 
 build*/
 out/

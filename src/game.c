@@ -31,6 +31,10 @@ TgGame* tg_game_create(const TgRom* rom) {
   return game;
 }
 
+bool tg_game_set_dsp_firmware(TgGame* game, const uint8_t* data, size_t size) {
+  return snes_setDspFirmware(game->snes, data, (int) size);
+}
+
 void tg_game_destroy(TgGame* game) {
   if(game == NULL) return;
   tg_lockstep_destroy(game->lockstep);

@@ -9,6 +9,7 @@ typedef struct Cart Cart;
 
 #include "snes.h"
 #include "statehandler.h"
+#include "necdsp.h"
 
 struct Cart {
   Snes* snes;
@@ -18,6 +19,7 @@ struct Cart {
   uint32_t romSize;
   uint8_t* ram;
   uint32_t ramSize;
+  NecDsp* dsp;  // DSP-1 to DSP-4 chip, when its firmware was given (snes_setDspFirmware)
 };
 
 // TODO: how to handle reset & load?

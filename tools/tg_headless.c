@@ -77,6 +77,7 @@ static bool checkHash(const char* label, const uint8_t* data, size_t len, const 
 
 int main(int argc, char** argv) {
   const char* romPath = NULL;
+  const char* dspPath = NULL;  // DSP-4 firmware, for Top Gear 3000
   const char* inputPath = NULL;
   const char* screenshot = NULL;
   const char* shotsDir = NULL;
@@ -116,6 +117,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--frame-hashes") == 0 && next) frameHashes = argv[++i];
     else if(strcmp(argv[i], "--ghosts") == 0 && next) ghostsPath = argv[++i];
     else if(strcmp(argv[i], "--interp-steps") == 0 && next) interpSteps = (int) strtol(argv[++i], NULL, 10);
+    else if(strcmp(argv[i], "--dsp") == 0 && next) dspPath = argv[++i];
     else if(strcmp(argv[i], "--race-frames") == 0 && next) tg_port_race_frames = (int) strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-frame") == 0 && next) traceFrame = strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--trace-out") == 0 && next) traceOut = argv[++i];
@@ -156,6 +158,16 @@ int main(int argc, char** argv) {
   TgGame* game = tg_game_create(&rom);
 
   g_game = game;
+  if(dspPath != NULL) {
+    static uint8_t fw[8192];
+    FILE* f = fopen(dspPath, "rb");
+    size_t n = f ? fread(fw, 1, sizeof(fw), f) : 0;
+    if(f) fclose(f);
+    if(game == NULL || !tg_game_set_dsp_firmware(game, fw, n)) {
+      fprintf(stderr, "%s: not a DSP firmware file (8192 bytes)\n", dspPath);
+      return 1;
+    }
+  }
   if(ghostsPath != NULL) tg_game_load_ghosts(game, ghostsPath);
   if(interpSteps > 0) tg_game_set_interp(game, true);
   if(game == NULL) {
