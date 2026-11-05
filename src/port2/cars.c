@@ -16,6 +16,16 @@ static void ws(uint16_t a, uint16_t v) { ram16_set(a, v); }
 static uint16_t car(int i) { return ram16((uint16_t) (ORDER + 2 * i)); }
 static void set_car(int i, uint16_t v) { ram16_set((uint16_t) (ORDER + 2 * i), v); }
 static bool neg(uint16_t v) { return (v & 0x8000) != 0; }
+static uint8_t rd(uint16_t a) { return tg_bus_read8(a); }
+static uint16_t rd16(uint16_t a) { return (uint16_t) (rd(a) | rd((uint16_t) (a + 1)) << 8); }
+static void m7a(uint16_t v) {
+  tg_bus_write8(0x211B, (uint8_t) v);
+  tg_bus_write8(0x211B, (uint8_t) (v >> 8));
+}
+static void m7b(uint8_t v) { tg_bus_write8(0x211C, v); }
+static uint16_t f(uint16_t y, uint16_t field) { return w((uint16_t) (0xC400 + y + field)); }
+static void fs(uint16_t y, uint16_t field, uint16_t v) { ws((uint16_t) (0xC400 + y + field), v); }
+
 
 // Original code in bank $00 with D = $2100, DB = $7E, as the routine runs it.
 static void jsr(TgRegs* r, uint16_t target, uint16_t site) {
@@ -102,6 +112,96 @@ static uint16_t compare(TgRegs* r, uint16_t x, uint16_t y) {
   return r->a;
 }
 
+// --- Passing ($E890) and dead heats ($E808) ---
+
+static bool two_player(void) { return neg(w(0x0102)); }
+static uint16_t absw(uint16_t v) { return neg(v) ? (uint16_t) (0 - v) : v; }
+
+// Jumps into original code that ends with the caller's RTS (a player's car in a bump).
+static void jump(TgRegs* r, uint16_t target, uint16_t site, uint16_t x, uint16_t y) {
+  r->x = x;
+  r->y = y;
+  jsr(r, target, site);
+}
+
+// A player catching car y: the engine-note sample for the overtake ($BB07 with table $F293)
+// when the player is clearly faster.
+static void overtake_sound(TgRegs* r, uint16_t speed, uint16_t y, uint16_t out, uint16_t site, uint16_t x) {
+  m7a(w(speed));
+  m7b(0x70);
+  uint16_t a = (uint16_t) ((uint16_t) ((uint16_t) (rd16(0x2135) + w(speed)) << 2) - f(y, 0x1F));
+  if(neg(a)) return;
+  tg_push16(x);
+  tg_push16(y);
+  r->a = 0x001E;
+  r->x = 0xF293;
+  r->y = y;
+  r->c = a >= 0x0100;
+  jsr(r, 0xBB07, site);
+  tg_pull16();
+  tg_pull16();
+  ws(out, r->a);
+}
+
+// Car x stays behind car y ($E93E): it's put just behind it and they swap speeds, or a
+// player's car gets the bump.
+static void stay_behind(TgRegs* r, uint16_t x, uint16_t y, uint16_t site) {
+  uint16_t lo = f(y, 0x18);
+  fs(x, 0x18, (uint16_t) (lo - 0x8C00));
+  fs(x, 0x1A, (uint16_t) (f(y, 0x1A) - (lo < 0x8C00)));
+  if(y == 0) return jump(r, 0xE984, site, x, y);
+  if(y == 0x40 && two_player()) return jump(r, 0xEA14, site, x, y);
+  for(uint16_t k = 0x1E; k <= 0x20; k = (uint16_t) (k + 2)) {
+    uint16_t t = f(x, k);
+    fs(x, k, f(y, k));
+    fs(y, k, t);
+  }
+  r->x = x;
+  r->y = y;
+  r->c = true;
+}
+
+// Car x has caught car y: it passes unless they're side by side. Carry set: it didn't.
+static void try_pass(TgRegs* r, uint16_t x, uint16_t y, uint16_t site) {
+  if(absw((uint16_t) (f(x, 0x14) - f(y, 0x14))) < 0x0026) {
+    if(x == 0) return jump(r, 0xEAA4, site, x, y);
+    if(x == 0x40 && two_player()) return jump(r, 0xED4D, site, x, y);
+    return stay_behind(r, x, y, site);
+  }
+  if(x == 0) overtake_sound(r, 0x0610, y, 0x0A1E, 0xE8D3, x);
+  if(x == 0x40) overtake_sound(r, 0x0612, y, 0x0A3A, 0xE909, x);
+  // Level on laps: they swap grid places too.
+  if(f(x, 0x22) == f(y, 0x22)) {
+    uint16_t t = f(y, 0x26);
+    fs(y, 0x26, f(x, 0x26));
+    fs(x, 0x26, t);
+  }
+  r->x = x;
+  r->y = y;
+  r->c = false;
+}
+
+// Cars x and y level on the lap: if they touch, they move apart sideways, or the one that
+// was behind stays there.
+static void dead_heat(TgRegs* r, uint16_t x, uint16_t y, uint16_t site) {
+  r->x = x;
+  r->y = y;
+  r->c = false;
+  if((uint16_t) (f(y, 0x18) - f(x, 0x18)) >= 0x8C00) return;
+  if(absw((uint16_t) (f(x, 0x14) - f(y, 0x14))) >= 0x0026) return;
+  if(x == 0) return jump(r, 0xEAA4, site, x, y);
+  if(x == 0x40 && two_player()) return jump(r, 0xED4D, site, x, y);
+  uint16_t ylo = f(y, 0x2C), xlo = f(x, 0x2C);
+  ws(0x06E0, (uint16_t) (ylo - xlo));
+  uint16_t hi = (uint16_t) (f(y, 0x2E) - f(x, 0x2E) - (ylo < xlo));
+  if(hi != 0 || (uint16_t) (ylo - xlo) >= 0x8C00) return stay_behind(r, x, y, site);
+  uint16_t d = (uint16_t) (f(x, 0x14) - f(y, 0x14));
+  uint16_t mid = (uint16_t) ((neg(d) ? (d >> 1 | 0x8000) : d >> 1) + f(y, 0x14));
+  fs(neg(d) ? y : x, 0x14, (uint16_t) (mid + 0x13));
+  fs(neg(d) ? x : y, 0x14, (uint16_t) (mid - 0x13));
+  r->c = false;
+}
+
 // Sorts the running order: one bubble pass from the front, each car moved forward carried
 // on up while it keeps passing ($E890 says whether it may), $E808 for dead heats. $06DE
 // counts the steps for them.
@@ -115,9 +215,9 @@ static void sort(TgRegs* r) {
     // The call sites: level j's code is $29 bytes long, the top one at $D9E3.
     uint16_t base = (uint16_t) (0xD9E3 + (NCARS - 2 - j) * 0x29);
     if(d == 0) {
-      jsr(r, 0xE808, (uint16_t) (base + 0x20));
+      dead_heat(r, x, y, (uint16_t) (base + 0x20));
     } else if(neg(d)) {
-      jsr(r, 0xE890, (uint16_t) (base + 0x13));
+      try_pass(r, x, y, (uint16_t) (base + 0x13));
       if(!r->c) {
         x = r->x;  // as $E890 left them
         set_car(j, r->y);
@@ -245,16 +345,6 @@ static uint16_t clamp_lap(uint16_t a) {
 }
 
 // --- Each car's update ($80:E417 by state) ---
-
-static uint8_t rd(uint16_t a) { return tg_bus_read8(a); }
-static uint16_t rd16(uint16_t a) { return (uint16_t) (rd(a) | rd((uint16_t) (a + 1)) << 8); }
-static void m7a(uint16_t v) {
-  tg_bus_write8(0x211B, (uint8_t) v);
-  tg_bus_write8(0x211B, (uint8_t) (v >> 8));
-}
-static void m7b(uint8_t v) { tg_bus_write8(0x211C, v); }
-static uint16_t f(uint16_t y, uint16_t field) { return w((uint16_t) (0xC400 + y + field)); }
-static void fs(uint16_t y, uint16_t field, uint16_t v) { ws((uint16_t) (0xC400 + y + field), v); }
 
 // Whether the car is within $60 ahead of where a view starts drawing cars ($06EC, and
 // $06EA in two-player games). far: its distance is $60 or more.
