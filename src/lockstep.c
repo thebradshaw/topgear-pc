@@ -502,7 +502,9 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   }
   uint16_t lo = cpu->pc;
   if(!(ls->entryBits[lo >> 3] & (1 << (lo & 7)))) return false;
-  uint32_t adr = (uint32_t) cpu->k << 16 | lo;
+  // Fast ROM banks $80-$FF mirror $00-$7F (Top Gear 2 and 3000 run there).
+  uint8_t k = (cpu->k & 0x80) && lo >= 0x8000 ? cpu->k & 0x7f : cpu->k;
+  uint32_t adr = (uint32_t) k << 16 | lo;
   if(adr == ls->skipOnce) {
     ls->skipOnce = 0xffffffff;
     return false;

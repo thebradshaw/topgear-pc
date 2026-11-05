@@ -35,6 +35,8 @@ add_library(tgcore STATIC
   src/input_script.c
   src/lockstep.c
   src/port/port.c
+  src/port2/registry.c
+  src/port2/video.c
   src/port/cars.c
   src/port/decompress.c
   src/port/drive.c
@@ -181,4 +183,14 @@ if(TG_TEST_ROM)
     add_test(NAME disasm_roundtrip COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_disasm.py
       --rom ${TG_TEST_ROM} --out ${CMAKE_BINARY_DIR}/disasm)
   endif()
+endif()
+
+# Top Gear 2 and Top Gear 3000: their ROMs (and 3000's DSP-4 firmware) turn on these tests.
+set(TG2_TEST_ROM "" CACHE FILEPATH "Your Top Gear 2 (USA) ROM, for its tests")
+if(TG2_TEST_ROM)
+  # The first race with every translated Top Gear 2 routine checked against the original.
+  add_test(NAME tg2_first_race COMMAND tg_headless --rom ${TG2_TEST_ROM} --port verify --frames 16000
+    --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear2/first_race.txt
+    --expect-wram 663bcda1263bfeaa654c2d476b8fa2baaae6807f507995a74efd90e04387c6e2
+    --expect-frame b40950a0da02055a8c289e3acccbf8d1ef3b32faa341e339ef8cddae6c97b011)
 endif()

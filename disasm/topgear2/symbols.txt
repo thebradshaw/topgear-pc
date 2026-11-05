@@ -7,3 +7,8 @@
 01:F89D MeasureFrame
 1F:8000 Intro ; Kemco / Gremlin logos, run with DB = $9F and the stack at $1FFF
 00:8A41 RaceCameraUpdate ; direct page $0600; long-called once per race update (tentative)
+01:DAD6 AddToWords ; adds the word at $A2 to $A0 words at the long pointer $98 (src/port2/video.c)
+01:EF6C VramDma7F ; DMA 7: A words from $7F:X to VRAM Y
+1F:9167 VramDma ; DMA 0: $00 bytes from A-bank:X to VRAM Y
+1F:A117 SetFadeIn ; $01DB = $20, $01D7 = $FF11
+1F:A13D FillWords ; fills Y bytes at $7E:X with A, by DMA from the multiplier

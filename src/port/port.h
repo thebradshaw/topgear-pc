@@ -110,10 +110,16 @@ typedef struct TgResumePoint {
 } TgResumePoint;
 const TgResumePoint* tg_port_resume_point(void);
 
-// All translated routines (registry.c).
-extern const TgPortFunc tg_port_funcs[];
-extern const int tg_port_func_count;
+// The translated routines of the game being run, in address order: Top Gear's
+// (registry.c) unless tg_port_select_game picked another.
+extern const TgPortFunc* tg_port_funcs;
+extern int tg_port_func_count;
 const TgPortFunc* tg_port_find(uint32_t addr);
+// game: a TgGameId (rom.h).
+void tg_port_select_game(int game);
+// Top Gear 2's routines (src/port2/registry.c).
+extern const TgPortFunc tg2_port_funcs[];
+extern const int tg2_port_func_count;
 
 // 128 KiB of work RAM, $7E:0000-$7F:FFFF. Low RAM ($0000-$1FFF in banks $00-$3F) is its
 // first 8 KiB.

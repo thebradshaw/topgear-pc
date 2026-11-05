@@ -24,6 +24,7 @@ TgGame* tg_game_create(const TgRom* rom) {
   snes_setPixelFormat(game->snes, pixelFormatXRGB);
   memcpy(game->rom, rom->data, rom->size);
   tg_rom_size = (uint32_t) rom->size;
+  tg_port_select_game(rom->game);
   if(!snes_loadRom(game->snes, rom->data, (int) rom->size)) {
     tg_game_destroy(game);
     return NULL;

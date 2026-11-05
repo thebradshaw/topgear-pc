@@ -140,7 +140,7 @@ void RaceLoadAll(TgRegs* r);
 void RaceProgram(TgRegs* r);
 
 // Every translated routine, sorted by address.
-const TgPortFunc tg_port_funcs[] = {
+static const TgPortFunc kTopGearFuncs[] = {
   { 0x00812A, "RaceProgram", RaceProgram, TG_CALL_NONE, TG_MX_ANY, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x008878, "RacePauseCheck", RacePauseCheck, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, TG_DEAD_AXY_FLAGS, 0, TG_WAITS },
   { 0x0088A1, "RaceRevEngines", RaceRevEngines, TG_CALL_JSR, TG_MX_16, TG_MX_ANY, 0 },
@@ -280,7 +280,18 @@ const TgPortFunc tg_port_funcs[] = {
   { 0x0FB367, "MenuDecompressNext", MenuDecompressNext, TG_CALL_JSR, TG_MX_ANY, TG_MX_A8_I16, 0 },
   { 0x7E2000, "RaceRenderViews", RaceRenderViews, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
 };
-const int tg_port_func_count = sizeof(tg_port_funcs) / sizeof(tg_port_funcs[0]);
+const TgPortFunc* tg_port_funcs = kTopGearFuncs;
+int tg_port_func_count = sizeof(kTopGearFuncs) / sizeof(kTopGearFuncs[0]);
+
+void tg_port_select_game(int game) {
+  if(game == 1) {
+    tg_port_funcs = tg2_port_funcs;
+    tg_port_func_count = tg2_port_func_count;
+  } else {
+    tg_port_funcs = kTopGearFuncs;
+    tg_port_func_count = sizeof(kTopGearFuncs) / sizeof(kTopGearFuncs[0]);
+  }
+}
 
 const TgPortFunc* tg_port_find(uint32_t addr) {
   int lo = 0, hi = tg_port_func_count - 1;
