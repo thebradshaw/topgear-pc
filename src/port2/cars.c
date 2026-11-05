@@ -143,14 +143,212 @@ static void overtake_sound(TgRegs* r, uint16_t speed, uint16_t y, uint16_t out, 
   ws(out, r->a);
 }
 
+// --- Bumps between a player's car and another ---
+
+typedef struct Player {
+  uint16_t speed, gearbox, gear, moved, pos, flags, sound, out;
+  uint16_t rear_k, rear;            // multiplier byte and sensor for a knock from behind
+  uint16_t side_k, side;            // and for the sideways jolt
+  uint16_t shake_k, shake1, shake2; // the two that take half
+} Player;
+static const Player kP1 = { 0x0610, 0x068A, 0x0630, 0x0212, 0x0614, 0x0634, 0x0A1E, 0x061C,
+  0x0695, 0x01B8, 0x0696, 0x01B4, 0x0697, 0x01B2, 0x01B6 };
+static const Player kP2 = { 0x0612, 0x06AC, 0x0632, 0x024E, 0x0618, 0x0636, 0x0A3A, 0x0620,
+  0x06B7, 0x01D2, 0x06B8, 0x01CE, 0x06B9, 0x01CC, 0x01D0 };
+
+static uint16_t asr(uint16_t v) { return (uint16_t) ((v >> 1) | (v & 0x8000)); }
+
+// $ECD9 / $EF7D: a / the player's gear ratio, 8.8 fixed point, signed.
+static uint16_t gear_div(const Player* p, uint16_t a) {
+  ws(0x06DE, a);
+  uint16_t m = absw(a);
+  ws(0x06E0, m);
+  tg_bus_write8(0x4204, (uint8_t) m);
+  tg_bus_write8(0x4205, (uint8_t) (m >> 8));
+  uint16_t g = w(p->gearbox);
+  uint16_t x = (uint16_t) (w(p->gear) + rom16(0x80BDF3 + (uint16_t) (g << 1)) + (g >> 15));
+  uint8_t ratio = tg_rom(0x80BDFB + x)[0];
+  g_ram[0x06DE] = ratio;
+  uint8_t d = (ratio & 0x80) ? (uint8_t) (0 - ratio) : ratio;
+  tg_bus_write8(0x4206, d);
+  g_ram[0x06E2] = d;
+  uint8_t q1 = rd(0x4214), rem = rd(0x4216);
+  tg_bus_write8(0x4205, rem);
+  tg_bus_write8(0x4204, 0);
+  tg_bus_write8(0x4206, g_ram[0x06E2]);
+  g_ram[0x06DF] ^= g_ram[0x06DE];
+  uint16_t q = (uint16_t) (q1 << 8 | rd(0x4214));
+  return (g_ram[0x06DF] & 0x80) ? (uint16_t) (0 - q) : q;
+}
+
+// $EFF1 / $F042: the player's car is jolted (the slope sensors take it, up to $2000).
+static void jolt(const Player* p, uint16_t a) {
+  m7a(a);
+  m7b(g_ram[p->side_k]);
+  if(w(p->side) < 0x2000) ws(p->side, (uint16_t) (w(p->side) + rd16(0x2135)));
+  m7a(a);
+  m7b(g_ram[p->shake_k]);
+  if(w(p->shake1) < 0x2000) ws(p->shake1, (uint16_t) ((rd16(0x2135) >> 1) + w(p->shake1)));
+  if(w(p->shake2) < 0x2000) ws(p->shake2, (uint16_t) ((rd16(0x2135) >> 1) + w(p->shake2)));
+}
+
+// The product * 2 with the low byte's top bit (asl $2134; rol $2135).
+static uint16_t prod_x2(void) {
+  bool c = (rd(0x2134) & 0x80) != 0;
+  return (uint16_t) (rd16(0x2135) << 1 | c);
+}
+
+// The speed difference in the player's units: (speed + speed * $70/256) * 4 - car's.
+static uint16_t closing(const Player* p, uint16_t car_speed) {
+  m7a(w(p->speed));
+  m7b(0x70);
+  return (uint16_t) ((uint16_t) ((uint16_t) (rd16(0x2135) + w(p->speed)) << 2) - car_speed);
+}
+
+// Car x is put just behind car y.
+static void put_behind(uint16_t x, uint16_t y) {
+  uint16_t lo = f(y, 0x18);
+  fs(x, 0x18, (uint16_t) (lo - 0x8C00));
+  fs(x, 0x1A, (uint16_t) (f(y, 0x1A) - (lo < 0x8C00)));
+}
+
+// The player (record x) runs into the back of car y ($EAA4 / $ED63): the player is put
+// behind it (losing the distance), gets a knock and a crash sound if fast enough, and car y
+// is pushed on.
+static void player_hits(TgRegs* r, const Player* p, uint16_t x, uint16_t y, uint16_t sound_site) {
+  uint16_t ylo = f(y, 0x18), xlo = f(x, 0x18);
+  uint16_t hi = (uint16_t) (f(y, 0x1A) - f(x, 0x1A) - (ylo < xlo));
+  uint16_t lo = (uint16_t) (ylo - xlo);
+  if(lo < 0x8C00) hi--;
+  lo = (uint16_t) (lo - 0x8C00);
+  ws(0x06DE, lo);
+  ws(0x06E0, hi);
+  bool racing = !(f(x, 0x2B) & 0x0002);
+  if(racing) {
+    for(int k = 0; k < 2; k++) {
+      uint16_t a = k ? p->pos : p->moved;
+      uint32_t s = (uint32_t) w(a) + lo;
+      ws(a, (uint16_t) s);
+      ws((uint16_t) (a + 2), (uint16_t) (w((uint16_t) (a + 2)) + hi + (s >> 16)));
+    }
+  }
+  put_behind(x, y);
+  uint16_t d = closing(p, f(y, 0x1F));
+  ws(0x06DE, d);
+  if(!neg((uint16_t) (d - 0x0200))) {
+    tg_push16(x);
+    tg_push16(y);
+    r->a = 0x001E;
+    r->x = 0xF2B3;
+    r->y = y;
+    r->c = d >= 0x0200;
+    jsr(r, 0xBB07, sound_site);
+    tg_pull16();
+    tg_pull16();
+    ws(p->sound, r->a);
+  }
+  if(racing) {
+    m7a(d);
+    m7b(0x40);
+    jolt(p, (uint16_t) (absw(rd16(0x2135)) + 0x2000));
+  }
+  m7a(d);
+  m7b(0x60);
+  fs(y, 0x1F, (uint16_t) (prod_x2() + f(y, 0x1F)));
+  m7a(d);
+  m7b(0xC0);
+  m7a(rd16(0x2135));
+  m7b(0x5B);
+  uint16_t a = gear_div(p, (uint16_t) (asr(rd16(0x2135)) + w(p->speed)));
+  ws(p->out, 0);
+  ws((uint16_t) (p->out + 1), a);
+  ws((uint16_t) (p->out + 1), (uint16_t) (a - asr(asr(a))));
+  r->x = x;
+  r->y = y;
+  r->c = true;
+}
+
+// Car x runs into the back of the player (record y) ($E984 / $EA14): the player is shoved
+// on, the car slows.
+static void hits_player(TgRegs* r, const Player* p, uint16_t x, uint16_t y) {
+  uint16_t d = closing(p, f(x, 0x1F));
+  ws(0x06DE, d);
+  m7a(d);
+  m7b(g_ram[p->rear_k]);
+  if(neg(rd16(0x2135)) && w(p->rear) < 0x2000) ws(p->rear, (uint16_t) (w(p->rear) - rd16(0x2135)));
+  m7a(d);
+  m7b(0x40);
+  fs(x, 0x1F, (uint16_t) (rd16(0x2135) + f(x, 0x1F)));
+  m7a(d);
+  m7b(0xA0);
+  m7a(prod_x2());
+  m7b(0x59);
+  uint16_t a = gear_div(p, (uint16_t) (asr(rd16(0x2135)) + w(p->speed)));
+  ws(p->out, 0);
+  ws((uint16_t) (p->out + 1), a);
+  r->x = x;
+  r->y = y;
+  r->c = true;
+}
+
+// Player 2 runs into player 1 ($EE84).
+static void p2_hits_p1(TgRegs* r, uint16_t x, uint16_t y) {
+  uint16_t ylo = f(y, 0x18), xlo = f(x, 0x18);
+  uint16_t hi = (uint16_t) (f(y, 0x1A) - f(x, 0x1A) - (ylo < xlo));
+  uint16_t lo = (uint16_t) (ylo - xlo);
+  if(lo < 0x8C00) hi--;
+  lo = (uint16_t) (lo - 0x8C00);
+  ws(0x06DE, lo);
+  ws(0x06E0, hi);
+  if(!(f(x, 0x2B) & 0x0002)) {
+    for(int k = 0; k < 2; k++) {
+      uint16_t a = k ? kP2.pos : kP2.moved;
+      uint32_t s = (uint32_t) w(a) + lo;
+      ws(a, (uint16_t) s);
+      ws((uint16_t) (a + 2), (uint16_t) (w((uint16_t) (a + 2)) + hi + (s >> 16)));
+    }
+  }
+  put_behind(x, y);
+  uint16_t d = (uint16_t) (w(0x0612) - w(0x0610));
+  if(!neg(d)) {
+    m7a((uint16_t) (d << 2));
+    m7b(g_ram[kP1.rear_k]);
+    if(w(kP1.rear) < 0x2000) ws(kP1.rear, (uint16_t) (w(kP1.rear) + rd16(0x2135)));
+  }
+  m7a((uint16_t) (d << 2));
+  m7b(0x40);
+  jolt(&kP2, (uint16_t) (absw(rd16(0x2135)) + 0x2000));
+  m7a(d);
+  m7b(0x60);
+  ws(0x061D, (uint16_t) (gear_div(&kP1, prod_x2()) + w(0x061D)));
+  m7a(d);
+  m7b(0xA0);
+  ws(0x0621, (uint16_t) (gear_div(&kP2, prod_x2()) + w(0x0621)));
+  r->x = x;
+  r->y = y;
+  r->c = true;
+}
+
+// A player (record x) is side by side with car y.
+static void player_bump(TgRegs* r, uint16_t x, uint16_t y, uint16_t site) {
+  if(x == 0) {
+    if(!(f(x, 0x2B) & 0x0002)) ws(0x0634, w(0x0634) | 0x2000);
+    if(y == 0x40 && two_player()) return jump(r, 0xEBE0, site, x, y);  // not recorded
+    return player_hits(r, &kP1, x, y, 0xEB4E);
+  }
+  if(!(f(x, 0x2B) & 0x0002)) ws(0x0636, w(0x0636) | 0x2000);
+  if(y == 0) return p2_hits_p1(r, x, y);
+  player_hits(r, &kP2, x, y, 0xEDF2);
+}
+
 // Car x stays behind car y ($E93E): it's put just behind it and they swap speeds, or a
 // player's car gets the bump.
 static void stay_behind(TgRegs* r, uint16_t x, uint16_t y, uint16_t site) {
   uint16_t lo = f(y, 0x18);
   fs(x, 0x18, (uint16_t) (lo - 0x8C00));
   fs(x, 0x1A, (uint16_t) (f(y, 0x1A) - (lo < 0x8C00)));
-  if(y == 0) return jump(r, 0xE984, site, x, y);
-  if(y == 0x40 && two_player()) return jump(r, 0xEA14, site, x, y);
+  if(y == 0) return hits_player(r, &kP1, x, y);
+  if(y == 0x40 && two_player()) return hits_player(r, &kP2, x, y);
   for(uint16_t k = 0x1E; k <= 0x20; k = (uint16_t) (k + 2)) {
     uint16_t t = f(x, k);
     fs(x, k, f(y, k));
@@ -164,8 +362,7 @@ static void stay_behind(TgRegs* r, uint16_t x, uint16_t y, uint16_t site) {
 // Car x has caught car y: it passes unless they're side by side. Carry set: it didn't.
 static void try_pass(TgRegs* r, uint16_t x, uint16_t y, uint16_t site) {
   if(absw((uint16_t) (f(x, 0x14) - f(y, 0x14))) < 0x0026) {
-    if(x == 0) return jump(r, 0xEAA4, site, x, y);
-    if(x == 0x40 && two_player()) return jump(r, 0xED4D, site, x, y);
+    if(x == 0 || (x == 0x40 && two_player())) return player_bump(r, x, y, site);
     return stay_behind(r, x, y, site);
   }
   if(x == 0) overtake_sound(r, 0x0610, y, 0x0A1E, 0xE8D3, x);
@@ -189,8 +386,7 @@ static void dead_heat(TgRegs* r, uint16_t x, uint16_t y, uint16_t site) {
   r->c = false;
   if((uint16_t) (f(y, 0x18) - f(x, 0x18)) >= 0x8C00) return;
   if(absw((uint16_t) (f(x, 0x14) - f(y, 0x14))) >= 0x0026) return;
-  if(x == 0) return jump(r, 0xEAA4, site, x, y);
-  if(x == 0x40 && two_player()) return jump(r, 0xED4D, site, x, y);
+  if(x == 0 || (x == 0x40 && two_player())) return player_bump(r, x, y, site);
   uint16_t ylo = f(y, 0x2C), xlo = f(x, 0x2C);
   ws(0x06E0, (uint16_t) (ylo - xlo));
   uint16_t hi = (uint16_t) (f(y, 0x2E) - f(x, 0x2E) - (ylo < xlo));
