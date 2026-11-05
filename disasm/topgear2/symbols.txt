@@ -16,3 +16,7 @@
 01:A505 UploadQueue1 ; DMA $72 bytes from $7F:$6A to VRAM $6E, clears $72
 01:EF37 VramDma7E ; DMA 7: A words from $7E:X to VRAM Y
 1F:9EDE ClearVram ; fills 64 KB of VRAM with the word at $00:9EFD
+08:CB74 BuildRoad ; projects the track ahead into the road layer's per-line tables and HDMA lists (1P)
+0B:8000 DrawObjects1P ; sets up the full-screen view, then runs the object pass
+0B:818A DrawObjects2P ; both split-screen views, player 2's first
+0B:8578 ObjectPass ; draws the cars and roadside objects of one view

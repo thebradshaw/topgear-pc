@@ -37,6 +37,8 @@ add_library(tgcore STATIC
   src/port/port.c
   src/port2/registry.c
   src/port2/video.c
+  src/port2/road.c
+  src/port2/objects.c
   src/port/cars.c
   src/port/decompress.c
   src/port/drive.c
