@@ -1,0 +1,9 @@
+# Top Gear 2 (USA) names: '<bank>:<addr> <name> [; comment]'. Used by tools/disasm.py.
+00:8A38 Reset ; power-on: native mode, then jumps to 01:8003
+01:8003 Boot ; waits for vblank, blanks the screen, sets the stack, then StartupChecks and the bank $1F intro
+01:8045 MainStart ; after the intro: checks the $0700 = $1234/$5678 warm-boot marker, sets up, falls into the game
+01:8145 GameLoop ; top of the game's flow (menus, races)
+01:F7FD StartupChecks ; NMI off, measures the frame to tell PAL from NTSC ($FA)
+01:F89D MeasureFrame
+1F:8000 Intro ; Kemco / Gremlin logos, run with DB = $9F and the stack at $1FFF
+00:8A41 RaceCameraUpdate ; direct page $0600; long-called once per race update (tentative)
