@@ -5,6 +5,8 @@
 
 #define DPB 0x0400u
 
+void Tg2ObjectPass(TgRegs* r);
+
 static uint16_t z(uint8_t o) { return ram16(DPB + o); }
 static void zs(uint8_t o, uint16_t v) { ram16_set(DPB + o, v); }
 // Bank $7E words.
@@ -64,7 +66,7 @@ static void view_setup(int p, uint16_t d8, uint16_t da) {
 
 // The rest of player p's view state, then the object pass with the clip window
 // (top $3A, bottom $38, left $34, right $36) and the screen's bottom line $2E.
-static void view_run(TgRegs* r, int p, uint16_t bottom, uint16_t height, uint16_t ret) {
+static void view_run(TgRegs* r, int p, uint16_t bottom, uint16_t height) {
   uint16_t pd = p ? 0x003C : 0;
   zs(0xD4, (uint16_t) (0 - w((uint16_t) (0x0209 + pd))));
   zs(0xCE, w((uint16_t) (0x0504 + 8 * p)));
@@ -88,7 +90,7 @@ static void view_run(TgRegs* r, int p, uint16_t bottom, uint16_t height, uint16_
   zs(0x2A, w(slots));
   r->d = DPB;
   r->db = 0x7E;
-  tg_call_jsl(r, 0x0B8578, ret, TG_MX_16);
+  Tg2ObjectPass(r);
   ws(p ? 0x015C : 0x015A, z(0x52));
   uint16_t used = z(0x28), prev = w((uint16_t) (slots + 2));
   ws((uint16_t) (slots + 2), used);
@@ -131,7 +133,7 @@ void Tg2DrawObjects1P(TgRegs* r) {
     car_slot(0xE2, other, 0x84);
   }
   car_slot_none(0xE8);
-  view_run(r, 0, 0x00DF, 0x00E0, 0x8172);
+  view_run(r, 0, 0x00DF, 0x00E0);
   r->d = d;
   r->db = db;
 }
@@ -163,7 +165,7 @@ void Tg2DrawObjects2P(TgRegs* r) {
       car_slot(0xE8, p1, 0x85);
     }
   }
-  view_run(r, 1, 0x00DB, 0x0068, 0x8361);
+  view_run(r, 1, 0x00DB, 0x0068);
   close_lists(0x0008, 0x9DF0);
 
   zs(0x2C, (w(0x0124) & 0x8000) ? 0x0FF0 : 0x0BF0);
@@ -183,7 +185,7 @@ void Tg2DrawObjects2P(TgRegs* r) {
       car_slot(0xE8, p2, 0x86);
     }
   }
-  view_run(r, 0, 0x006B, 0x0068, 0x852A);
+  view_run(r, 0, 0x006B, 0x0068);
   close_lists(0x0004, 0x9C40);
   r->d = d;
   r->db = db;

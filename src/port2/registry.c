@@ -3,10 +3,14 @@
 #include "../port/port.h"
 
 void Tg2UploadQueue0(TgRegs* r);
+void Tg2RaceColours1P(TgRegs* r);
+void Tg2RaceColours2PTop(TgRegs* r);
+void Tg2RaceColours2PBottom(TgRegs* r);
 void Tg2BuildRoad(TgRegs* r);
 void Tg2DrawObjects1P(TgRegs* r);
 void Tg2DrawObjects2P(TgRegs* r);
 void Tg2DrawSprite(TgRegs* r);
+void Tg2ObjectPass(TgRegs* r);
 void Tg2ListVisibleCars(TgRegs* r);
 void Tg2FinishOam(TgRegs* r);
 void Tg2ObjectType0(TgRegs* r);
@@ -35,6 +39,9 @@ void Tg2SetFadeIn(TgRegs* r);
 void Tg2FillWords(TgRegs* r);
 
 const TgPortFunc tg2_port_funcs[] = {
+  { 0x019261, "RaceColours1P", Tg2RaceColours1P, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x019284, "RaceColours2PTop", Tg2RaceColours2PTop, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0192A7, "RaceColours2PBottom", Tg2RaceColours2PBottom, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x01A4D1, "UploadQueue0", Tg2UploadQueue0, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01A505, "UploadQueue1", Tg2UploadQueue1, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01DAD6, "AddToWords", Tg2AddToWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
@@ -43,6 +50,7 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x08CB74, "BuildRoad", Tg2BuildRoad, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0B8000, "DrawObjects1P", Tg2DrawObjects1P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0B818A, "DrawObjects2P", Tg2DrawObjects2P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0B8578, "ObjectPass", Tg2ObjectPass, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0B9FB7, "ObjectType0", Tg2ObjectType0, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0B9FC9, "ObjectType1", Tg2ObjectType1, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
   { 0x0B9FDB, "ObjectType2", Tg2ObjectType2, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
