@@ -1,0 +1,24 @@
+# Top Gear 2: 2P game, both players start the first race (Auckland) holding X, no steering.
+# Runs emulated: --port off --frames 12000
+400 1 RIGHT
+420 1 -
+500 1 DOWN
+520 1 -
+600 1 START
+620 1 -
+800 1 START
+820 1 -
+1000 2 START
+1020 2 -
+1300 1 START
+1320 1 -
+1600 1 START
+1620 1 -
+1650 2 START
+1670 2 -
+1900 1 START
+1920 1 -
+1950 2 START
+1970 2 -
+2200 1 X
+2200 2 X
