@@ -6,6 +6,25 @@ void Tg2UploadQueue0(TgRegs* r);
 void Tg2BuildRoad(TgRegs* r);
 void Tg2DrawObjects1P(TgRegs* r);
 void Tg2DrawObjects2P(TgRegs* r);
+void Tg2DrawSprite(TgRegs* r);
+void Tg2ListVisibleCars(TgRegs* r);
+void Tg2FinishOam(TgRegs* r);
+void Tg2ObjectType0(TgRegs* r);
+void Tg2ObjectType1(TgRegs* r);
+void Tg2ObjectType2(TgRegs* r);
+void Tg2ObjectType3(TgRegs* r);
+void Tg2ObjectType4(TgRegs* r);
+void Tg2ObjectType5(TgRegs* r);
+void Tg2ObjectType6(TgRegs* r);
+void Tg2ObjectType7(TgRegs* r);
+void Tg2ObjectType8(TgRegs* r);
+void Tg2ObjectType9(TgRegs* r);
+void Tg2ObjectType10(TgRegs* r);
+void Tg2ObjectType11(TgRegs* r);
+void Tg2ObjectType12(TgRegs* r);
+void Tg2ObjectType13(TgRegs* r);
+void Tg2ObjectType14(TgRegs* r);
+void Tg2ObjectType15(TgRegs* r);
 void Tg2UploadQueue1(TgRegs* r);
 void Tg2AddToWords(TgRegs* r);
 void Tg2VramDma7E(TgRegs* r);
@@ -24,6 +43,25 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x08CB74, "BuildRoad", Tg2BuildRoad, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0B8000, "DrawObjects1P", Tg2DrawObjects1P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0B818A, "DrawObjects2P", Tg2DrawObjects2P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0B9FB7, "ObjectType0", Tg2ObjectType0, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0B9FC9, "ObjectType1", Tg2ObjectType1, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0B9FDB, "ObjectType2", Tg2ObjectType2, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0B9FED, "ObjectType3", Tg2ObjectType3, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0B9FFF, "ObjectType4", Tg2ObjectType4, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA011, "ObjectType5", Tg2ObjectType5, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA023, "ObjectType6", Tg2ObjectType6, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA035, "ObjectType7", Tg2ObjectType7, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA047, "ObjectType8", Tg2ObjectType8, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA059, "ObjectType9", Tg2ObjectType9, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA06B, "ObjectType10", Tg2ObjectType10, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA0D5, "ObjectType11", Tg2ObjectType11, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA13F, "ObjectType12", Tg2ObjectType12, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA1C6, "ObjectType13", Tg2ObjectType13, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA24D, "ObjectType14", Tg2ObjectType14, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA2D4, "ObjectType15", Tg2ObjectType15, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_FLAGS },
+  { 0x0BA49B, "ListVisibleCars", Tg2ListVisibleCars, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0BA6EA, "DrawSprite", Tg2DrawSprite, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0BD7E7, "FinishOam", Tg2FinishOam, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x1F9167, "VramDma", Tg2VramDma, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9EDE, "ClearVram", Tg2ClearVram, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA117, "SetFadeIn", Tg2SetFadeIn, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },

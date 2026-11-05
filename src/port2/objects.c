@@ -188,3 +188,166 @@ void Tg2DrawObjects2P(TgRegs* r) {
   r->d = d;
   r->db = db;
 }
+
+// The cars, in track order ($C3E8 holds 20 offsets into the car records at $C410).
+static uint16_t car_at(uint16_t i) { return w((uint16_t) (0xC3E8 + i)); }
+static uint32_t car_pos(uint16_t c) { return (uint32_t) w((uint16_t) (0xC418 + c)) | (uint32_t) w((uint16_t) (0xC41A + c)) << 16; }
+
+// Appends car number i (in track order) to the visible-car list ($C340, 8 bytes each): sprite set, two words, and
+// its distance ahead ($F6-$F8, in 1/1024ths) for the depth sort. The camera's own car
+// gets $FFFF.
+static void add_visible_car(uint16_t i) {
+  uint16_t c = car_at(i), x = z(0x46);
+  zs(0x44, i);
+  if(w((uint16_t) (0xC410 + c)) == z(0x42)) {
+    ws((uint16_t) (0xC340 + x), 0xFFFF);
+    ws((uint16_t) (0xC342 + x), 0);
+    ws((uint16_t) (0xC344 + x), 0);
+  } else {
+    ws((uint16_t) (0xC340 + x), w((uint16_t) (0xC412 + c)));
+    ws((uint16_t) (0xC342 + x), w((uint16_t) (0xC414 + c)));
+    ws((uint16_t) (0xC344 + x), w((uint16_t) (0xC416 + c)));
+  }
+  ws((uint16_t) (0xC346 + x), (uint16_t) ((z(0xF7) >> 2) & 0x3FFE));
+  zs(0x46, (uint16_t) (x + 8));
+}
+
+// The distance from the window start $EE:$F0 into $F6 (and $F8 when ahead). True when
+// the car is at or past the start.
+static bool car_distance(uint16_t c, bool always) {
+  uint32_t p = car_pos(c), s = (uint32_t) z(0xEE) | (uint32_t) z(0xF0) << 16;
+  zs(0xF6, (uint16_t) (p - s));
+  if(always || p >= s) zs(0xF8, (uint16_t) ((p - s) >> 16));
+  return p >= s;
+}
+
+// $0B:A49B. Lists the cars between the camera and $44 sections ahead, nearest first,
+// with the lap's wrap-around ($010A sections a lap).
+void Tg2ListVisibleCars(TgRegs* r) {
+  (void) r;
+  uint16_t lap = w(0x010A), hi;
+  zs(0x46, 0);
+  if(!(z(0xCE) & 0x8000)) {
+    uint16_t c = car_at(z(0x40));
+    zs(0x42, w((uint16_t) (0xC410 + c)));
+    uint32_t p = car_pos(c) - 0x2E00;
+    zs(0xEE, (uint16_t) p);
+    zs(0xF2, (uint16_t) p);
+    hi = (uint16_t) (p >> 16);
+    if(car_pos(c) < 0x2E00) hi = (uint16_t) (hi + lap);
+  } else {
+    zs(0x42, 0xFFFF);
+    zs(0xEE, z(0xD0));
+    zs(0xF2, z(0xD0));
+    hi = (uint16_t) (z(0xD2) + 4);
+    if(hi >= lap) hi = (uint16_t) (hi - lap);
+  }
+  zs(0xF0, hi);
+  uint16_t end = (uint16_t) (hi + 0x44);
+  if(end < lap) {
+    zs(0xF4, end);
+    for(uint16_t i = 0; i != 0x28; i += 2) {
+      uint16_t c = car_at(i);
+      if(car_pos(c) >= ((uint32_t) z(0xF2) | (uint32_t) z(0xF4) << 16)) break;
+      if(car_distance(c, false)) add_visible_car(i);
+    }
+  } else {
+    // The window wraps past the finish line.
+    zs(0xF4, (uint16_t) (end - lap));
+    int i = 0x26;
+    for(; i >= 0; i -= 2) {
+      if(car_pos(car_at((uint16_t) i)) < ((uint32_t) z(0xEE) | (uint32_t) z(0xF0) << 16)) break;
+    }
+    if(i < 0) {  // every car is ahead
+      for(uint16_t j = 0; j != 0x28; j += 2) {
+        car_distance(car_at(j), true);
+        add_visible_car(j);
+      }
+    } else {
+      for(uint16_t j = (uint16_t) (i + 2); j != 0x28; j += 2) {
+        car_distance(car_at(j), true);
+        add_visible_car(j);
+      }
+      zs(0xF0, (uint16_t) (z(0xF0) - lap));
+      for(uint16_t j = 0; j != 0x28; j += 2) {
+        uint16_t c = car_at(j);
+        if(car_pos(c) >= ((uint32_t) z(0xF2) | (uint32_t) z(0xF4) << 16)) break;
+        car_distance(c, true);
+        add_visible_car(j);
+      }
+    }
+  }
+  uint16_t x = z(0x46);
+  ws((uint16_t) (0xC340 + x), 0);
+  ws((uint16_t) (0xC342 + x), 0);
+  ws((uint16_t) (0xC344 + x), 0);
+  ws((uint16_t) (0xC346 + x), 0x7FFE);
+}
+
+// Roadside object types (the $9F97 table): from the object record y in $6400 (flags,
+// position, start frame), the frame to draw (A) and its x (X) and y (Y) offsets.
+
+// Types 0-9: a still object; its frame is the type's animation word.
+static void still_object(TgRegs* r, uint16_t anim) {
+  uint16_t y = r->y;
+  r->x = (uint16_t) ((w((uint16_t) (0x6401 + y)) & 0x007F) - 0x0040);
+  r->y = 0;
+  r->a = w(anim);
+}
+
+// Types 10-15: objects that move once triggered (high byte of the flags: the direction).
+// They travel for $A0 frames along a bounce curve ($0B:A35B), then stop (types 10-11) or
+// restart from an edge (12-15, sweeping across in direction dir between triggers).
+static void moving_object(TgRegs* r, uint16_t anim, int sweep) {
+  uint16_t y = r->y, rec = (uint16_t) (0x6400 + y);
+  uint16_t dir = w(rec) & 0xFF00, now = w(0x001A);
+  r->a = w(anim);
+  r->y = 0;
+  if(dir == 0) {
+    if(sweep == 0) {
+      r->x = w((uint16_t) (rec + 2));
+      return;
+    }
+    uint16_t t = sweep > 0 ? (uint16_t) (w((uint16_t) (rec + 4)) - now) : (uint16_t) (now - w((uint16_t) (rec + 4)));
+    uint16_t v = (uint16_t) (((t & 0x01FF) << 1) - 0x0200);
+    ws((uint16_t) (rec + 2), v);
+    r->x = v;
+    return;
+  }
+  uint16_t t = (uint16_t) (now - w((uint16_t) (rec + 4)));
+  if(!((uint16_t) (t - 0x00A0) & 0x8000)) {  // finished
+    if(sweep == 0) {
+      ws(rec, w(rec) | 0x0080);
+      r->a = r->x = 0;
+      return;
+    }
+    ws(rec, w(rec) & 0x00FF);
+    ws((uint16_t) (rec + 4), now);
+    uint16_t v = sweep > 0 ? 0x01FE : 0xFE00;
+    ws((uint16_t) (rec + 2), v);
+    r->x = v;
+    return;
+  }
+  zs(0xFE, t);
+  uint16_t pos = (dir & 0x8000) ? (uint16_t) (w((uint16_t) (rec + 2)) - t) : (uint16_t) (w((uint16_t) (rec + 2)) + t);
+  zs(0xFE, pos);
+  r->y = rom16(0x8BA35B + (uint16_t) (t << 1));
+  r->x = pos;
+}
+
+void Tg2ObjectType0(TgRegs* r) { still_object(r, 0x03D2); }
+void Tg2ObjectType1(TgRegs* r) { still_object(r, 0x03D4); }
+void Tg2ObjectType2(TgRegs* r) { still_object(r, 0x03D0); }
+void Tg2ObjectType3(TgRegs* r) { still_object(r, 0x03CE); }
+void Tg2ObjectType4(TgRegs* r) { still_object(r, 0x03D2); }
+void Tg2ObjectType5(TgRegs* r) { still_object(r, 0x03D4); }
+void Tg2ObjectType6(TgRegs* r) { still_object(r, 0x03D0); }
+void Tg2ObjectType7(TgRegs* r) { still_object(r, 0x03CC); }
+void Tg2ObjectType8(TgRegs* r) { still_object(r, 0x03C4); }
+void Tg2ObjectType9(TgRegs* r) { still_object(r, 0x03C2); }
+void Tg2ObjectType10(TgRegs* r) { moving_object(r, 0x03CA, 0); }
+void Tg2ObjectType11(TgRegs* r) { moving_object(r, 0x03C8, 0); }
+void Tg2ObjectType12(TgRegs* r) { moving_object(r, 0x03C6, 1); }
+void Tg2ObjectType13(TgRegs* r) { moving_object(r, 0x03C6, -1); }
+void Tg2ObjectType14(TgRegs* r) { moving_object(r, 0x03C8, 1); }
+void Tg2ObjectType15(TgRegs* r) { moving_object(r, 0x03C8, -1); }
