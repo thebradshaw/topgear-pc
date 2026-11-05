@@ -89,3 +89,59 @@ void Tg2AddToWords(TgRegs* r) {
   r->n = false;
   r->z = true;
 }
+
+// $01:EF37. As VramDma7F, but from bank $7E.
+void Tg2VramDma7E(TgRegs* r) {
+  uint16_t count = r->a;
+  dp16_set(r, 0xA2, count);
+  tg_bus_write8(0x420B, 0x00);
+  tg_bus_write8(0x4374, 0x7E);
+  tg_bus_write8(0x2115, 0x80);
+  tg_bus_write16(0x2116, r->y);
+  tg_bus_write16(0x4370, 0x1801);
+  tg_bus_write16(0x4372, r->x);
+  uint16_t bytes = (uint16_t) (count << 1);
+  tg_bus_write16(0x4375, bytes);
+  tg_bus_write8(0x420B, 0x80);
+  r->a = (uint16_t) ((bytes & 0xFF00) | 0x80);
+  r->n = true;
+  r->z = false;
+  r->c = (count & 0x8000) != 0;
+}
+
+// DMA channel 7 of the byte count at dp+cnt from $7F:(dp+src) to VRAM word (dp+dst), then
+// clears the count. Leaves A = count high byte : $80.
+static void queued_dma(TgRegs* r, uint8_t dst, uint8_t src, uint8_t cnt) {
+  tg_bus_write8(0x420B, 0x00);
+  tg_bus_write8(0x4374, 0x7F);
+  tg_bus_write8(0x2115, 0x80);
+  tg_bus_write16(0x2116, dp16(r, dst));
+  tg_bus_write16(0x4370, 0x1801);
+  tg_bus_write16(0x4372, dp16(r, src));
+  uint16_t bytes = dp16(r, cnt);
+  tg_bus_write16(0x4375, bytes);
+  tg_bus_write8(0x420B, 0x80);
+  dp16_set(r, cnt, 0);
+  r->a = (uint16_t) ((bytes & 0xFF00) | 0x80);
+  r->n = true;
+  r->z = false;
+}
+
+// $01:A4D1. Uploads the first queued block: $70 bytes from $7F:$68 to VRAM $6C.
+void Tg2UploadQueue0(TgRegs* r) { queued_dma(r, 0x6C, 0x68, 0x70); }
+
+// $01:A505. Uploads the second queued block: $72 bytes from $7F:$6A to VRAM $6E.
+void Tg2UploadQueue1(TgRegs* r) { queued_dma(r, 0x6E, 0x6A, 0x72); }
+
+// $1F:9EDE. Fills 64 KB of VRAM (from the address already set) with the fixed word at
+// $00:9EFD, by DMA channel 0. Leaves A = 1.
+void Tg2ClearVram(TgRegs* r) {
+  tg_bus_write16(0x4300, 0x1809);
+  tg_bus_write16(0x4302, 0x9EFD);
+  tg_bus_write16(0x4305, 0x0000);
+  tg_bus_write8(0x4304, 0x00);
+  tg_bus_write8(0x420B, 0x01);
+  r->a = 0x0001;
+  r->n = false;
+  r->z = false;
+}
