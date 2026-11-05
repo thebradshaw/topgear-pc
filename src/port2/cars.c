@@ -244,6 +244,161 @@ static uint16_t clamp_lap(uint16_t a) {
   return w(0x019E);
 }
 
+// --- Each car's update ($80:E417 by state) ---
+
+static uint8_t rd(uint16_t a) { return tg_bus_read8(a); }
+static uint16_t rd16(uint16_t a) { return (uint16_t) (rd(a) | rd((uint16_t) (a + 1)) << 8); }
+static void m7a(uint16_t v) {
+  tg_bus_write8(0x211B, (uint8_t) v);
+  tg_bus_write8(0x211B, (uint8_t) (v >> 8));
+}
+static void m7b(uint8_t v) { tg_bus_write8(0x211C, v); }
+static uint16_t f(uint16_t y, uint16_t field) { return w((uint16_t) (0xC400 + y + field)); }
+static void fs(uint16_t y, uint16_t field, uint16_t v) { ws((uint16_t) (0xC400 + y + field), v); }
+
+// Whether the car is within $60 ahead of where a view starts drawing cars ($06EC, and
+// $06EA in two-player games). far: its distance is $60 or more.
+static bool near_view(uint16_t a) {
+  uint16_t len = w(0x010A);
+  if(a < 0x0060) {
+    uint16_t d = (uint16_t) (a - w(0x06EC));
+    if(d < 0x0060 || (uint16_t) (d + len) < 0x0060) return true;
+    if(!neg(w(0x0102))) return false;
+    d = (uint16_t) (a - w(0x06EA));
+    return d < 0x0060 || (uint16_t) (d + len) < 0x0060;
+  }
+  if((uint16_t) (a - w(0x06EC)) < 0x0060) return true;
+  if(!neg(w(0x0102))) return false;
+  return (uint16_t) (a - w(0x06EA)) < 0x0060;
+}
+
+// The sideways move: $C428 (speed across) times frames into $C42A:$C414, kept between
+// the road's edges at this distance ($7E:2000 left, $7E:3300 right). Starting cars bounce
+// off an edge (the speed turns round); racing ones bounce off the edge they cross the
+// wrong way.
+static void sideways(uint16_t y, bool racing) {
+  uint16_t x = (uint16_t) (f(y, 0x1A) << 1);
+  m7a(f(y, 0x28));
+  m7b(g_ram[0x00F8]);
+  unsigned lo = rd(0x2134) + g_ram[(uint16_t) (0xC42A + y)];
+  g_ram[(uint16_t) (0xC42A + y)] = (uint8_t) lo;
+  uint16_t a = rd16(0x2135);
+  uint16_t left = w((uint16_t) (0x2000 + x)), right = w((uint16_t) (0x3300 + x));
+  bool back = neg(a);
+  a = (uint16_t) (a + f(y, 0x14) + (lo >> 8));
+  fs(y, 0x14, a);
+  bool turn = false;
+  if(!racing) {
+    if(back) {
+      if(neg((uint16_t) (a - left))) {
+        fs(y, 0x14, left);
+        turn = true;
+      }
+    } else if(!neg((uint16_t) (a - right))) {
+      fs(y, 0x14, right);
+      turn = true;
+    }
+  } else if(back) {
+    if(neg((uint16_t) (a - left))) {
+      fs(y, 0x14, left);
+      turn = true;
+    } else if(!neg((uint16_t) (a - right))) {
+      fs(y, 0x14, right);
+    }
+  } else if(!neg((uint16_t) (a - right))) {
+    fs(y, 0x14, right);
+    turn = true;
+  } else if(neg((uint16_t) (a - left))) {
+    fs(y, 0x14, left);
+  }
+  if(turn) fs(y, 0x28, (uint16_t) (0 - f(y, 0x28)));
+}
+
+// Adds rate * frames to the speed $C41E:$C41F (the low byte rounds).
+static void accelerate(uint16_t y, uint16_t rate, bool doubled) {
+  m7a(rate);
+  m7b((uint8_t) (doubled ? g_ram[0x00F8] << 1 : g_ram[0x00F8]));
+  unsigned lo = rd(0x2134) + g_ram[(uint16_t) (0xC41E + y)];
+  g_ram[(uint16_t) (0xC41E + y)] = (uint8_t) lo;
+  fs(y, 0x1F, (uint16_t) (rd16(0x2135) + f(y, 0x1F) + (lo >> 8)));
+}
+
+// The car moves on by speed a times frames * 2 / 256.
+static void advance(uint16_t y, uint16_t a) {
+  m7a(a);
+  m7b((uint8_t) (g_ram[0x00F8] << 1));
+  g_ram[0x06E3] = 0;
+  uint8_t hi = rd(0x2136);
+  if(hi & 0x80) g_ram[0x06E3] = 0xFF;
+  g_ram[0x06E2] = hi;
+  ws(0x06E0, rd16(0x2134));
+  uint32_t s = (uint32_t) f(y, 0x18) + w(0x06E0);
+  fs(y, 0x18, (uint16_t) s);
+  fs(y, 0x1A, (uint16_t) (f(y, 0x1A) + w(0x06E2) + (s >> 16)));
+}
+
+// State 8 ($E424): off the line, up to racing speed ($C432), then state 2.
+static bool starting(uint16_t y) {
+  uint16_t a = f(y, 0x1A);
+  // The original's check for far cars here jumps into the middle of an instruction; run it.
+  if(a >= 0x0060 && (uint16_t) (a - w(0x06EC)) >= 0x0060) return false;
+  if(near_view(a)) {
+    fs(y, 0x2B, f(y, 0x2B) | 1);
+    sideways(y, false);
+  } else {
+    fs(y, 0x2B, f(y, 0x2B) & 0xFFFE);
+  }
+  accelerate(y, f(y, 0x30), false);
+  a = f(y, 0x1F);
+  if(!neg((uint16_t) (a - f(y, 0x32)))) fs(y, 0x1C, 0x0002);
+  advance(y, f(y, 0x1F));
+  return true;
+}
+
+// State 2 ($E541): racing: speed towards the target $C424 by the curves at $80:F093
+// (speeding up) and $80:F193 (slowing down).
+static void racing(uint16_t y) {
+  if(near_view(f(y, 0x1A))) {
+    fs(y, 0x2B, f(y, 0x2B) | 1);
+    sideways(y, true);
+  } else {
+    fs(y, 0x2B, f(y, 0x2B) & 0xFFFE);
+  }
+  uint16_t d = (uint16_t) (f(y, 0x24) - f(y, 0x1F));
+  if(d != 0) {
+    if(!neg(d)) {
+      accelerate(y, rom16(0x80F093 + ((d >> 8) & 0xFE)), true);
+      if(neg((uint16_t) (f(y, 0x24) - f(y, 0x1F)))) fs(y, 0x1F, f(y, 0x24));
+    } else {
+      d = (uint16_t) (0 - d);
+      accelerate(y, rom16(0x80F193 + ((d >> 8) & 0xFE)), true);
+      if(!neg((uint16_t) (f(y, 0x24) - f(y, 0x1F)))) fs(y, 0x1F, f(y, 0x24));
+    }
+  }
+  advance(y, f(y, 0x1F));
+}
+
+// States 4 and 6 ($E6C4/$E6DE): a player's car record follows that player.
+static void follow(uint16_t y, uint16_t moved, uint16_t across) {
+  uint32_t s = (uint32_t) f(y, 0x18) + w(moved);
+  fs(y, 0x18, (uint16_t) s);
+  fs(y, 0x1A, (uint16_t) (f(y, 0x1A) + w((uint16_t) (moved + 2)) + (s >> 16)));
+  fs(y, 0x14, w(across));
+}
+
+// Runs car y's update in C; false for the ones left to the original (state $0A, the
+// finished cars' slow-down, isn't in the recordings).
+static bool update_car(uint16_t y, uint16_t state) {
+  switch(state) {
+    case 0x0: return true;
+    case 0x2: racing(y); return true;
+    case 0x4: follow(y, 0x0212, 0x0205); return true;
+    case 0x6: follow(y, 0x024E, 0x0241); return true;
+    case 0x8: return starting(y);
+    default: return false;
+  }
+}
+
 void Tg2Cars(TgRegs* r) {
   tg_push8(r->db);  // phb
   tg_push16(r->d);  // phd
@@ -282,7 +437,7 @@ void Tg2Cars(TgRegs* r) {
     ws((uint16_t) (0xC42E + y), r->a);
     r->x = w((uint16_t) (0xC41C + y));
     r->y = y;
-    jsr(r, rom16(0x80E417 + r->x), (uint16_t) (0xD84B + i * 0x15));
+    if(!update_car(y, r->x)) jsr(r, rom16(0x80E417 + r->x), (uint16_t) (0xD84B + i * 0x15));
   }
 
   for(;;) {
