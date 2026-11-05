@@ -2,6 +2,8 @@
 
 #include "../port/port.h"
 
+void Tg2DriveCar1(TgRegs* r);
+void Tg2DriveCar2(TgRegs* r);
 void Tg2UploadQueue0(TgRegs* r);
 void Tg2RaceColours1P(TgRegs* r);
 void Tg2RaceColours2PTop(TgRegs* r);
@@ -39,6 +41,8 @@ void Tg2SetFadeIn(TgRegs* r);
 void Tg2FillWords(TgRegs* r);
 
 const TgPortFunc tg2_port_funcs[] = {
+  { 0x008A41, "DriveCar1", Tg2DriveCar1, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00A2A5, "DriveCar2", Tg2DriveCar2, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x019261, "RaceColours1P", Tg2RaceColours1P, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x019284, "RaceColours2PTop", Tg2RaceColours2PTop, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0192A7, "RaceColours2PBottom", Tg2RaceColours2PBottom, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },

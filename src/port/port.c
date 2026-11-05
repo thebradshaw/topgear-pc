@@ -150,6 +150,19 @@ void tg_call_jsr(TgRegs* r, uint16_t target, uint16_t ret, uint8_t mx) { run_emu
 void tg_call_jsl(TgRegs* r, uint32_t target, uint16_t ret, uint8_t mx) { run_emulated(r, target, ret, mx, kJsl); }
 void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx) { run_emulated(r, target, stop, mx, kJmp); }
 
+void tg_push16(uint16_t v) {
+  Cpu* cpu = g_snes->cpu;
+  snes_write(g_snes, cpu->sp, (uint8_t) (v >> 8));
+  snes_write(g_snes, (uint16_t) (cpu->sp - 1), (uint8_t) v);
+  cpu->sp = (uint16_t) (cpu->sp - 2);
+  if(cpu->sp < g_minSp) g_minSp = cpu->sp;
+}
+uint16_t tg_pull16(void) {
+  Cpu* cpu = g_snes->cpu;
+  cpu->sp = (uint16_t) (cpu->sp + 2);
+  return (uint16_t) (snes_read(g_snes, (uint16_t) (cpu->sp - 1)) | snes_read(g_snes, cpu->sp) << 8);
+}
+
 void tg_cpu_cli(void) { g_snes->cpu->i = false; }
 
 uint8_t tg_port_set_bank(uint8_t bank) {

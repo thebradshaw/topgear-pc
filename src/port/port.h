@@ -35,6 +35,10 @@ bool tg_port_take_declined(void);
 void tg_call_jsr(TgRegs* r, uint16_t target, uint16_t ret, uint8_t mx);
 // The same for original code reached by a JMP that comes back by jumping to stop.
 void tg_call_jmp(TgRegs* r, uint16_t target, uint16_t stop, uint8_t mx);
+// Pushes a word on the machine's stack as PHA/PHX would (for original code that reads it
+// with stack-relative addressing), and pulls it back off.
+void tg_push16(uint16_t v);
+uint16_t tg_pull16(void);
 // The same for a JSL to bank:address from the routine's bank.
 void tg_call_jsl(TgRegs* r, uint32_t target, uint16_t ret, uint8_t mx);
 // CLI: lets IRQs in.

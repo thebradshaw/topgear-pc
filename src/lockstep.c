@@ -57,6 +57,10 @@ struct TgLockstep {
   // The sound driver's answers on the APU ports, as the original read them; C reads the
   // same (see apuReplay).
   IoWrite apuReads[kMaxApuReads];
+  // The H/V counters ($213C/$213D) as the original read them: C, running at another time,
+  // reads the same (some random numbers mix them in).
+  IoWrite counterReads[kMaxApuReads];
+  int counterReadCount, counterReadPos;
   int apuReadCount, apuReadPos;
   char* details;   // text of the first mismatches
   size_t detailsLen;
@@ -78,6 +82,7 @@ struct TgLockstep {
 };
 
 static int apuReplay(void* ctx, uint32_t adr);
+static int counterReplay(void* ctx, uint32_t adr);
 
 TgLockstep* tg_lockstep_create(Snes* snes, const uint8_t* rom, TgPortMode mode) {
   TgLockstep* ls = calloc(1, sizeof(TgLockstep));
@@ -85,7 +90,11 @@ TgLockstep* tg_lockstep_create(Snes* snes, const uint8_t* rom, TgPortMode mode) 
   ls->mode = mode;
   ls->stats = calloc(tg_port_func_count, sizeof(FuncStats));
   ls->skipOnce = 0xffffffff;
-  if(mode == TG_PORT_VERIFY) tg_port_set_apu_replay(apuReplay, ls);
+  if(mode == TG_PORT_VERIFY) {
+    tg_port_set_apu_replay(apuReplay, ls);
+    snes->readReplay = counterReplay;
+    snes->readReplayCtx = ls;
+  }
   for(int i = 1; i < tg_port_func_count; i++) {
     if(tg_port_funcs[i].addr <= tg_port_funcs[i - 1].addr) {
       fprintf(stderr, "src/port/registry.c: %s is out of address order\n", tg_port_funcs[i].name);
@@ -164,9 +173,27 @@ static bool isApuPort(uint32_t adr) {
   return (bank < 0x40 || (bank >= 0x80 && bank < 0xc0)) && (adr & 0xffc0) == 0x2140;
 }
 
+static bool isCounter(uint32_t adr) {
+  uint8_t bank = (uint8_t) (adr >> 16);
+  return (bank < 0x40 || (bank >= 0x80 && bank < 0xc0)) && ((adr & 0xffff) == 0x213c || (adr & 0xffff) == 0x213d);
+}
+
+static int counterReplay(void* ctx, uint32_t adr) {
+  TgLockstep* ls = ctx;
+  if(ls->logTarget != ls->c || ls->c == NULL || !isCounter(adr)) return -1;
+  if(ls->snes->cpu->intDepth > ls->baseDepth) return -1;
+  if(ls->counterReadPos >= ls->counterReadCount || ls->counterReads[ls->counterReadPos].adr != (uint16_t) adr) return -1;
+  return ls->counterReads[ls->counterReadPos++].val;
+}
+
 void tg_lockstep_on_read(TgLockstep* ls, uint32_t adr, uint8_t val) {
-  if(ls->logTarget != ls->orig || ls->orig == NULL || !isApuPort(adr)) return;
+  if(ls->logTarget != ls->orig || ls->orig == NULL) return;
   if(ls->snes->cpu->intDepth > ls->baseDepth) return;
+  if(isCounter(adr)) {
+    if(ls->counterReadCount < kMaxApuReads) ls->counterReads[ls->counterReadCount++] = (IoWrite) { (uint16_t) adr, val };
+    return;
+  }
+  if(!isApuPort(adr)) return;
   if(ls->apuReadCount < kMaxApuReads) ls->apuReads[ls->apuReadCount++] = (IoWrite) { (uint16_t) adr, val };
 }
 
@@ -427,6 +454,7 @@ static int isolatedCheck(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu, uint16_t
   Result* o = ls->orig;
   o->logCount = o->hdmaCount = 0;
   ls->apuReadCount = 0;
+  ls->counterReadCount = 0;
   ls->handlerWriteCount = 0;
   ls->handlerTouchedPpu = false;
   ls->logTarget = o;
@@ -451,7 +479,9 @@ static int isolatedCheck(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu, uint16_t
     Result* c = ls->c;
     c->logCount = c->hdmaCount = 0;
   ls->apuReadPos = 0;
+  ls->counterReadPos = 0;
     ls->apuReadPos = 0;
+  ls->counterReadPos = 0;
     ls->logTarget = c;
     cpu->blockInterrupts = true;  // original code that C calls runs without them too
     tg_port_take_min_sp();
@@ -564,6 +594,7 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   Result* o = ls->orig;
   o->logCount = o->hdmaCount = 0;
   ls->apuReadCount = 0;
+  ls->counterReadCount = 0;
   ls->baseDepth = cpu->intDepth;
   ls->handlerWriteCount = 0;
   ls->handlerTouchedPpu = false;
@@ -617,6 +648,7 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   Result* c = ls->c;
   c->logCount = c->hdmaCount = 0;
   ls->apuReadPos = 0;
+  ls->counterReadPos = 0;
   ls->logTarget = c;
   tg_port_take_min_sp();
   bool ran = runC(ls, f, cpu);
