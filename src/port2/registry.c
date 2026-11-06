@@ -5,6 +5,8 @@
 void Tg2DriveCar1(TgRegs* r);
 void Tg2DriveCar2(TgRegs* r);
 void Tg2Cars(TgRegs* r);
+void Tg2Stream1(TgRegs* r);
+void Tg2Stream2(TgRegs* r);
 void Tg2UploadQueue0(TgRegs* r);
 void Tg2RaceColours1P(TgRegs* r);
 void Tg2RaceColours2PTop(TgRegs* r);
@@ -53,6 +55,8 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x01DAD6, "AddToWords", Tg2AddToWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01EF37, "VramDma7E", Tg2VramDma7E, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x01EF6C, "VramDma7F", Tg2VramDma7F, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x088BCA, "Stream1", Tg2Stream1, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_X | TG_DEAD_Y },
+  { 0x08AB9F, "Stream2", Tg2Stream2, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_X | TG_DEAD_Y },
   { 0x08CB74, "BuildRoad", Tg2BuildRoad, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0B8000, "DrawObjects1P", Tg2DrawObjects1P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0B818A, "DrawObjects2P", Tg2DrawObjects2P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
