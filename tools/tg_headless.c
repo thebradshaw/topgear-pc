@@ -191,6 +191,8 @@ int main(int argc, char** argv) {
       tg_game_reset(game, false);
       script.resetPending = false;
     }
+    for(int i = 0; i < script.pokeCount; i++) ((uint8_t*) tg_game_wram(game))[script.pokeAdr[i]] = script.pokeVal[i];
+    script.pokeCount = 0;
     if(script.unlockPending) {
       uint8_t open[3] = {script.unlock & 15, (script.unlock >> 4) & 15, (script.unlock >> 8) & 15};
       tg_game_unlock(game, open);

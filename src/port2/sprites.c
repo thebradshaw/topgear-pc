@@ -254,14 +254,20 @@ void Tg2DrawSprite(TgRegs* r) {
 // aren't now, marks every unused slot off-screen, and packs the high table (X bit 8 and
 // the size bit, two bits a sprite) into 32 bytes at the start of the $200 copy.
 void Tg2FinishOam(TgRegs* r) {
-  (void) r;
   uint16_t left = z(0x28), end = z(0x2C);
   uint16_t stale = (uint16_t) (left - z(0x2A));
   if(!neg(stale) && stale != 0) {
     for(uint16_t x = end; stale; stale--, x = (uint16_t) (x + 4)) ram16_set(x, 0x5555);
   }
   for(uint16_t n = left, x = end; n; n--, x = (uint16_t) (x + 4)) ram16_set((uint16_t) (x + 0x200), 0x0100);
-  uint16_t base = (uint16_t) (((uint16_t) (left - 0x80) << 2) + end + 0x200);
+  uint16_t t = (uint16_t) (((uint16_t) (left - 0x80) << 2) + end);
+  uint16_t base = (uint16_t) (t + 0x200);
+  // The flags it returns with, which an interrupt can push: V from that adc #$0200, C clear
+  // (the eighth ror of a byte that started at zero), N and Z from the plb.
+  r->v = (~t & base & 0x8000) != 0;
+  r->c = false;
+  r->n = (r->db & 0x80) != 0;
+  r->z = r->db == 0;
   for(int k = 0; k < 32; k++) {
     uint8_t packed = 0;
     for(int j = 0; j < 4; j++) {

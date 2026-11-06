@@ -17,11 +17,14 @@
 // "<frame> maptop on|off" keeps the full view's map at the top, "<frame> speedbottom on|off"
 // puts its speedometer and timer at the bottom right;
 // "<frame> unlock A B C" opens countries up to A, B and C at the three skill levels (auto-save).
+// "<frame> poke <hex address> <hex byte>" writes a byte of work RAM before that frame (for
+// test recordings that start a race the menus would take long to reach).
 
 typedef struct {
   uint32_t frame;
   uint8_t player;  // 0 means reset, 3 smooth motion, 4 smooth scaling (removed, ignored), 5 full view, 6 widescreen (buttons: the margin), 7 side by side, 8 ghost, 9 tall road (buttons 1 on, 0 off), 10 unlock (buttons: the countries open at each skill level, 4 bits each), 11 map at the top, 12 speedometer at the bottom
   uint16_t buttons;
+  uint32_t adr;  // 13 poke: the work RAM address (buttons: the byte)
 } TgInputEvent;
 
 typedef struct {
@@ -40,6 +43,9 @@ typedef struct {
   bool speedBottom;  // full view: the speedometer and timer go to the bottom right
   bool unlockPending;  // auto-save: countries to open before the next frame
   uint16_t unlock;
+  int pokeCount;  // pokes due before the next frame
+  uint32_t pokeAdr[8];
+  uint8_t pokeVal[8];
 } TgInputScript;
 
 bool tg_input_script_load(const char* path, TgInputScript* script, char* error, int errorSize);

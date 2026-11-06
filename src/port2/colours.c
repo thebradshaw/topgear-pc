@@ -195,7 +195,21 @@ static const uint16_t kClock3[5] = { 0xCD40, 0xCD44, 0xCD46, 0xCD4A, 0xCD4C };
 static bool enter(TgRegs* r) {
   g_d = r->d;
   g_db = r->db;
-  return !(w(0x0514) & 0x8000);
+  if(!(w(0x0514) & 0x8000)) return true;
+  r->n = true;  // lda $0514
+  r->z = false;
+  return false;
+}
+
+// The flags the last fade leaves: lda #0 after a cmp that set the carry, or an ora of $2000
+// after lsr shifted a clear bit into the carry. Nothing on the way overflows.
+static void leave(TgRegs* r, uint8_t o) {
+  bool black = z((uint8_t) (o + 8)) >= 0x2000;
+  r->x = 0xFFFD;  // the second gradient counts X down from $24 by 3, 13 times
+  r->n = false;
+  r->v = false;
+  r->z = black;
+  r->c = black;
 }
 
 // $01:9261. One player.
@@ -210,6 +224,7 @@ void Tg2RaceColours1P(TgRegs* r) {
   clock(z(0xAC), kClock1);
   gradient(0xAE, 0xF360, 0x24, -3, queue(0x0A8A, 0x0AF6), -2, 13);
   fades(0xB0, queue(0x0A42, 0x0AAE));
+  leave(r, 0xB0);
 }
 
 // $01:9284. Two players: player 1's half.
@@ -224,6 +239,7 @@ void Tg2RaceColours2PTop(TgRegs* r) {
   clock(z(0xAC), kClock2);
   gradient(0xAE, 0xF360, 0x24, -3, queue(0x0A8A, 0x0AF6), -2, 13);
   fades(0xB0, queue(0x0A42, 0x0AAE));
+  leave(r, 0xB0);
 }
 
 // $01:92A7. Two players: player 2's half.
@@ -238,4 +254,5 @@ void Tg2RaceColours2PBottom(TgRegs* r) {
   clock(z(0xC6), kClock3);
   gradient(0xC8, 0xF360, 0x24, -3, queue(0x0B62, 0x0BCE), -2, 13);
   fades(0xCA, queue(0x0B1A, 0x0B86));
+  leave(r, 0xCA);
 }

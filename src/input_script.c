@@ -83,6 +83,11 @@ bool tg_input_script_load(const char* path, TgInputScript* script, char* error, 
       player = 10;
       mask = (uint16_t) ((u[0] & 15) | (u[1] & 15) << 4 | (u[2] & 15) << 8);
       n = 3;
+    } else if(sscanf(line, "%u %15s %x %x", &frame, word, &u[0], &u[1]) == 4 && strcmp(word, "poke") == 0) {
+      player = 13;
+      mask = (uint16_t) (u[1] & 0xff);
+      u[2] = u[0] & 0x1ffff;
+      n = 3;
     } else if(sscanf(line, "%u %15s %15s", &frame, word, value) == 3 && strcmp(word, "wide") == 0) {
       player = 6;
       mask = (uint16_t) atoi(value);
@@ -104,7 +109,7 @@ bool tg_input_script_load(const char* path, TgInputScript* script, char* error, 
       capacity = capacity ? capacity * 2 : 64;
       script->events = realloc(script->events, capacity * sizeof(TgInputEvent));
     }
-    script->events[script->count++] = (TgInputEvent){frame, (uint8_t) player, mask};
+    script->events[script->count++] = (TgInputEvent){frame, (uint8_t) player, mask, player == 13 ? u[2] : 0};
   }
   fclose(f);
   return true;
@@ -128,6 +133,12 @@ void tg_input_script_advance(TgInputScript* script, uint32_t frame) {
     else if(e->player == 9) script->tallRoad = e->buttons != 0;
     else if(e->player == 11) script->mapTop = e->buttons != 0;
     else if(e->player == 12) script->speedBottom = e->buttons != 0;
+    else if(e->player == 13) {
+      if(script->pokeCount < 8) {
+        script->pokeAdr[script->pokeCount] = e->adr;
+        script->pokeVal[script->pokeCount++] = (uint8_t) e->buttons;
+      }
+    }
     else if(e->player == 10) {
       script->unlockPending = true;
       script->unlock = e->buttons;

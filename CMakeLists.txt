@@ -200,4 +200,21 @@ if(TG2_TEST_ROM)
     --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear2/first_race.txt
     --expect-wram 663bcda1263bfeaa654c2d476b8fa2baaae6807f507995a74efd90e04387c6e2
     --expect-frame b40950a0da02055a8c289e3acccbf8d1ef3b32faa341e339ef8cddae6c97b011)
+  # A two-player race, and races on other tracks (the recordings poke the country and race
+  # in before the start), each checked the same way: name|frames|wram hash|frame hash.
+  foreach(rec
+      "race_2p|14000|db068cfb1cd1cf0e8d6cb108d84160bf9861f68dd9ae45b8ca4abdf5d967ab3d|489e9b90682d0e12fe5bbf5fc2b85c3430940d9415c0ad59b37a5d34088734c4"
+      "country02_race01|12000|07904fe66091064ca5c91293405846581a569555ea661187c3837aac1c215d26|49d61d8fb6d5bcf879b04b80c84f2f38f410f17609776828682ab51a195e923c"
+      "country08_race03|12000|583c781d5bdbc5dfde779513689bcfe3159b13f6fbad0ed0161fb7afbff051a9|7be41d011dd1e5ea755cac2c145bcdca3dd33d2b14b113952c030b675d2e7a40"
+      "country0B_race00|12000|fb7690a53ed5f96bb1c8554f113f8ffa8f54126da367dadfbe7142f8fc32fdd1|ca02793076b8845454d3cc4d949bda5bc49fe16d063e310331f86318ed644ba7"
+      "country0E_race02|12000|1cc9a9ed5bff9c17be46c0e39e8510da3bd832540ce097cf026dd5b3612b0cd0|0f7db8ac483df117b984a5b3cd51a1240fa6e8dc1ae2e9533a3d10c3461ced52"
+      )
+    string(REPLACE "|" ";" f "${rec}")
+    list(GET f 0 name)
+    list(GET f 1 frames)
+    list(GET f 2 wram)
+    list(GET f 3 frame)
+    add_test(NAME tg2_${name} COMMAND tg_headless --rom ${TG2_TEST_ROM} --port verify --frames ${frames}
+      --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear2/${name}.txt --expect-wram ${wram} --expect-frame ${frame})
+  endforeach()
 endif()
