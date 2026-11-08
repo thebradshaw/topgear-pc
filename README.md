@@ -29,6 +29,8 @@ The downloads above are always the latest release; older ones are on the [releas
 
 ![Widescreen on the open road](docs/screenshots/road-widescreen.png)
 
+<p align="center"><a href="https://buymeacoffee.com/chrisbradshaw"><img alt="Buy me a coffee" src="docs/coffee.svg" width="400"></a></p>
+
 ## Status
 
 Phase 3. The races run in translated C: the race program, the per-frame update, the renderer, the cars, the sprites and the raster interrupts. The menus and a few routines still run as the original game on the embedded reference emulator ([LakeSnes](https://github.com/angelo-wf/LakeSnes), MIT), which also checks the C code call by call against the original.
