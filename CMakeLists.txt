@@ -44,6 +44,7 @@ add_library(tgcore STATIC
   src/port2/drive.c
   src/port2/cars.c
   src/port2/stream.c
+  src/port2/windows.c
   src/port2/sprites.c
   src/port/cars.c
   src/port/decompress.c
@@ -209,6 +210,7 @@ if(TG2_TEST_ROM)
       "country08_race03|12000|583c781d5bdbc5dfde779513689bcfe3159b13f6fbad0ed0161fb7afbff051a9|7be41d011dd1e5ea755cac2c145bcdca3dd33d2b14b113952c030b675d2e7a40"
       "country0B_race00|12000|fb7690a53ed5f96bb1c8554f113f8ffa8f54126da367dadfbe7142f8fc32fdd1|ca02793076b8845454d3cc4d949bda5bc49fe16d063e310331f86318ed644ba7"
       "country0E_race02|12000|1cc9a9ed5bff9c17be46c0e39e8510da3bd832540ce097cf026dd5b3612b0cd0|0f7db8ac483df117b984a5b3cd51a1240fa6e8dc1ae2e9533a3d10c3461ced52"
+      "country07_race02|12000|648326920da23c9d71662c26773ae915bfd2775fd3f78704626c56c93781f0d0|e880b9c40fdce2f5e234fbf0a3beb1e02f67834fa9a21e022fe78da1a396eba7"
       )
     string(REPLACE "|" ";" f "${rec}")
     list(GET f 0 name)

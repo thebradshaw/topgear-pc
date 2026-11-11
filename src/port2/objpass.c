@@ -15,6 +15,7 @@
 void Tg2DrawSprite(TgRegs* r);
 void Tg2ListVisibleCars(TgRegs* r);
 void Tg2FinishOam(TgRegs* r);
+bool Tg2Windows(TgRegs* r);
 void Tg2ObjectType0(TgRegs* r);
 void Tg2ObjectType1(TgRegs* r);
 void Tg2ObjectType2(TgRegs* r);
@@ -914,9 +915,11 @@ void Tg2ObjectPass(TgRegs* r) {
   Tg2FinishOam(r);
   // $0E:8B40: the window HDMA builder for what was seen ($52).
   r->a = r->x = (uint16_t) (z(0x52) << 1);
-  uint8_t bank = tg_port_set_bank(0x0E);
-  tg_call_jsr(r, rom16(0x8E8B4C + r->x), 0x8B49, TG_MX_16);
-  tg_port_set_bank(bank);
+  if(!Tg2Windows(r)) {
+    uint8_t bank = tg_port_set_bank(0x0E);
+    tg_call_jsr(r, rom16(0x8E8B4C + r->x), 0x8B49, TG_MX_16);
+    tg_port_set_bank(bank);
+  }
   r->d = d0;
   r->db = db0;
 }
