@@ -34,9 +34,9 @@ static void window_registers(void) {
 
 // The raster IRQ for the dashboard ($0128), then two DMAs: this frame's queued colours
 // ($6C bytes to CGRAM from $4A) and the sprite table.
-static void send_frame(void) {
+static void send_frame(uint16_t irq) {
   p16(0x4209, w(0x0128));
-  ws(0x0016, 0xB31A);
+  ws(0x0016, irq);
   p8(0x2101, 0x02);
   p8(0x2105, b(0x012E));
   p8(0x420B, 0x00);
@@ -86,44 +86,44 @@ static uint16_t patch_one(uint16_t y, bool flash, bool advance) {
 }
 
 // The frame clock's part of the message at the top of the screen ($B01E-$B0BC): which
-// text is up ($0188), and its timing.
-static void message_clock(void) {
-  ws(0x0194, (uint16_t) (w(0x0194) + 0x0100));
-  if(w(0x0174) != 0) return;
-  if(neg(w(0x0506))) {
-    if(w(0x0188) != 0xE940) {
-      ws(0x0188, 0xE940);
-      ws(0x0174, (uint16_t) (w(0x0174) - 1));
-      ws(0x0180, 0);
+// text is up ($0188), and its timing. Player 2's copy of each value is the next word.
+static void message_clock(uint16_t p, uint16_t rain) {
+  ws((uint16_t) (0x0194 + p), (uint16_t) (w((uint16_t) (0x0194 + p)) + 0x0100));
+  if(w((uint16_t) (0x0174 + p)) != 0) return;
+  if(neg(w(rain))) {
+    if(w((uint16_t) (0x0188 + p)) != 0xE940) {
+      ws((uint16_t) (0x0188 + p), 0xE940);
+      ws((uint16_t) (0x0174 + p), (uint16_t) (w((uint16_t) (0x0174 + p)) - 1));
+      ws((uint16_t) (0x0180 + p), 0);
     }
     return;
   }
-  uint16_t a = w(0x017C);
+  uint16_t a = w((uint16_t) (0x017C + p));
   if(neg(a)) {
-    a = (uint16_t) (w(0x0178) * 10 + 0xE94A);
-    if(a != w(0x0188)) {
-      ws(0x0188, a);
-      ws(0x0174, (uint16_t) (w(0x0174) - 1));
-      ws(0x0180, 0);
+    a = (uint16_t) (w((uint16_t) (0x0178 + p)) * 10 + 0xE94A);
+    if(a != w((uint16_t) (0x0188 + p))) {
+      ws((uint16_t) (0x0188 + p), a);
+      ws((uint16_t) (0x0174 + p), (uint16_t) (w((uint16_t) (0x0174 + p)) - 1));
+      ws((uint16_t) (0x0180 + p), 0);
     }
     return;
   }
   if(a == 0) {
-    ws(0x017C, 1);
-    ws(0x0194, 0);
-    uint16_t x = tg_read16(0x8CE990 + (uint16_t) (w(0x0184) << 1));
-    ws(0x018C, tg_read16(0x8C0000 + x));
-    ws(0x0188, (uint16_t) (x + 2));
-    ws(0x0174, (uint16_t) (w(0x0174) - 1));
-    ws(0x0180, 0xFFFF);
+    ws((uint16_t) (0x017C + p), 1);
+    ws((uint16_t) (0x0194 + p), 0);
+    uint16_t x = tg_read16(0x8CE990 + (uint16_t) (w((uint16_t) (0x0184 + p)) << 1));
+    ws((uint16_t) (0x018C + p), tg_read16(0x8C0000 + x));
+    ws((uint16_t) (0x0188 + p), (uint16_t) (x + 2));
+    ws((uint16_t) (0x0174 + p), (uint16_t) (w((uint16_t) (0x0174 + p)) - 1));
+    ws((uint16_t) (0x0180 + p), 0xFFFF);
     return;
   }
-  while(w(0x018C) != 0 && w(0x0194) >= w(0x0190)) {
-    ws(0x0194, (uint16_t) (w(0x0194) - w(0x0190)));
-    ws(0x018C, (uint16_t) (w(0x018C) - 1));
-    ws(0x0188, (uint16_t) (w(0x0188) + 0x000A));
-    ws(0x0174, (uint16_t) (w(0x0174) - 1));
-    ws(0x0180, 0xFFFF);
+  while(w((uint16_t) (0x018C + p)) != 0 && w((uint16_t) (0x0194 + p)) >= w((uint16_t) (0x0190 + p))) {
+    ws((uint16_t) (0x0194 + p), (uint16_t) (w((uint16_t) (0x0194 + p)) - w((uint16_t) (0x0190 + p))));
+    ws((uint16_t) (0x018C + p), (uint16_t) (w((uint16_t) (0x018C + p)) - 1));
+    ws((uint16_t) (0x0188 + p), (uint16_t) (w((uint16_t) (0x0188 + p)) + 0x000A));
+    ws((uint16_t) (0x0174 + p), (uint16_t) (w((uint16_t) (0x0174 + p)) - 1));
+    ws((uint16_t) (0x0180 + p), 0xFFFF);
   }
 }
 
@@ -137,6 +137,9 @@ static void message_clock(void) {
 // picture, +A the picture wanted, +C the picture drawn, +E / +10 timers.
 
 void Tg2RaceColours1P(TgRegs* r);
+void Tg2RaceColours2PTop(TgRegs* r);
+void Tg2RaceColours2PBottom(TgRegs* r);
+void Tg2UploadQueue1(TgRegs* r);
 void Tg2UploadQueue0(TgRegs* r);
 
 static uint16_t rec(uint16_t x, uint16_t o) { return tg_read16(0x8C0000 + (uint16_t) (x + o)); }
@@ -152,31 +155,32 @@ static void vram_dma(uint8_t vmain, uint16_t vadr, uint16_t mode, uint8_t bank, 
   p8(0x420B, 0x80);
 }
 
-// $A066: a message's tile map (13 rows of 16 tiles) into the panel's map copy at
-// $7E:CCE0, as tile numbers from $3E08 up. (The additions chain their carry, as the
-// original's do.)
-static void message_map(void) {
-  uint16_t x = w(0x0188);
+// A message's tile map (13 rows of 16 tiles) into a panel's map copy, as tile numbers
+// from `base` up ($A066; $A110 and $A1BA for two players). (The additions chain their
+// carry, as the original's do.)
+static void message_map(uint16_t text, uint16_t dst, uint16_t base) {
+  uint16_t x = w(text);
   uint32_t src = (uint32_t) (rec(x, 6) & 0xFF) << 16;
   uint16_t y = (uint16_t) (rec(x, 2) + 0x001E);
   uint32_t carry = 0;
   for(int col = 0x1E; col >= 0; col -= 2, y = (uint16_t) (y - 2)) {
     for(int row = 0; row < 13; row++) {
-      uint32_t t = (uint32_t) tg_read16(src | (uint16_t) (y + row * 0x20)) + 0x3E08 + carry;
+      uint32_t t = (uint32_t) tg_read16(src | (uint16_t) (y + row * 0x20)) + base + carry;
       carry = t >> 16;
-      ws((uint16_t) (0xCCE0 + row * 0x40 + col), (uint16_t) t);
+      ws((uint16_t) (dst + row * 0x40 + col), (uint16_t) t);
     }
   }
 }
 
-// $A264: a message's tiles and its map to VRAM. Returns the second block's length.
-static uint16_t message_upload(void) {
-  uint16_t x = w(0x0188);
+// A message's tiles and its map to VRAM ($A264; $A2FE and $A398 for two players).
+// Returns the second block's length.
+static uint16_t message_upload(uint16_t text, uint16_t tiles, uint16_t block, uint16_t map, uint16_t map_src) {
+  uint16_t x = w(text);
   p8(0x420B, 0x00);
-  vram_dma(0x00, 0x5000, 0x1800, 0x8C, (uint16_t) (rec(x, 0) + 0x8B40), 0x0200);
+  vram_dma(0x00, tiles, 0x1800, 0x8C, (uint16_t) (rec(x, 0) + 0x8B40), 0x0200);
   uint16_t len = rec(x, 8);
-  vram_dma(0x80, 0x2080, 0x1801, (uint8_t) rec(x, 6), rec(x, 4), len);
-  vram_dma(0x80, 0x79E0, 0x1801, 0x7E, 0xCCD0, 0x0340);
+  vram_dma(0x80, block, 0x1801, (uint8_t) rec(x, 6), rec(x, 4), len);
+  vram_dma(0x80, map, 0x1801, 0x7E, map_src, 0x0340);
   return len;
 }
 
@@ -372,72 +376,83 @@ static void notice_tiles(uint16_t a) {
   }
 }
 
-static void notice_clear(void) {
-  ws(N + 0x0C, 0xFFFF);
-  ws(N + 0x00, 0x03D0);
-  ws(N + 0x02, 0x2E40);
-  notice_erase(w(N + 0x08));
+// Whose notices: the state's place in the $0A00 page (+4 on, as described above), where
+// they go in the map copy and which tiles they use, the player's fuel, lap and place, and
+// the blink's half period.
+typedef struct {
+  uint16_t n, at, tile, fuel, lap, place, blink;
+} Notices;
+static const Notices kNotices1P = { N, 0x03D0, 0x2E40, 0x01AE, 0x01A2, 0x01A0, 12 };
+static const Notices kNoticesTop = { N, 0x0050, 0x2E40, 0x01AE, 0x01A2, 0x01A0, 6 };
+static const Notices kNoticesBottom = { N + 0x1C, 0x03D0, 0x2E90, 0x01C8, 0x01BC, 0x01BA, 6 };
+
+static void notice_clear(const Notices* k) {
+  ws(k->n + 0x0C, 0xFFFF);
+  ws(N + 0x00, k->at);
+  ws(N + 0x02, k->tile);
+  notice_erase(w(k->n + 0x08));
 }
 
-static void notice_start(uint16_t picture, uint16_t kind) {
-  ws(N + 0x08, picture);
-  ws(N + 0x06, 1);
-  ws(N + 0x04, kind);
+static void notice_start(const Notices* k, uint16_t picture, uint16_t kind) {
+  ws(k->n + 0x08, picture);
+  ws(k->n + 0x06, 1);
+  ws(k->n + 0x04, kind);
 }
 
 // Picks the next notice to show ($BF90-$C089), most urgent first.
-static void notice_pick(void) {
-  if(w(0x01AE) >= 0x0300) ws(N + 0x18, 0);
-  uint16_t a = w(N + 0x12);
+static void notice_pick(const Notices* k) {
+  uint16_t n = k->n;
+  if(w(k->fuel) >= 0x0300) ws(n + 0x18, 0);
+  uint16_t a = w(n + 0x12);
   if(a != 0) {
-    ws(N + 0x0E, a);
-    notice_start((uint16_t) (a + 0x002F), 4);
+    ws(n + 0x0E, a);
+    notice_start(k, (uint16_t) (a + 0x002F), 4);
     return;
   }
-  a = w(N + 0x14);
+  a = w(n + 0x14);
   if(a != 0) {
-    ws(N + 0x14, 0);
-    ws(N + 0x0E, 5);
-    ws(N + 0x10, 0x000C);
-    notice_start((uint16_t) (a + 0x0035), 2);
+    ws(n + 0x14, 0);
+    ws(n + 0x0E, 5);
+    ws(n + 0x10, 0x000C);
+    notice_start(k, (uint16_t) (a + 0x0035), 2);
     return;
   }
-  a = w(N + 0x16);
+  a = w(n + 0x16);
   if(a != 0) {
-    ws(N + 0x0E, a);
-    ws(N + 0x10, 0x000C);
-    notice_start((uint16_t) (a + 0x000E), 3);
+    ws(n + 0x0E, a);
+    ws(n + 0x10, k->blink);
+    notice_start(k, (uint16_t) (a + 0x000E), 3);
     return;
   }
-  if(w(N + 0x18) == 0 && w(0x01AE) < 0x0300) {
+  if(w(n + 0x18) == 0 && w(k->fuel) < 0x0300) {
     // Low on fuel.
-    ws(N + 0x18, 0xFFFF);
-    ws(N + 0x0E, 3);
-    ws(N + 0x10, 0x000C);
-    notice_start(0x0026, 2);
+    ws(n + 0x18, 0xFFFF);
+    ws(n + 0x0E, 3);
+    ws(n + 0x10, k->blink);
+    notice_start(k, 0x0026, 2);
     return;
   }
-  a = (uint16_t) (w(0x019E) - w(0x01A2));
-  if(a != w(N + 0x1A)) {
-    ws(N + 0x1A, a);
+  a = (uint16_t) (w(0x019E) - w(k->lap));
+  if(a != w(n + 0x1A)) {
+    ws(n + 0x1A, a);
     if(!neg(a)) {
-      ws(N + 0x0E, 0x0020);
-      notice_start((uint16_t) (a + 0x0027), 1);
+      ws(n + 0x0E, 0x0020);
+      notice_start(k, (uint16_t) (a + 0x0027), 1);
       return;
     }
   }
-  a = w(0x01A0);
-  if(a != w(N + 0x1C)) {
-    ws(N + 0x1C, a);
-    ws(N + 0x0E, 0x0010);
-    notice_start((uint16_t) (a + 0x000F), 1);
+  a = w(k->place);
+  if(a != w(n + 0x1C)) {
+    ws(n + 0x1C, a);
+    ws(n + 0x0E, 0x0010);
+    notice_start(k, (uint16_t) (a + 0x000F), 1);
     return;
   }
-  a = w(N + 0x1E);
+  a = w(n + 0x1E);
   if(a != 0) {
-    ws(N + 0x1E, 0);
-    ws(N + 0x0E, 0x0020);
-    notice_start((uint16_t) (a - 1), 1);
+    ws(n + 0x1E, 0);
+    ws(n + 0x0E, 0x0020);
+    notice_start(k, (uint16_t) (a - 1), 1);
   }
 }
 
@@ -447,37 +462,84 @@ static bool timer(uint16_t adr) {
 }
 
 // The notice on screen runs its timing ($C08B-$C0E7).
-static void notice_run(void) {
+static void notice_run(const Notices* k) {
+  uint16_t n = k->n;
   bool done = false;
-  switch(w(N + 0x04)) {
+  switch(w(n + 0x04)) {
     case 1: // for $0E frames
-      done = timer(N + 0x0E);
+      done = timer(n + 0x0E);
       break;
     case 2: // blinking $0E times
-      if(!timer(N + 0x10)) return;
-      ws(N + 0x10, 0x000C);
-      ws(N + 0x06, (uint16_t) -w(N + 0x06));
-      if(!neg(w(N + 0x06))) return;
-      done = timer(N + 0x0E);
+      if(!timer(n + 0x10)) return;
+      ws(n + 0x10, k->blink);
+      ws(n + 0x06, (uint16_t) -w(n + 0x06));
+      if(!neg(w(n + 0x06))) return;
+      done = timer(n + 0x0E);
       break;
     case 3: // blinking while $16 stays as it was
-      if(w(N + 0x16) == w(N + 0x0E)) {
-        if(!timer(N + 0x10)) return;
-        ws(N + 0x10, 0x000C);
-        ws(N + 0x06, (uint16_t) -w(N + 0x06));
+      if(w(n + 0x16) == w(n + 0x0E)) {
+        if(!timer(n + 0x10)) return;
+        ws(n + 0x10, k->blink);
+        ws(n + 0x06, (uint16_t) -w(n + 0x06));
         return;
       }
       done = true;
       break;
     default: // while $12 stays as it was
-      done = w(N + 0x12) != w(N + 0x0E);
+      done = w(n + 0x12) != w(n + 0x0E);
       break;
   }
   if(!done) return;
-  notice_clear();
-  ws(N + 0x06, 0);
-  ws(N + 0x04, 0);
-  ws(N + 0x08, 0);
+  notice_clear(k);
+  ws(n + 0x06, 0);
+  ws(n + 0x04, 0);
+  ws(n + 0x08, 0);
+}
+
+// Whether the player's notice needs its tiles sent; if so sends them.
+static bool notice_wants_tiles(const Notices* k, uint16_t busy) {
+  uint16_t n = k->n;
+  if(w(busy) != 0 || w(n + 0x06) == 0 || w(n + 0x08) == w(n + 0x0A)) return false;
+  ws(n + 0x0A, w(n + 0x08));
+  ws(N + 0x02, k->tile);
+  notice_tiles(w(n + 0x0A));
+  return true;
+}
+
+// A player's message and notice for the frame: a new message's map (`msg` negative) is
+// built, then the notice is drawn or blinked off and its timing run. A message that
+// covers the notices (`busy`) stops them.
+static void notice_frame(const Notices* k, uint16_t msg, uint16_t busy, uint16_t text, uint16_t dst,
+                         uint16_t base) {
+  uint16_t n = k->n;
+  if(neg(w(msg))) {
+    message_map(text, dst, base);
+    ws(msg, 1);
+    if(w(busy) != 0) {
+      ws(n + 0x0A, 0xFFFF);
+      ws(n + 0x0C, 0xFFFF);
+      return;
+    }
+    if(w(n + 0x06) != 0) ws(n + 0x0C, 0xFFFF);
+  } else if(w(busy) != 0) {
+    return;
+  }
+  // Draw or blink the notice.
+  uint16_t shown = w(n + 0x06);
+  if(shown != 0) {
+    uint16_t a = w(n + 0x08);
+    if(a != w(n + 0x0A)) return;
+    if(neg(shown)) {
+      if(a == w(n + 0x0C)) notice_clear(k);
+    } else if(a != w(n + 0x0C)) {
+      ws(n + 0x0C, a);
+      ws(N + 0x00, k->at);
+      ws(N + 0x02, k->tile);
+      notice_draw(a);
+    }
+  }
+  if(w(n + 0x04) == 0) notice_pick(k);
+  else notice_run(k);
 }
 
 // The frame's panel work when no message is waiting to be uploaded ($BEE0-$C0E9).
@@ -487,34 +549,7 @@ static void panel_frame(TgRegs* r) {
   r->d = 0x0100;
   r->db = 0x8C;
   Tg2RaceColours1P(r);
-  if(neg(w(0x0174))) {
-    message_map();
-    ws(0x0174, 1);
-    if(w(0x0180) != 0) {
-      ws(N + 0x0A, 0xFFFF);
-      ws(N + 0x0C, 0xFFFF);
-      return;
-    }
-    if(w(N + 0x06) != 0) ws(N + 0x0C, 0xFFFF);
-  } else if(w(0x0180) != 0) {
-    return;
-  }
-  // Draw or blink the notice.
-  uint16_t shown = w(N + 0x06);
-  if(shown != 0) {
-    uint16_t a = w(N + 0x08);
-    if(a != w(N + 0x0A)) return;
-    if(neg(shown)) {
-      if(a == w(N + 0x0C)) notice_clear();
-    } else if(a != w(N + 0x0C)) {
-      ws(N + 0x0C, a);
-      ws(N + 0x00, 0x03D0);
-      ws(N + 0x02, 0x2E40);
-      notice_draw(a);
-    }
-  }
-  if(w(N + 0x04) == 0) notice_pick();
-  else notice_run();
+  notice_frame(&kNotices1P, 0x0174, 0x0180, 0x0188, 0xCCE0, 0x3E08);
 }
 
 static void panel(TgRegs* r) {
@@ -534,19 +569,63 @@ static void panel(TgRegs* r) {
   if(a != 0 && !neg(a)) {
     // A message's map is ready: upload it.
     ws(0x0162, 0);
-    uint16_t len = message_upload();
+    uint16_t len = message_upload(0x0188, 0x5000, 0x2080, 0x79E0, 0xCCD0);
     ws(0x0174, 0);
     queued_transfers((uint16_t) (len + 0x0E00));
     return;
   }
-  if(w(0x0180) == 0 && w(N + 0x06) != 0 && w(N + 0x08) != w(N + 0x0A)) {
-    // The notice's tiles.
-    ws(N + 0x0A, w(N + 0x08));
-    ws(N + 0x02, 0x2E40);
-    notice_tiles(w(N + 0x0A));
+  if(notice_wants_tiles(&kNotices1P, 0x0180)) return;
+  panel_frame(r);
+}
+
+// --- Two players ($01:C147) ---
+
+// The two views take turns ($0162): a frame sends one player's finished panel to VRAM and
+// builds the other's.
+typedef struct {
+  const Notices* notices;
+  uint16_t msg, busy, text;      // $0174 / $0180 / $0188 for player 1
+  uint16_t map, base;            // the message map's copy and its first tile number
+  uint16_t tiles, block;         // VRAM for the message's two tile blocks
+  uint16_t panel_vram, panel;    // the panel's map in VRAM and its copy
+  void (*colours)(TgRegs* r);
+} View;
+static const View kTop = { &kNoticesTop, 0x0174, 0x0180, 0x0188, 0xC960, 0x3E08, 0x5000, 0x2080, 0x7820, 0xC950,
+                           Tg2RaceColours2PTop };
+static const View kBottom = { &kNoticesBottom, 0x0176, 0x0182, 0x018A, 0xCCE0, 0x3E58, 0x6000, 0x2580, 0x79E0,
+                              0xCCD0, Tg2RaceColours2PBottom };
+
+static void panel_2p(TgRegs* r) {
+  r->d = 0x0100;
+  r->db = 0x8C;
+  if(w(0x0164) != 0 || w(0x0166) != 0) {
+    if(w(0x0164) != 0) {
+      Tg2UploadQueue0(r);
+      ws(0x0164, 0);
+    }
+    if(w(0x0166) != 0) {
+      Tg2UploadQueue1(r);
+      ws(0x0166, 0);
+    }
     return;
   }
-  panel_frame(r);
+  bool second = neg(w(0x0162));
+  ws(0x0162, second ? 0 : 0xFFFF);
+  const View* send = second ? &kBottom : &kTop;
+  const View* build = second ? &kTop : &kBottom;
+
+  uint16_t a = w(send->msg);
+  if(a != 0 && !neg(a)) {
+    uint16_t len = message_upload(send->text, send->tiles, send->block, send->panel_vram, send->panel);
+    ws(send->msg, 0);
+    queued_transfers((uint16_t) (len + 0x0E00));
+  } else if(!notice_wants_tiles(send->notices, send->busy)) {
+    p8(0x420B, 0x00);
+    vram_dma(0x80, send->panel_vram, 0x1801, 0x7E, send->panel, 0x0340);
+    queued_transfers(0x0C00);
+  }
+  build->colours(r);
+  notice_frame(build->notices, build->msg, build->busy, build->text, build->map, build->base);
 }
 
 // $CE9D: sends the $40 cycling colours at $7E:D110 to the start of CGRAM (and counts the
@@ -589,7 +668,7 @@ void Tg2RaceVblank1P(TgRegs* r) {
   }
   if(changed || neg(mode)) {
     // That frame, and every frame of a negative mode, only sends the buffers.
-    send_frame();
+    send_frame(0xB31A);
     if(w(0x010C) == 1) window_registers();
     return;
   }
@@ -675,7 +754,7 @@ void Tg2RaceVblank1P(TgRegs* r) {
   y = (uint16_t) (y + 2);
   patch_one(y, flashing, false);
 
-  message_clock();
+  message_clock(0, 0x0506);
 
   // The road-stripe cycle ($0398, stepped by the speed at $0396): three colours from the
   // table at $C9B0 into this frame's queued colours.
@@ -722,10 +801,192 @@ void Tg2RaceVblank1P(TgRegs* r) {
       hdma_tables(0xF5FA, w(0x0148), 0x87, 0x7E);
       break;
   }
-  send_frame();
+  send_frame(0xB31A);
   uint16_t d = r->d;
   uint8_t bank = r->db;
   panel(r);
+  r->d = d;
+  r->db = bank;
+  turn_cycle_colours();
+}
+
+// The window registers' values for what a view's object pass saw.
+static void window_values(uint8_t seen, uint16_t dst) {
+  uint16_t x = 0x00F0, y = 0x00F0, a = 0xFF08;
+  if(seen == 0 || (seen & 0x01)) {
+  } else if(seen & 0x06) {
+    a = 0xE608;
+  } else if(seen & 0x18) {
+    y = 0x0000;
+    a = 0xE000;
+  } else if(seen & 0x20) {
+    x = 0x0020;
+    y = 0x0002;
+    a = 0xE000;
+  }
+  ws(dst, x);
+  ws((uint16_t) (dst + 2), y);
+  ws((uint16_t) (dst + 4), a);
+}
+
+// The line a view's raster IRQ falls on and its screen mode, from how far the view is
+// pushed down.
+static void view_line(uint16_t line, uint16_t first, uint16_t fallback, uint16_t at, uint16_t mode) {
+  uint16_t x = 0x2101;
+  if(lt(line, first)) {
+    line = fallback;
+    x = 0x2121;
+  } else if(!lt(line, (uint16_t) (first + 0x0067))) {
+    line = fallback;
+    x = 0x0101;
+  }
+  ws(at, line);
+  ws(mode, x | w(0x012C));
+}
+
+// A view's sky colours for a lightning flash or not.
+static void sky_colours(uint16_t flash, uint16_t dst) {
+  bool cycle = w(0x010C) == 4;
+  uint16_t x, y;
+  if(neg(w(flash))) {
+    x = cycle ? 0x7E60 : 0x019F;
+    y = cycle ? 0x7F20 : 0x00DF;
+  } else {
+    x = cycle ? 0x7F4A : 0x00B5;
+    y = cycle ? 0x7FEC : 0x0013;
+  }
+  ws(dst, x);
+  ws((uint16_t) (dst + 0x6C), x);
+  ws((uint16_t) (dst + 2), y);
+  ws((uint16_t) (dst + 0x6E), y);
+}
+
+// A view's road-stripe cycle (position `at`, stepped by the speed before it) into this
+// frame's queued colours.
+static void stripes(uint32_t db, uint16_t at, uint16_t q_a, uint16_t q_b) {
+  uint16_t a = w((uint16_t) (at - 2));
+  if(a == 0) {
+    ws(at, 0x0800);
+  } else {
+    if(a >= 0x0401) a = 0x0400;
+    ws(0x0198, a);
+    ws(at, (uint16_t) (a + w(at)));
+  }
+  uint16_t x = neg(w(0x0126)) ? q_a : q_b;
+  a = w(at);
+  uint16_t y = (uint16_t) (((uint16_t) (a << 8 | a >> 8) << 1) & 0x001E);
+  for(int i = 0; i < 3; i++, y = (uint16_t) ((y + 8) & 0x001E))
+    ws((uint16_t) (x + 0x60 + i * 2), tg_read16(db | (uint16_t) (0xC9B0 + y)));
+}
+
+// $01:B345: the same for two players, with a raster IRQ between the views ($BD44).
+void Tg2RaceVblank2P(TgRegs* r) {
+  uint32_t db = (uint32_t) r->db << 16;
+  uint16_t mode = w(0x0100);
+  bool changed = mode != w(0x00F2);
+  if(changed) {
+    ws(0x00F2, mode);
+    r->a = mode;
+    if(neg(mode)) tg_call_jsr(r, 0xC953, 0xB355, TG_MX_16);
+    else tg_call_jsr(r, 0xCBF8, 0xB35A, TG_MX_16);
+  }
+  if(changed || neg(mode)) {
+    send_frame(0xBD44);
+    if(w(0x010C) == 1) window_registers();
+    return;
+  }
+
+  uint16_t a = (uint16_t) (w(0x001A) - w(0x0602));
+  if(!neg(w(0x0634))) ws(0x01AC, a);
+  if(!neg(w(0x0636))) ws(0x01C6, a);
+  if(w(0x0122) != 0) {
+    ws(0x0122, 0);
+    ws(0x0284, (uint16_t) ~w(0x0284));
+    if(w(0x0170) != 0) ws(0x0164, 0xFFFF);
+    if(w(0x0172) != 0) ws(0x0166, 0xFFFF);
+    ws(0x0124, (uint16_t) ~w(0x0124));
+    ws(0x0126, (uint16_t) ~w(0x0126));
+    ws(0x00E4, (uint16_t) (w(0x00EC) + w(0x00E4)));
+    ws(0x00EC, 0);
+    ws(0x0148, w(0x028E));
+    p16(0x4302, w(0x028E));
+    p16(0x4312, w(0x028C));
+    p16(0x4322, w(0x028C));
+    p16(0x4332, w(0x028C));
+    p16(0x4342, w(0x028C));
+    ws(0x023A, w(0x023C));
+    ws(0x0276, w(0x0278));
+    ws(0x0132, w(0x023E));
+    ws(0x0134, w(0x027A));
+    ws(0x014A, w(0x049A));
+    ws(0x014C, w(0x04C4));
+    ws(0x0118, w(0x011A));
+    ws(0x011C, w(0x011E));
+    window_values(b(0x015A), 0x014E);
+    window_values(b(0x015C), 0x0154);
+    view_line((uint16_t) (0x006C - w(0x0280)), 0x0005, 0x0038, 0x0128, 0x012E);
+    view_line((uint16_t) (0x00DC - w(0x0282)), 0x0075, 0x00A8, 0x012A, 0x0130);
+  }
+
+  uint16_t flash = 0;
+  if(neg(w(0x0500))) {
+    flash = w(0x0502);
+    if(flash != 0) {
+      flash = rom16(0x82DD96 + (uint16_t) (flash << 1));
+      ws(0x0502, (uint16_t) (w(0x0502) - 1));
+    }
+  }
+  ws(0x0508, flash);
+  ws(0x0510, flash);
+  sky_colours(0x050A, 0x0AA6);
+  sky_colours(0x0512, 0x0B7E);
+  uint16_t y = neg(w(0x0284)) ? 0x0516 : 0x0536;
+  y = patch_one(y, neg(w(0x0508)), true);
+  patch_one((uint16_t) (y + 2), neg(w(0x0508)), false);
+  y = neg(w(0x0284)) ? 0x0556 : 0x0576;
+  y = patch_one(y, neg(w(0x0510)), true);
+  patch_one((uint16_t) (y + 2), neg(w(0x0510)), false);
+
+  message_clock(0, 0x0506);
+  message_clock(2, 0x050E);
+  stripes(db, 0x0398, 0x0A40, 0x0AAC);
+  stripes(db, 0x03C0, 0x0B18, 0x0B84);
+
+  switch(w(0x010C)) {
+    case 1:
+      ws(0x0142, (uint16_t) (w(0x0132) + 0x0034));
+      ws(0x0146, (uint16_t) (w(0x0134) + 0x0034));
+      window_registers();
+      hdma_tables(w(0x014A), w(0x014C), 0x7E, 0x7E);
+      break;
+    case 4:
+      ws(0x0140, w(0x001A));
+      ws(0x0144, (uint16_t) (w(0x001A) + 0x0043));
+      ws(0x0142, (uint16_t) (w(0x0142) - 0x001E));
+      ws(0x0146, w(0x0142));
+      hdma_tables(0xF60B, 0xF63B, 0x87, 0x87);
+      send_cycle_colours();
+      break;
+    case 5:
+      ws(0x0140, w(0x001A) >> 1);
+      ws(0x0144, (uint16_t) ((w(0x001A) >> 1) + 0x0043 + (w(0x001A) & 1))); // the shift's carry is added too
+      ws(0x0142, (uint16_t) (w(0x0142) + 0x0016));
+      ws(0x0146, w(0x0142));
+      hdma_tables(0xF60B, 0xF63B, 0x87, 0x87);
+      break;
+    case 6:
+      ws(0x0142, w(0x0132));
+      ws(0x0146, w(0x0134));
+      hdma_tables(0xF5FA, 0xF63B, 0x87, 0x87);
+      break;
+    default:
+      hdma_tables(0xF5FA, w(0x0148), 0x87, 0x7E);
+      break;
+  }
+  send_frame(0xBD44);
+  uint16_t d = r->d;
+  uint8_t bank = r->db;
+  panel_2p(r);
   r->d = d;
   r->db = bank;
   turn_cycle_colours();

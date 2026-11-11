@@ -14,6 +14,7 @@ void Tg2RaceColours2PBottom(TgRegs* r);
 void Tg2BuildRoad(TgRegs* r);
 void Tg2BuildRoad2P(TgRegs* r);
 void Tg2RaceVblank1P(TgRegs* r);
+void Tg2RaceVblank2P(TgRegs* r);
 void Tg2WindowsNone(TgRegs* r);
 void Tg2WindowsTunnel(TgRegs* r);
 void Tg2WindowsWall(TgRegs* r);
@@ -64,6 +65,7 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x01A4D1, "UploadQueue0", Tg2UploadQueue0, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01A505, "UploadQueue1", Tg2UploadQueue1, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01AC79, "RaceVblank1P", Tg2RaceVblank1P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x01B345, "RaceVblank2P", Tg2RaceVblank2P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x01DAD6, "AddToWords", Tg2AddToWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01EF37, "VramDma7E", Tg2VramDma7E, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x01EF6C, "VramDma7F", Tg2VramDma7F, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
