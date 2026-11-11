@@ -127,6 +127,267 @@ static void message_clock(void) {
   }
 }
 
+// --- The message panel ($01:BEBB) ---
+//
+// Messages (position, lap, "FINAL LAP" and the like) are tile pictures drawn in a panel
+// over the view. A record in bank $8C describes one: +0 its tiles' offset, +2 its tile
+// map, +4 a second tile block and +6 that block's bank, +8 its length. Smaller notices
+// are drawn by the routines at $A5FC (show) and $A68C (clear), with their state in the
+// direct page at $0A00: +4 the kind of timing, +6 shown (1) or blinked off (-1), +8 the
+// picture, +A the picture wanted, +C the picture drawn, +E / +10 timers.
+
+void Tg2RaceColours1P(TgRegs* r);
+void Tg2UploadQueue0(TgRegs* r);
+
+static uint16_t rec(uint16_t x, uint16_t o) { return tg_read16(0x8C0000 + (uint16_t) (x + o)); }
+
+// A DMA to VRAM from bank:src.
+static void vram_dma(uint8_t vmain, uint16_t vadr, uint16_t mode, uint8_t bank, uint16_t src, uint16_t len) {
+  p8(0x4374, bank);
+  p8(0x2115, vmain);
+  p16(0x2116, vadr);
+  p16(0x4370, mode);
+  p16(0x4372, src);
+  p16(0x4375, len);
+  p8(0x420B, 0x80);
+}
+
+// $A066: a message's tile map (13 rows of 16 tiles) into the panel's map copy at
+// $7E:CCE0, as tile numbers from $3E08 up. (The additions chain their carry, as the
+// original's do.)
+static void message_map(void) {
+  uint16_t x = w(0x0188);
+  uint32_t src = (uint32_t) (rec(x, 6) & 0xFF) << 16;
+  uint16_t y = (uint16_t) (rec(x, 2) + 0x001E);
+  uint32_t carry = 0;
+  for(int col = 0x1E; col >= 0; col -= 2, y = (uint16_t) (y - 2)) {
+    for(int row = 0; row < 13; row++) {
+      uint32_t t = (uint32_t) tg_read16(src | (uint16_t) (y + row * 0x20)) + 0x3E08 + carry;
+      carry = t >> 16;
+      ws((uint16_t) (0xCCE0 + row * 0x40 + col), (uint16_t) t);
+    }
+  }
+}
+
+// $A264: a message's tiles and its map to VRAM. Returns the second block's length.
+static uint16_t message_upload(void) {
+  uint16_t x = w(0x0188);
+  p8(0x420B, 0x00);
+  vram_dma(0x00, 0x5000, 0x1800, 0x8C, (uint16_t) (rec(x, 0) + 0x8B40), 0x0200);
+  uint16_t len = rec(x, 8);
+  vram_dma(0x80, 0x2080, 0x1801, (uint8_t) rec(x, 6), rec(x, 4), len);
+  vram_dma(0x80, 0x79E0, 0x1801, 0x7E, 0xCCD0, 0x0340);
+  return len;
+}
+
+// $A432: the dashboard's map copy ($7E:C990) to VRAM.
+static void dashboard_upload(void) {
+  p8(0x420B, 0x00);
+  vram_dma(0x80, 0x7840, 0x1801, 0x7E, 0xC990, 0x0640);
+}
+
+// The queued VRAM transfers ($E904), if the frame's DMA budget ($EA against $E2) has
+// room for `cost` more.
+static void queued_transfers(TgRegs* r, uint16_t cost, uint16_t ret) {
+  uint16_t a = (uint16_t) (cost + w(0x00EA));
+  if(!lt(a, w(0x00E2))) return;
+  ws(0x00EA, (uint16_t) (a - 0x0200));
+  ws(0x00E0, 0);
+  r->d = 0;
+  r->db = 0x82;
+  tg_call_jsr(r, 0xE904, ret, TG_MX_16);
+  ws(0x00E0, (uint16_t) (w(0x00E0) - 1));
+}
+
+#define N 0x0A00u // the notices' direct page
+
+static void notice_call(TgRegs* r, uint16_t target, uint16_t ret) {
+  r->d = N;
+  r->db = 0x8C;
+  r->a = w(N + 0x08);
+  tg_call_jsr(r, target, ret, TG_MX_16);
+}
+
+static void notice_clear(TgRegs* r, uint16_t ret) {
+  ws(N + 0x0C, 0xFFFF);
+  ws(N + 0x00, 0x03D0);
+  ws(N + 0x02, 0x2E40);
+  notice_call(r, 0xA68C, ret);
+}
+
+static void notice_start(uint16_t picture, uint16_t kind) {
+  ws(N + 0x08, picture);
+  ws(N + 0x06, 1);
+  ws(N + 0x04, kind);
+}
+
+// Picks the next notice to show ($BF90-$C089), most urgent first.
+static void notice_pick(void) {
+  if(w(0x01AE) >= 0x0300) ws(N + 0x18, 0);
+  uint16_t a = w(N + 0x12);
+  if(a != 0) {
+    ws(N + 0x0E, a);
+    notice_start((uint16_t) (a + 0x002F), 4);
+    return;
+  }
+  a = w(N + 0x14);
+  if(a != 0) {
+    ws(N + 0x14, 0);
+    ws(N + 0x0E, 5);
+    ws(N + 0x10, 0x000C);
+    notice_start((uint16_t) (a + 0x0035), 2);
+    return;
+  }
+  a = w(N + 0x16);
+  if(a != 0) {
+    ws(N + 0x0E, a);
+    ws(N + 0x10, 0x000C);
+    notice_start((uint16_t) (a + 0x000E), 3);
+    return;
+  }
+  if(w(N + 0x18) == 0 && w(0x01AE) < 0x0300) {
+    // Low on fuel.
+    ws(N + 0x18, 0xFFFF);
+    ws(N + 0x0E, 3);
+    ws(N + 0x10, 0x000C);
+    notice_start(0x0026, 2);
+    return;
+  }
+  a = (uint16_t) (w(0x019E) - w(0x01A2));
+  if(a != w(N + 0x1A)) {
+    ws(N + 0x1A, a);
+    if(!neg(a)) {
+      ws(N + 0x0E, 0x0020);
+      notice_start((uint16_t) (a + 0x0027), 1);
+      return;
+    }
+  }
+  a = w(0x01A0);
+  if(a != w(N + 0x1C)) {
+    ws(N + 0x1C, a);
+    ws(N + 0x0E, 0x0010);
+    notice_start((uint16_t) (a + 0x000F), 1);
+    return;
+  }
+  a = w(N + 0x1E);
+  if(a != 0) {
+    ws(N + 0x1E, 0);
+    ws(N + 0x0E, 0x0020);
+    notice_start((uint16_t) (a - 1), 1);
+  }
+}
+
+static bool timer(uint16_t adr) {
+  ws(adr, (uint16_t) (w(adr) - 1));
+  return w(adr) == 0;
+}
+
+// The notice on screen runs its timing ($C08B-$C0E7).
+static void notice_run(TgRegs* r) {
+  bool done = false;
+  switch(w(N + 0x04)) {
+    case 1: // for $0E frames
+      done = timer(N + 0x0E);
+      break;
+    case 2: // blinking $0E times
+      if(!timer(N + 0x10)) return;
+      ws(N + 0x10, 0x000C);
+      ws(N + 0x06, (uint16_t) -w(N + 0x06));
+      if(!neg(w(N + 0x06))) return;
+      done = timer(N + 0x0E);
+      break;
+    case 3: // blinking while $16 stays as it was
+      if(w(N + 0x16) == w(N + 0x0E)) {
+        if(!timer(N + 0x10)) return;
+        ws(N + 0x10, 0x000C);
+        ws(N + 0x06, (uint16_t) -w(N + 0x06));
+        return;
+      }
+      done = true;
+      break;
+    default: // while $12 stays as it was
+      done = w(N + 0x12) != w(N + 0x0E);
+      break;
+  }
+  if(!done) return;
+  notice_clear(r, 0xC0BC);
+  ws(N + 0x06, 0);
+  ws(N + 0x04, 0);
+  ws(N + 0x08, 0);
+}
+
+// The frame's panel work when no message is waiting to be uploaded ($BEE0-$C0E9).
+static void panel_frame(TgRegs* r) {
+  dashboard_upload();
+  queued_transfers(r, 0x0F00, 0xBF06);
+  r->d = 0x0100;
+  r->db = 0x8C;
+  Tg2RaceColours1P(r);
+  if(neg(w(0x0174))) {
+    message_map();
+    ws(0x0174, 1);
+    if(w(0x0180) != 0) {
+      ws(N + 0x0A, 0xFFFF);
+      ws(N + 0x0C, 0xFFFF);
+      return;
+    }
+    if(w(N + 0x06) != 0) ws(N + 0x0C, 0xFFFF);
+  } else if(w(0x0180) != 0) {
+    return;
+  }
+  // Draw or blink the notice.
+  uint16_t shown = w(N + 0x06);
+  if(shown != 0) {
+    uint16_t a = w(N + 0x08);
+    if(a != w(N + 0x0A)) return;
+    if(neg(shown)) {
+      if(a == w(N + 0x0C)) notice_clear(r, 0xBF6C);
+    } else if(a != w(N + 0x0C)) {
+      ws(N + 0x0C, a);
+      ws(N + 0x00, 0x03D0);
+      ws(N + 0x02, 0x2E40);
+      notice_call(r, 0xA5FC, 0xBF89);
+    }
+  }
+  if(w(N + 0x04) == 0) notice_pick();
+  else notice_run(r);
+}
+
+static void panel(TgRegs* r) {
+  if(w(0x0164) != 0) {
+    r->d = 0x0100;
+    r->db = 0x8C;
+    Tg2UploadQueue0(r);
+    ws(0x0164, 0);
+    return;
+  }
+  if(!neg(w(0x0162))) {
+    ws(0x0162, 0xFFFF);
+    panel_frame(r);
+    return;
+  }
+  uint16_t a = w(0x0174);
+  if(a != 0 && !neg(a)) {
+    // A message's map is ready: upload it.
+    ws(0x0162, 0);
+    uint16_t len = message_upload();
+    ws(0x0174, 0);
+    queued_transfers(r, (uint16_t) (len + 0x0E00), 0xC142);
+    return;
+  }
+  if(w(0x0180) == 0 && w(N + 0x06) != 0 && w(N + 0x08) != w(N + 0x0A)) {
+    // The notice's tiles.
+    ws(N + 0x0A, w(N + 0x08));
+    ws(N + 0x02, 0x2E40);
+    r->d = N;
+    r->db = 0x8C;
+    r->a = w(N + 0x0A);
+    tg_call_jsr(r, 0xA539, 0xC10F, TG_MX_16);
+    return;
+  }
+  panel_frame(r);
+}
+
 // $CE9D: sends the $40 cycling colours at $7E:D110 to the start of CGRAM (and counts the
 // bytes in $EA, the frame's DMA budget).
 static void send_cycle_colours(void) {
@@ -301,6 +562,10 @@ void Tg2RaceVblank1P(TgRegs* r) {
       break;
   }
   send_frame();
-  tg_call_jsr(r, 0xBEBB, 0xB316, TG_MX_16);
+  uint16_t d = r->d;
+  uint8_t bank = r->db;
+  panel(r);
+  r->d = d;
+  r->db = bank;
   turn_cycle_colours();
 }
