@@ -991,3 +991,41 @@ void Tg2RaceVblank2P(TgRegs* r) {
   r->db = bank;
   turn_cycle_colours();
 }
+
+// --- The NMI handler's own transfers ($01:E2F2 calls these every frame) ---
+
+// $E74F: a palette waiting at $D8:$D6 ($D4 set) goes to CGRAM, all 256 colours.
+void Tg2SendPalette(TgRegs* r) {
+  (void) r;
+  if(w(0x00D4) == 0) return spend(0x001D);
+  ws(0x00D4, 0);
+  p8(0x2121, 0x00);
+  p8(0x420B, 0x00);
+  p8(0x4374, b(0x00D8));
+  p16(0x4370, 0x2202);
+  p16(0x4372, w(0x00D6));
+  p16(0x4375, 0x0200);
+  spend(0x025C);
+  p8(0x420B, 0x80);
+}
+
+// $E821: a sprite table waiting at $DE:$DC ($DA set) goes to OAM.
+void Tg2SendSprites(TgRegs* r) {
+  (void) r;
+  if(w(0x00DA) == 0) return spend(0x001D);
+  ws(0x00DA, 0);
+  p16(0x2102, 0x0000);
+  p8(0x420B, 0x00);
+  p8(0x4374, b(0x00DE));
+  p16(0x4370, 0x0402);
+  p16(0x4372, w(0x00DC));
+  p16(0x4375, 0x0220);
+  spend(0x027E);
+  p8(0x420B, 0x80);
+}
+
+// $E904.
+void Tg2RunQueue(TgRegs* r) {
+  (void) r;
+  run_queue();
+}
