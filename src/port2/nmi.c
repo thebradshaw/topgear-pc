@@ -127,6 +127,33 @@ static void message_clock(void) {
   }
 }
 
+// $CE9D: sends the $40 cycling colours at $7E:D110 to the start of CGRAM (and counts the
+// bytes in $EA, the frame's DMA budget).
+static void send_cycle_colours(void) {
+  p8(0x2121, 0x00);
+  p8(0x420B, 0x00);
+  p8(0x4374, 0x7E);
+  p16(0x4370, 0x2202);
+  p16(0x4372, 0xD110);
+  p16(0x4375, 0x0040);
+  ws(0x00EA, (uint16_t) (0x0040 + w(0x00EA)));
+  p8(0x420B, 0x80);
+}
+
+// $CECF: in that kind of view ($010C = 4), turns the colour cycle one step: 24 colours in
+// eight groups of three (each group skips the first colour of a four-colour row).
+static void turn_cycle_colours(void) {
+  if(w(0x010C) != 4) return;
+  uint16_t first = w(0xD112);
+  uint16_t dst = 0xD112;
+  for(int i = 1; i < 24; i++) {
+    uint16_t src = (uint16_t) (0xD112 + (i / 3) * 8 + (i % 3) * 2);
+    ws(dst, w(src));
+    dst = src;
+  }
+  ws(dst, first);
+}
+
 void Tg2RaceVblank1P(TgRegs* r) {
   uint32_t db = (uint32_t) r->db << 16;
   uint16_t mode = w(0x0100);
@@ -258,8 +285,7 @@ void Tg2RaceVblank1P(TgRegs* r) {
       ws(0x0140, w(0x001A));
       ws(0x0142, (uint16_t) (w(0x0142) - 0x001E));
       hdma_tables(0xF5FB, 0xF637, 0x87, 0x87);
-      r->a = 0x8787;
-      tg_call_jsr(r, 0xCE9D, 0xB238, TG_MX_16);
+      send_cycle_colours();
       break;
     case 5:
       ws(0x0140, w(0x001A) >> 1);
@@ -276,5 +302,5 @@ void Tg2RaceVblank1P(TgRegs* r) {
   }
   send_frame();
   tg_call_jsr(r, 0xBEBB, 0xB316, TG_MX_16);
-  tg_call_jsr(r, 0xCECF, 0xB319, TG_MX_16);
+  turn_cycle_colours();
 }
