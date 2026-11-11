@@ -1,20 +1,61 @@
 // Top Gear 2: the road builder (bank $08). Projects the track ahead of the camera into
 // per-scanline tables for the road layer's HDMA, one 8-byte row per road segment in
-// $7E:BE80, and the sky/horizon HDMA lists.
+// $7E:BE80, and the sky/horizon HDMA lists. One player's screen is $08:CB74; two players'
+// is $08:D63F, which runs the same builder for player 2's half (on player 2's camera,
+// track rows and segment list) and then player 1's, each $68 lines high.
+
+#include <stddef.h>
 
 #include "../port/port.h"
 
 // The routine sets its direct page to $0200.
 #define DPB 0x0200u
 
-static uint16_t z(uint8_t o) { return ram16(DPB + o); }
-static void zs(uint8_t o, uint16_t v) { ram16_set(DPB + o, v); }
-static uint8_t zb(uint8_t o) { return g_ram[DPB + o]; }
-static void zbs(uint8_t o, uint8_t v) { g_ram[DPB + o] = v; }
+// What changes between the one-player screen and the two halves of the split screen.
+typedef struct Half {
+  bool p2;            // player 2's variables (the maps below)
+  uint16_t lines;     // $96's start
+  uint16_t bottom;    // the last line
+  uint16_t far;       // how far ahead the road is drawn ($9A)
+  uint16_t flat, lift;  // the horizon line when the camera is level, and its offset
+  uint16_t sky0, sky1, sky2;  // the background scroll's constants (sky_scroll)
+  uint16_t top;       // where the line table's start goes
+} Half;
+static const Half kHalf1P = { false, 0x0060, 0x00E0, 0x1000, 0x003C, 0x0044, 0x035F, 0x039B, 0x0090, 0x015E };
+static const Half kHalfP1 = { false, 0x03EC, 0x0068, 0x0800, 0x003B, 0x0045, 0x03D3, 0x040E, 0x0104, 0x015E };
+static const Half kHalfP2 = { true, 0x005C, 0x0068, 0x0800, 0x003B, 0x0045, 0x0363, 0x039E, 0x0094, 0x0160 };
+static const Half* g_h = &kHalf1P;
 
-// Bank $7E words (the data bank for most of the routine).
-static uint16_t w(uint16_t adr) { return ram16(adr); }
-static void ws(uint16_t adr, uint16_t v) { ram16_set(adr, v); }
+// Player 2's direct page words for player 1's.
+static const uint8_t kDp2[][2] = {
+  { 0x04, 0x40 }, { 0x06, 0x42 }, { 0x08, 0x44 }, { 0x09, 0x45 }, { 0x0A, 0x46 }, { 0x0D, 0x49 },
+  { 0x0E, 0x4A }, { 0x10, 0x4C }, { 0x16, 0x52 }, { 0x17, 0x53 }, { 0x26, 0x62 }, { 0x28, 0x64 },
+  { 0x2A, 0x66 }, { 0x2C, 0x68 }, { 0x2D, 0x69 }, { 0x2E, 0x6A }, { 0x3C, 0x78 }, { 0x3E, 0x7A },
+  { 0x7C, 0x7E }, { 0x80, 0x82 }, { 0x81, 0x83 },
+};
+static uint8_t g_dp[256];
+static void set_half(const Half* h) {
+  g_h = h;
+  for(int i = 0; i < 256; i++) g_dp[i] = (uint8_t) i;
+  if(h->p2)
+    for(size_t i = 0; i < sizeof kDp2 / sizeof kDp2[0]; i++) g_dp[kDp2[i][0]] = kDp2[i][1];
+}
+
+static uint16_t z(uint8_t o) { return ram16(DPB + g_dp[o]); }
+static void zs(uint8_t o, uint16_t v) { ram16_set(DPB + g_dp[o], v); }
+static uint8_t zb(uint8_t o) { return g_ram[DPB + g_dp[o]]; }
+static void zbs(uint8_t o, uint8_t v) { g_ram[DPB + g_dp[o]] = v; }
+
+// Bank $7E words (the data bank for most of the routine). Player 2's track rows are at
+// $9400 and its segment list at $BFA0.
+static uint16_t ad(uint16_t a) {
+  if(!g_h->p2) return a;
+  if(a >= 0x9000 && a < 0x9400) return (uint16_t) (a + 0x400);
+  if(a >= 0xBE80 && a < 0xBFA0) return (uint16_t) (a + 0x120);
+  return a;
+}
+static uint16_t w(uint16_t adr) { return ram16(ad(adr)); }
+static void ws(uint16_t adr, uint16_t v) { ram16_set(ad(adr), v); }
 
 static uint8_t rd8(uint16_t adr) { return tg_bus_read8(adr); }
 static uint16_t rd16(uint16_t adr) { return (uint16_t) (rd8(adr) | rd8((uint16_t) (adr + 1)) << 8); }
@@ -206,14 +247,14 @@ static uint16_t hdma_repeat(uint16_t p, uint16_t n, uint16_t v) {
 
 // $3C/$3E: the background scroll for the horizon line $80.
 static void sky_scroll(TgRegs* r) {
-  uint16_t a = (uint16_t) (z(0x80) + 0x035F);
+  uint16_t a = (uint16_t) (z(0x80) + g_h->sky0);
   zs(0x3C, a);
-  m7a((uint16_t) (a - 0x039B));
+  m7a((uint16_t) (a - g_h->sky1));
   m7b(0x4D);
   r->c = (rd8(0x2134) & 0x80) != 0;
   uint16_t x = rol(r, rd16(0x2135));
   asl(r, asl(r, rd16(0x2133)));
-  zs(0x3E, adc16(r, x, 0x0090));
+  zs(0x3E, adc16(r, x, g_h->sky2));
 }
 
 // An entry in both the HDMA list at *px (going down) and the indirect list at y: the
@@ -354,34 +395,19 @@ static void sky_lists(TgRegs* r) {
   r->y = y;
 }
 
-// $08:CB74.
-void Tg2BuildRoad(TgRegs* r) {
-  // Two sets of tables (double-buffered by $84's sign).
-  if(!(z(0x84) & 0x8000)) {
-    zs(0x8E, 0x9FFF);
-    zs(0x90, 0xA3C0);
-    zs(0x8C, 0xA9DF);
-    ws(0x9FFE, 0);
-    ws(0xA9DE, 0);
-    zs(0x10, 0x0516);
-  } else {
-    zs(0x8E, 0xA03F);
-    zs(0x90, 0xA740);
-    zs(0x8C, 0xAC7F);
-    ws(0xA03E, 0);
-    ws(0xAC7E, 0);
-    zs(0x10, 0x0536);
-  }
+// One screen's (or half's) road, from the camera down to the bottom line or until the track
+// runs out. Returns true when it reached the bottom.
+static bool build(TgRegs* r) {
   zs(0x9A, 0);
   zs(0x7C, 0);
   zs(0x92, 0);
-  zs(0x96, 0x0060);
+  zs(0x96, g_h->lines);
   zs(0x98, rom16(0x8F8B40));
   uint16_t a = rom16(0x8FABC0);
   zs(0xCE, 0);
   zs(0xD0, a);
   zs(0xB2, rom16(0x8FBC00));
-  ram16_set(0x015E, z(0x90));
+  ram16_set(g_h->top, z(0x90));
   zs(0x9C, z(0x04));
   zs(0x9E, z(0x06));
   r->c = true;
@@ -465,7 +491,7 @@ void Tg2BuildRoad(TgRegs* r) {
   r->c = (zb(0x16) + zb(0x08)) > 0xFF;
   a = adc16(r, z(0x17), z(0x09));
   if(a == 0) {
-    a = 0x003C;
+    a = g_h->flat;
   } else {
     m7a(a);
     m7b(0xF8);
@@ -478,7 +504,7 @@ void Tg2BuildRoad(TgRegs* r) {
     adc16(r, px & 0xFF00, rd16(0x2134));
     a = adc16(r, py, z(0x80));
     r->c = true;
-    a = sbc16(r, a, 0x0044);
+    a = sbc16(r, a, g_h->lift);
   }
   zs(0x80, a);
   m7a(z(0x2D));
@@ -530,7 +556,7 @@ void Tg2BuildRoad(TgRegs* r) {
       r->c = false;
       a = adc16(r, z(0x9A), 0x0040);
       zs(0x9A, a);
-      if(a >= 0x1000) break;  // ran out of track to draw: sky below
+      if(a >= g_h->far) return false;  // ran out of track to draw: sky below
     }
     x = z(0x9A);
     zs(0x98, rom16(0x8F8B40 + x));
@@ -575,10 +601,11 @@ void Tg2BuildRoad(TgRegs* r) {
     r->c = true;
     y = sbc16(r, z(0xAC), z(0x94));
     if(y != 1) divide_steps(r, y);
-    if(z(0xAE) > 0x00E0) zs(0xAE, 0x00E0);
-    if(z(0xAC) > 0x00E0) {
-      zs(0xAC, 0x00E0);
-      y = (uint16_t) (0x00E0 - z(0x94));
+    uint16_t bottom = g_h->bottom;
+    if(z(0xAE) > bottom) zs(0xAE, bottom);
+    if(z(0xAC) > bottom) {
+      zs(0xAC, bottom);
+      y = (uint16_t) (bottom - z(0x94));
     }
     // Skip the lines a nearer hill already covers.
     for(uint16_t n = (uint16_t) (z(0x92) - z(0x94)); n != 0; n--, y--) {
@@ -625,22 +652,230 @@ void Tg2BuildRoad(TgRegs* r) {
     zs(0x90, x);
     a = z(0xAC);
     zs(0x92, a);
-    if(a == 0x00E0) {  // reached the bottom: no sky below the road
-      sky_scroll(r);
-      x = (uint16_t) (z(0x8E) - 6);
-      ws(x, 0x00F0);
-      ws((uint16_t) (x + 3), 0x00F0);
-      ws((uint16_t) (x + 1), z(0x90));
-      ws((uint16_t) (x + 4), (uint16_t) (z(0x90) + 0x01C0));
-      zs(0x8E, x);
-      zs(0x80, z(0x92));
-      zs(0x7C, (uint16_t) (z(0x7C) >> 3));
-      zs(0x00, z(0xAC));
-      y = z(0x10);
-      ws(y, 0);
-      ws((uint16_t) (y + 2), 0);
-      return;
+    if(a == bottom) return true;  // reached the bottom: no sky below the road
+  }
+}
+
+// $08:CB74.
+void Tg2BuildRoad(TgRegs* r) {
+  set_half(&kHalf1P);
+  // Two sets of tables (double-buffered by $84's sign).
+  if(!(z(0x84) & 0x8000)) {
+    zs(0x8E, 0x9FFF);
+    zs(0x90, 0xA3C0);
+    zs(0x8C, 0xA9DF);
+    ws(0x9FFE, 0);
+    ws(0xA9DE, 0);
+    zs(0x10, 0x0516);
+  } else {
+    zs(0x8E, 0xA03F);
+    zs(0x90, 0xA740);
+    zs(0x8C, 0xAC7F);
+    ws(0xA03E, 0);
+    ws(0xAC7E, 0);
+    zs(0x10, 0x0536);
+  }
+  if(!build(r)) {
+    sky_lists(r);
+    return;
+  }
+  sky_scroll(r);
+  uint16_t x = (uint16_t) (z(0x8E) - 6);
+  ws(x, 0x00F0);
+  ws((uint16_t) (x + 3), 0x00F0);
+  ws((uint16_t) (x + 1), z(0x90));
+  ws((uint16_t) (x + 4), (uint16_t) (z(0x90) + 0x01C0));
+  zs(0x8E, x);
+  zs(0x80, z(0x92));
+  zs(0x7C, (uint16_t) (z(0x7C) >> 3));
+  zs(0x00, z(0xAC));
+  uint16_t y = z(0x10);
+  ws(y, 0);
+  ws((uint16_t) (y + 2), 0);
+}
+
+// $08:DDE4 (player 2) / $08:E73E (player 1): a half whose road ended above its bottom line.
+// The lines below it split into ground bands as sky_lists does, on the half's $68 lines
+// (no run is long enough to need two HDMA entries). Returns the HDMA list pointer x.
+static uint16_t sky_lists_half(TgRegs* r) {
+  sky_scroll(r);
+  const uint16_t bottom = 0x0068;
+  uint16_t h = z(0x80), top = z(0x92);
+  uint16_t hill = (uint16_t) ((z(0x86) & 0x3F) + 0x98 + h);
+  if(!((h - bottom) & 0x8000)) {
+    zs(0xE0, (uint16_t) (bottom - top));
+    zs(0xDE, 0);
+    zs(0xDC, 0);
+    zs(0xE6, 0);
+    zs(0xE4, 0);
+    zs(0xDA, 0);
+  } else if(!((h - 0x0028) & 0x8000)) {
+    uint16_t a = (uint16_t) (h - top);
+    if(a & 0x8000) {
+      zs(0xE0, 0);
+      zs(0xDE, (uint16_t) (bottom - top));
+      zs(0xDC, 0);
+      zs(0xE6, (uint16_t) (bottom - top));
+    } else {
+      zs(0xE0, a);
+      zs(0xDE, (uint16_t) (bottom - h));
+      zs(0xDA, (uint16_t) (bottom - h));
+      zs(0xDC, 0);
+      zs(0xE6, (uint16_t) (bottom - h));
+    }
+    zs(0xE4, 0);
+    zs(0xE2, hill);
+  } else {
+    uint16_t a = (uint16_t) (h - top);
+    if(a & 0x8000) {
+      zs(0xE0, 0);
+      a = (uint16_t) (a + 0x40);
+      if(a & 0x8000) {
+        zs(0xDE, 0);
+        uint16_t dc = (uint16_t) (bottom - top);
+        zs(0xDC, dc);
+        a = (uint16_t) (((z(0x86) & 0x3F) | 0x0100) + h);
+        if(!((a - bottom) & 0x8000)) {
+          zs(0xE2, (uint16_t) (a - bottom));
+          zs(0xE6, dc);
+          zs(0xE4, 0);
+        } else {
+          a = (uint16_t) (a - top);
+          if(a & 0x8000) {
+            zs(0xE4, dc);
+            zs(0xE6, 0);
+          } else {
+            zs(0xE6, a);
+            zs(0xE4, (uint16_t) (bottom - a - top));
+            zs(0xE2, 0);
+          }
+        }
+      } else {
+        zs(0xDE, a);
+        zs(0xDC, (uint16_t) (0x0028 - h));
+        if(hill & 0x8000) {
+          zs(0xE2, 0);
+          zs(0xE4, (uint16_t) -hill);
+          zs(0xE6, (uint16_t) (z(0xDC) + z(0xDE) - z(0xE4)));
+        } else {
+          zs(0xE2, hill);
+          zs(0xE4, 0);
+          zs(0xE6, (uint16_t) (z(0xDC) + z(0xDE)));
+        }
+      }
+    } else {
+      zs(0xE0, a);
+      zs(0xDE, 0x0040);
+      zs(0xDC, (uint16_t) (0x0028 - h));
+      uint16_t e6 = (uint16_t) (z(0xDC) + 0x40);
+      zs(0xE6, e6);
+      zs(0xE4, 0);
+      zs(0xDA, e6);
+      zs(0xE2, (uint16_t) (((z(0x86) & 0x3F) | 0x0100) - e6));
     }
   }
-  sky_lists(r);
+
+  const uint16_t ground = g_h->p2 ? 0x9E10 : 0x9C50;
+  uint16_t x = z(0x8C), y = z(0x8E), a;
+  if((a = z(0x92)) != 0) {
+    y = (uint16_t) (y - 3);
+    ws(y, a | 0x80);
+    ws((uint16_t) (y + 1), z(0x90));
+  }
+  if((a = z(0xE0)) != 0) {
+    x = (uint16_t) (x - 3);
+    y = (uint16_t) (y - 3);
+    ws(x, a);
+    ws(y, a | 0x80);
+    ws((uint16_t) (x + 1), z(0x88));
+    ws((uint16_t) (y + 1), (uint16_t) ((z(0xDA) << 2) + ground));
+  }
+  if((a = z(0xDE)) != 0) {
+    y = (uint16_t) (y - 3);
+    ws(y, a);
+    ws((uint16_t) (y + 1), g_h->p2 ? 0x0274 : 0x0238);
+  }
+  if((a = z(0xDC)) != 0) {
+    y = (uint16_t) (y - 3);
+    ws(y, a | 0x80);
+    ws((uint16_t) (y + 1), ground);
+  }
+  zs(0x8E, y);
+  y = z(0x10);
+  ws(y, 0);
+  if((a = z(0xE6)) != 0) {
+    x = (uint16_t) (x - 3);
+    ws(x, a | 0x80);
+    ws((uint16_t) (y + 4), a | 0x80);
+    uint16_t v = (uint16_t) ((z(0xE2) << 2) + 0x8600);
+    ws((uint16_t) (x + 1), v);
+    ws((uint16_t) (y + 5), v);
+    ws(y, 1);
+    ws((uint16_t) (y + 2), x);
+    y = (uint16_t) (y + 5);
+  }
+  y = (uint16_t) (y + 2);
+  ws(y, 0);
+  if((a = z(0xE4)) != 0) {
+    x = (uint16_t) (x - 3);
+    ws(x, a);
+    ws((uint16_t) (y + 4), a);
+    ws((uint16_t) (x + 1), 0x8600);
+    ws((uint16_t) (y + 5), 0x8600);
+    ws(y, 1);
+    ws((uint16_t) (y + 2), x);
+  }
+  return x;
+}
+
+// $08:DD8D / $08:E6E7: a half whose road reached its bottom line.
+static uint16_t bottom_half(TgRegs* r) {
+  sky_scroll(r);
+  uint16_t x = z(0x8C);
+  uint16_t y = (uint16_t) (z(0x8E) - 3);
+  ws(y, 0x00E8);
+  ws((uint16_t) (y + 1), z(0x90));
+  zs(0x8E, y);
+  y = z(0x10);
+  ws(y, 0);
+  ws((uint16_t) (y + 2), 0);
+  return x;
+}
+
+// $08:DFF4 / $08:E94E: the half's closing HDMA entries, and its horizon and row count.
+static void close_half(uint16_t x) {
+  bool p2 = g_h->p2;
+  uint16_t y = (uint16_t) (z(0x8E) - 3);
+  x = (uint16_t) (x - 3);
+  ws(x, p2 ? 0x0008 : 0x0004);
+  ws(y, p2 ? 0x0088 : 0x0084);
+  ws((uint16_t) (x + 1), 0x83FC);
+  ws((uint16_t) (y + 1), p2 ? 0x9DF0 : 0x9C40);
+  zs(0x8C, x);
+  zs(0x8E, y);
+  zs(0x80, z(0x92));
+  zs(0x7C, (uint16_t) (z(0x7C) >> 3));
+  ram16_set(DPB + (p2 ? 0x02 : 0x00), z(0xAC));
+}
+
+// $08:D63F. Two players: player 2's half (the top of the screen), then player 1's.
+void Tg2BuildRoad2P(TgRegs* r) {
+  set_half(&kHalfP1);
+  bool alt = (z(0x84) & 0x8000) != 0;
+  uint16_t hz = alt ? 0xA03C : 0x9FFC, hs = alt ? 0xAC7C : 0xA9DC;
+  zs(0x8E, hz);
+  zs(0x90, alt ? 0xA740 : 0xA3C0);
+  zs(0x8C, hs);
+  ws(hz, 0x0084);
+  ws((uint16_t) (hz + 2), 0);
+  ws((uint16_t) (hz + 1), 0x9FB0);
+  ws(hs, 0x0004);
+  ws((uint16_t) (hs + 2), 0);
+  ws((uint16_t) (hs + 1), 0x83FC);
+  zs(0x10, alt ? 0x0536 : 0x0516);
+  zs(0x4C, alt ? 0x0576 : 0x0556);
+  for(int i = 0; i < 2; i++) {
+    set_half(i == 0 ? &kHalfP2 : &kHalfP1);
+    close_half(build(r) ? bottom_half(r) : sky_lists_half(r));
+  }
 }
