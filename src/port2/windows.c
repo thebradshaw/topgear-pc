@@ -180,14 +180,31 @@ void Tg2WindowsBand(TgRegs* r) {
   colour_list(r);
 }
 
-// --- $8F1A: a wall beside the road ---
+// --- $8F1A / $9712: a wall beside the road, on the left or the right ---
 //
-// The wall's top edge is a line through the span records ($7E to $80 in $C0C0, eight bytes
-// each: x at +0/+2, y at +4/+6). Every line of the view gets its own edge pair (four
-// bytes a line below $A2, last line first), and the wall's edge is drawn into byte 2 of
-// the pairs by walking the line: first down the screen from line $7A (records' +4 y),
-// then back up from where that ended (records' +6 y). $B8 is the running edge (it only
-// moves right), $A6-$A8 the x position in 1/256ths, $B4 the step per line.
+// The wall's top edge is a line through the span records ($7E to $80 in $C0C0 for the left
+// wall, $84 to $86 for the right; eight bytes each: x at +0 left / +2 right, y at +4/+6).
+// Every line of the view gets its own edge pairs (four bytes a line below $A2, last line
+// first), and the wall's edge is drawn into byte 2 (left) or 3 (right) of them by walking
+// the line: first down the screen from the wall's first line (records' +4 y), then back
+// up from where that ended (records' +6 y). $B8 is the running edge (it only moves
+// towards the road), $A6-$A8 the x position in 1/256ths, $B4 the step per line.
+
+typedef struct {
+  bool right;
+  uint8_t first, last; // the span record range (dp)
+  uint8_t line;        // the wall's first line (dp)
+  uint8_t outer;       // the outer edge's x (dp)
+  uint16_t xs;         // the records' x field
+  uint8_t outer_at, edge_at; // byte offsets in a line's pairs
+  uint8_t off;         // the edge once the line has left the screen on the road's side
+} Side;
+static const Side kLeft = { false, 0x7E, 0x80, 0x7A, 0x82, 0xC0C0, 0, 2, 0xFF };
+static const Side kRight = { true, 0x84, 0x86, 0x7C, 0x88, 0xC0C2, 1, 3, 0x00 };
+static const Side* g_s;
+
+// a is on the wall's side of b.
+static bool outside(uint16_t a, uint16_t b) { return g_s->right ? lt(b, a) : lt(a, b); }
 
 // The pair address for line y.
 static uint16_t line_adr(uint16_t y) { return (uint16_t) (((uint16_t) ~y << 2) + z(0xA2)); }
@@ -195,7 +212,7 @@ static uint16_t line_adr(uint16_t y) { return (uint16_t) (((uint16_t) ~y << 2) +
 // The step per line from one record to the next: (x difference * 256) / lines.
 static void set_step(uint16_t lines) {
   zs(0xB2, lines);
-  uint16_t d = (uint16_t) (z(0xAB) - z(0xA7));
+  uint16_t d = g_s->right ? (uint16_t) (z(0xA7) - z(0xAB)) : (uint16_t) (z(0xAB) - z(0xA7));
   d = (uint16_t) (d << 8 | d >> 8);
   if(lines == 1) {
   } else if(lines == 2) {
@@ -212,31 +229,51 @@ static void set_step(uint16_t lines) {
 // the new high part ($A8).
 static uint16_t half_step(void) {
   uint16_t s = z(0xB4);
-  uint32_t t = (uint32_t) (s >> 1) + z(0xA6) + (s & 1);
-  zs(0xA6, (uint16_t) t);
-  uint16_t a = (uint16_t) (z(0xA8) + (t >> 16));
+  uint16_t a;
+  if(g_s->right) {
+    zs(0xA0, s >> 1);
+    uint32_t t = (uint32_t) z(0xA6) - (s >> 1) - (s & 1);
+    zs(0xA6, (uint16_t) t);
+    a = (uint16_t) (z(0xA8) - ((t >> 16) & 1));
+  } else {
+    uint32_t t = (uint32_t) (s >> 1) + z(0xA6) + (s & 1);
+    zs(0xA6, (uint16_t) t);
+    a = (uint16_t) (z(0xA8) + (t >> 16));
+  }
   zs(0xA8, a);
   return a;
 }
 static uint16_t full_step(void) {
-  uint32_t t = (uint32_t) z(0xB4) + z(0xA6);
-  zs(0xA6, (uint16_t) t);
-  uint16_t a = (uint16_t) (z(0xA8) + (t >> 16));
+  uint16_t a;
+  if(g_s->right) {
+    uint32_t t = (uint32_t) z(0xA6) - z(0xB4);
+    zs(0xA6, (uint16_t) t);
+    a = (uint16_t) (z(0xA8) - ((t >> 16) & 1));
+  } else {
+    uint32_t t = (uint32_t) z(0xB4) + z(0xA6);
+    zs(0xA6, (uint16_t) t);
+    a = (uint16_t) (z(0xA8) + (t >> 16));
+  }
   zs(0xA8, a);
   return a;
 }
 
-// The edge for a line whose x is on screen: the further right of $B8 and x (low bytes).
+// The x position's high byte says the line is off the screen: on the wall's own side
+// (the edge stays where it is) or on the road's side.
+static bool off_own_side(uint16_t a) { return ((a & 0x80) != 0) != g_s->right; }
+
+// The edge for a line whose x is on screen: the nearer the road of $B8 and x (low bytes).
 static uint8_t edge_here(void) {
   uint8_t a = zb(0xB8);
-  if((uint8_t) (a - zb(0xA7)) & 0x80) {
+  uint8_t d = (uint8_t) (a - zb(0xA7));
+  if(g_s->right ? (!(d & 0x80) && d != 0) : (d & 0x80) != 0) {
     a = zb(0xA7);
     g_ram[DPB + 0xB8] = a;
   }
   return a;
 }
 
-enum { kWalkDone, kWalkOffRight, kWalkOffRightDrawn };
+enum { kWalkDone, kWalkOff, kWalkOffDrawn };
 
 // Walks the line between two records, skipping `skip` lines that are already done (0 for
 // none) and drawing `draw` lines. dir is -4 going down the screen, +4 going back up; *px is
@@ -250,9 +287,9 @@ static int walk(uint16_t skip, uint16_t draw, int dir, uint16_t* px) {
     for(;;) {
       a &= 0x00FF;
       if(a == 0) {
-        if(lt(z(0xB8), z(0xA7))) zs(0xB8, z(0xA7));
-      } else if(!(a & 0x80)) {
-        return kWalkOffRight;
+        if(outside(z(0xB8), z(0xA7))) zs(0xB8, z(0xA7));
+      } else if(!off_own_side(a)) {
+        return kWalkOff;
       }
       y--;
       if(y == 0) break;
@@ -266,18 +303,18 @@ static int walk(uint16_t skip, uint16_t draw, int dir, uint16_t* px) {
     a &= 0x00FF;
     if(a == 0) {
       e = edge_here();
-    } else if(a & 0x80) {
+    } else if(off_own_side(a)) {
       e = zb(0xB8);
     } else {
       *px = x;
-      return kWalkOffRightDrawn;
+      return kWalkOffDrawn;
     }
     if(dir > 0) {
       x = (uint16_t) (x + 4);
-      wb((uint16_t) (x + 2), e);
+      wb((uint16_t) (x + g_s->edge_at), e);
       zs(0xBC, (uint16_t) (z(0xBC) - 1));
     } else {
-      wb((uint16_t) (x + 2), e);
+      wb((uint16_t) (x + g_s->edge_at), e);
       x = (uint16_t) (x - 4);
       zs(0xBA, (uint16_t) (z(0xBA) + 1));
     }
@@ -294,22 +331,34 @@ static uint16_t fill(uint16_t x, uint16_t n, uint8_t e, int dir) {
   do {
     if(dir > 0) {
       x = (uint16_t) (x + 4);
-      wb((uint16_t) (x + 2), e);
+      wb((uint16_t) (x + g_s->edge_at), e);
     } else {
-      wb((uint16_t) (x + 2), e);
+      wb((uint16_t) (x + g_s->edge_at), e);
       x = (uint16_t) (x - 4);
     }
   } while(--n);
   return x;
 }
 
-// Moves the running edge to the next record's x if that is further right. False if it is
-// off the right of the screen.
-static bool edge_to_next(void) {
-  if(lt(z(0xB8), z(0xAB))) {
-    if(!lt(z(0xAB), 0x0100)) return false;
-    zs(0xB8, z(0xAB));
+// Moves the running edge to the next record's x if that is nearer the road. False if it
+// is off the screen on the road's side. (The right wall checks that in two orders.)
+static bool edge_to_next(bool after_slope_down) {
+  if(!g_s->right) {
+    if(lt(z(0xB8), z(0xAB))) {
+      if(!lt(z(0xAB), 0x0100)) return false;
+      zs(0xB8, z(0xAB));
+    }
+    return true;
   }
+  if(after_slope_down) {
+    if(lt(z(0xAB), z(0xB8))) {
+      if(neg(z(0xAB))) return false;
+      zs(0xB8, z(0xAB));
+    }
+    return true;
+  }
+  if(neg(z(0xAB))) return false;
+  if(lt(z(0xAB), z(0xB8))) zs(0xB8, z(0xAB));
   return true;
 }
 
@@ -325,41 +374,41 @@ static uint16_t walk_start(uint16_t line) {
   zs(0xA8, 0);
   zs(0xAA, 0);
   zs(0xAC, 0);
-  zs(0xC2, (uint16_t) ((uint16_t) (z(0x80) - z(0x7E)) >> 3));
-  zs(0xB8, z(0x82));
+  zs(0xC2, (uint16_t) ((uint16_t) (z(g_s->last) - z(g_s->first)) >> 3));
+  zs(0xB8, z(g_s->outer));
   zs(0xBA, line);
-  uint16_t x = z(0x7E);
-  uint16_t a = w((uint16_t) (0xC0C0 + x));
+  uint16_t x = z(g_s->first);
+  uint16_t a = w((uint16_t) (g_s->xs + x));
   zs(0xA7, a);
-  if(!le(a, z(0xB8))) zs(0xB8, a);
+  if(g_s->right ? lt(a, z(0xB8)) : !le(a, z(0xB8))) zs(0xB8, a);
   return x;
 }
 
 // The walk down the screen ($8FFD-$92DC).
 static void wall_down(void) {
-  uint16_t x = walk_start(z(0x7A));
-  zs(0xA4, line_adr(z(0x7A)));
+  uint16_t x = walk_start(z(g_s->line));
+  zs(0xA4, line_adr(z(g_s->line)));
   zs(0xAE, w((uint16_t) (0xC0C4 + x)));
   do {
     x = (uint16_t) (x + 8);
-    zs(0xAB, w((uint16_t) (0xC0C0 + x)));
+    zs(0xAB, w((uint16_t) (g_s->xs + x)));
     zs(0xB0, w((uint16_t) (0xC0C4 + x)));
     bool flat; // the edge stays at $B8 down to the next record
-    if(!lt(z(0xA7), z(0xAB))) {
+    if(!outside(z(0xA7), z(0xAB))) {
       if(!lt(z(0xBA), z(0xB0))) {
         advance();
         continue;
       }
       flat = true;
     } else if(!lt(z(0xBA), z(0xB0))) {
-      if(!edge_to_next()) {
-        zs(0xB8, 0x00FF);
+      if(!edge_to_next(false)) {
+        zs(0xB8, g_s->off);
         return;
       }
       advance();
       continue;
     } else {
-      flat = !lt(z(0xB8), z(0xAB));
+      flat = !outside(z(0xB8), z(0xAB));
     }
     if(flat) {
       if(!lt(z(0xB0), z(0x30))) {
@@ -388,14 +437,14 @@ static void wall_down(void) {
     if(!lt(z(0xAE), z(0xBA))) res = walk(0, (uint16_t) (end - z(0xBA)), -4, &p);
     else res = walk((uint16_t) (z(0xBA) - z(0xAE)), (uint16_t) (end - z(0xBA)), -4, &p);
     if(res != kWalkDone) {
-      zs(0xB8, 0x00FF);
-      if(res == kWalkOffRightDrawn) zs(0xA4, p);
+      zs(0xB8, g_s->off);
+      if(res == kWalkOffDrawn) zs(0xA4, p);
       return;
     }
     if(!whole) return;
     zs(0xA4, p);
-    if(!edge_to_next()) {
-      zs(0xB8, 0x00FF);
+    if(!edge_to_next(true)) {
+      zs(0xB8, g_s->off);
       return;
     }
     advance();
@@ -470,10 +519,10 @@ static void wall_up(void) {
     }
     // $9388.
     x = (uint16_t) (x + 8);
-    zs(0xAB, w((uint16_t) (0xC0C0 + x)));
+    zs(0xAB, w((uint16_t) (g_s->xs + x)));
     zs(0xB0, w((uint16_t) (0xC0C6 + x)));
     bool flat;
-    if(!lt(z(0xA7), z(0xAB))) {
+    if(!outside(z(0xA7), z(0xAB))) {
       a = z(0xB0);
       if(!lt(a, z(0xBC))) {
         // $93DA: the next record is below the line reached: move down to it.
@@ -497,14 +546,14 @@ static void wall_up(void) {
           zs(0xBC, a);
           zs(0xA4, (uint16_t) (((uint16_t) (y - a) << 2) + z(0xA4)));
         }
-        if(!edge_to_next()) {
+        if(!edge_to_next(false)) {
           wall_up_skip(x);
           return;
         }
         advance();
         goto next;
       }
-      flat = !lt(z(0xB8), z(0xAB));
+      flat = !outside(z(0xB8), z(0xAB));
     }
     if(flat) {
       // $93A7.
@@ -552,8 +601,8 @@ static void wall_up(void) {
         continue;
       }
       zs(0xA4, p);
-      if(!edge_to_next()) {
-        zs(0xB8, 0x00FF);
+      if(!edge_to_next(false)) {
+        zs(0xB8, g_s->off);
         return;
       }
       advance();
@@ -564,9 +613,9 @@ static void wall_up(void) {
   }
 }
 
-void Tg2WindowsWall(TgRegs* r) {
+// Every line open, with its own pairs ($8F1A-$8F73).
+static void open_lines(void) {
   zs(0xC8, w(0x0116));
-  // Every line open, with its own pair.
   uint16_t x = z(0x9C);
   zs(0xA2, x);
   uint16_t y = z(0x30);
@@ -590,42 +639,46 @@ void Tg2WindowsWall(TgRegs* r) {
     ws((uint16_t) (x + 4), (uint16_t) (z(0x9C) + 0x01C0));
   }
   zs(0x9A, x);
+}
 
-  a = (uint16_t) (z(0x80) - z(0x7E));
+// One wall's edges into the lines' pairs.
+static void wall(const Side* side) {
+  g_s = side;
+  uint16_t x, y;
+  uint16_t a = (uint16_t) (z(g_s->last) - z(g_s->first));
   if(a == 0) {
-    // One record: a straight edge from line $7A down to its y.
-    zs(0xA4, line_adr(z(0x7A)));
-    x = z(0x7E);
-    a = w((uint16_t) (0xC0C0 + x));
+    // One record: a straight edge from the first line down to its y.
+    zs(0xA4, line_adr(z(g_s->line)));
+    x = z(g_s->first);
+    a = w((uint16_t) (g_s->xs + x));
     if(neg(a)) a = 0;
     else if(a >= 0x0100) a = 0x00FF;
     zs(0xA0, a);
     a = w((uint16_t) (0xC0C6 + x));
     if(!lt(a, z(0x30))) a = z(0x30);
-    a = (uint16_t) (a - z(0x7A));
+    a = (uint16_t) (a - z(g_s->line));
     if(!neg(a) && a != 0) {
       y = a;
       x = z(0xA4);
       do {
-        wb(x, zb(0x82));
-        wb((uint16_t) (x + 2), zb(0xA0));
+        wb((uint16_t) (x + g_s->outer_at), zb(g_s->outer));
+        wb((uint16_t) (x + g_s->edge_at), zb(0xA0));
         x = (uint16_t) (x - 4);
       } while(--y);
     }
-    colour_list(r);
     return;
   }
   zs(0xC2, a >> 3);
-  // The other edge ($82) on the wall's lines.
-  x = z(0x7E);
+  // The outer edge on the wall's lines.
+  x = z(g_s->first);
   a = w((uint16_t) (0xC0C6 + x));
   if(!lt(a, z(0x30))) a = z(0x30);
-  a = (uint16_t) (a - z(0x7A));
+  a = (uint16_t) (a - z(g_s->line));
   if(!neg(a) && a != 0) {
     y = a;
-    x = line_adr(z(0x7A));
+    x = line_adr(z(g_s->line));
     do {
-      wb(x, zb(0x82));
+      wb((uint16_t) (x + g_s->outer_at), zb(g_s->outer));
       x = (uint16_t) (x - 4);
     } while(--y);
   }
@@ -634,6 +687,25 @@ void Tg2WindowsWall(TgRegs* r) {
   // The lines the walk up did not reach get the edge the walk down ended with.
   a = (uint16_t) (z(0xBC) - z(0xC0));
   if(!neg(a) && a != 0) fill(z(0xA4), a, zb(0xBE), 4);
+}
+
+void Tg2WindowsWall(TgRegs* r) {
+  open_lines();
+  wall(&kLeft);
+  colour_list(r);
+}
+
+void Tg2WindowsWallRight(TgRegs* r) {
+  open_lines();
+  wall(&kRight);
+  colour_list(r);
+}
+
+// $9F2C: walls on both sides.
+void Tg2WindowsWalls(TgRegs* r) {
+  open_lines();
+  wall(&kLeft);
+  wall(&kRight);
   colour_list(r);
 }
 
@@ -643,8 +715,10 @@ bool Tg2Windows(TgRegs* r) {
   switch(z(0x52)) {
     case 1: Tg2WindowsTunnel(r); return true;
     case 2: Tg2WindowsWall(r); return true;
+    case 4: Tg2WindowsWallRight(r); return true;
     case 32: Tg2WindowsBand(r); return true;
-    case 4: case 6: case 8: case 16: case 24: return false;
+    case 6: Tg2WindowsWalls(r); return true;
+    case 8: case 16: case 24: return false;
     default: Tg2WindowsNone(r); return true;
   }
 }

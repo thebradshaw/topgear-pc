@@ -16,6 +16,8 @@ void Tg2BuildRoad2P(TgRegs* r);
 void Tg2WindowsNone(TgRegs* r);
 void Tg2WindowsTunnel(TgRegs* r);
 void Tg2WindowsWall(TgRegs* r);
+void Tg2WindowsWallRight(TgRegs* r);
+void Tg2WindowsWalls(TgRegs* r);
 void Tg2WindowsBand(TgRegs* r);
 void Tg2DrawObjects1P(TgRegs* r);
 void Tg2DrawObjects2P(TgRegs* r);
@@ -89,6 +91,8 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x0E8BCC, "WindowsNone", Tg2WindowsNone, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_Y },
   { 0x0E8C4B, "WindowsTunnel", Tg2WindowsTunnel, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x0E8F1A, "WindowsWall", Tg2WindowsWall, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0E9712, "WindowsWallRight", Tg2WindowsWallRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0E9F2C, "WindowsWalls", Tg2WindowsWalls, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x0EB250, "WindowsBand", Tg2WindowsBand, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9167, "VramDma", Tg2VramDma, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9EDE, "ClearVram", Tg2ClearVram, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
