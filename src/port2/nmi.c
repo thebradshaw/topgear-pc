@@ -201,18 +201,89 @@ static void queued_transfers(TgRegs* r, uint16_t cost, uint16_t ret) {
 
 #define N 0x0A00u // the notices' direct page
 
-static void notice_call(TgRegs* r, uint16_t target, uint16_t ret) {
-  r->d = N;
-  r->db = 0x8C;
-  r->a = w(N + 0x08);
-  tg_call_jsr(r, target, ret, TG_MX_16);
+// A notice's place in the dashboard's map copy ($7E:C990+): rows of tile numbers from a
+// table in bank $8F (one table a row, one after the other), 64 bytes apart on screen.
+typedef struct {
+  uint16_t src, dst;
+  uint8_t rows, words;
+} Notice;
+static const Notice kNotices[15] = {
+  { 0xDCBC, 0xCA10, 3, 6 }, { 0xDEA0, 0xCA10, 3, 6 }, { 0xE0A4, 0xCA12, 3, 5 }, { 0xE262, 0xC9D0, 4, 6 },
+  { 0xE4D2, 0xC9D2, 4, 5 }, { 0xE6FA, 0xC9D0, 4, 6 }, { 0xE96A, 0xCA10, 3, 7 }, { 0xEBB4, 0xCA22, 3, 7 },
+  { 0xEDFE, 0xCA24, 3, 6 }, { 0xF002, 0xCA22, 3, 7 }, { 0xF24C, 0xC9E4, 4, 5 }, { 0xF474, 0xC9E4, 4, 4 },
+  { 0xF654, 0xC9E4, 4, 6 }, { 0xF8C4, 0xC9E4, 4, 6 }, { 0xFB34, 0xC9E0, 4, 8 },
+};
+
+// $A5FC: draws notice `a` into the map copy at offset $0A00, with tile numbers from $0A02.
+// Notices 15 and up are two rows of twelve tiles in order.
+static void notice_draw(uint16_t a) {
+  uint16_t at = w(N + 0x00), tile = w(N + 0x02);
+  if(a >= 15) {
+    for(int i = 0; i < 12; i++) {
+      ws((uint16_t) (0xC9D4 + at + i * 2), (uint16_t) (tile + i * 2));
+      ws((uint16_t) (0xCA14 + at + i * 2), (uint16_t) (tile + i * 2 + 1));
+    }
+    return;
+  }
+  const Notice* n = &kNotices[a];
+  for(int row = 0; row < n->rows; row++)
+    for(int i = 0; i < n->words; i++)
+      ws((uint16_t) (n->dst + row * 0x40 + at + i * 2),
+         (uint16_t) (rom16(0x8F0000 + (uint16_t) (n->src + row * n->words * 2 + i * 2)) + tile));
 }
 
-static void notice_clear(TgRegs* r, uint16_t ret) {
+// $A68C: blanks notice `a`'s place (the blank tile is $38 before its tiles).
+static void notice_erase(uint16_t a) {
+  uint16_t at = w(N + 0x00), blank = (uint16_t) (w(N + 0x02) - 0x0038);
+  if(a >= 15) {
+    for(int i = 0; i < 12; i++) {
+      ws((uint16_t) (0xC9D4 + at + i * 2), blank);
+      ws((uint16_t) (0xCA14 + at + i * 2), blank);
+    }
+    return;
+  }
+  const Notice* n = &kNotices[a];
+  for(int row = 0; row < n->rows; row++)
+    for(int i = 0; i < n->words; i++) ws((uint16_t) (n->dst + row * 0x40 + at + i * 2), blank);
+}
+
+// $A539: notice `a`'s tiles to VRAM at tile number $0A02: one block from bank $8F, or for
+// 15 and up twelve characters of a name from the font at $82:CBF6.
+static void notice_tiles(uint16_t a) {
+  uint16_t vadr = (uint16_t) ((w(N + 0x02) & 0x03FF) << 4);
+  if(a < 15) {
+    p8(0x420B, 0x00);
+    p8(0x4374, 0x8F);
+    p8(0x2115, 0x80);
+    p16(0x4370, 0x1801);
+    p16(0x4372, rom16(0x8FDC80 + a * 4));
+    p16(0x4375, rom16(0x8FDC82 + a * 4));
+    p16(0x2116, vadr);
+    p8(0x420B, 0x80);
+    return;
+  }
+  uint16_t x = tg_read16(0x82C9D0 + (uint16_t) ((a - 15) << 1));
+  for(int i = 0; i < 12; i++, x++) {
+    ws(N + 0x3C, vadr);
+    p8(0x420B, 0x00);
+    p8(0x4374, 0x82);
+    p8(0x2115, 0x80);
+    p16(0x4370, 0x1801);
+    uint16_t c = (uint16_t) ((tg_read16(0x820000 | x) - 0x001E) & 0x00FF);
+    p16(0x4372, (uint16_t) ((c << 6) + 0xCBF6));
+    p16(0x4375, 0x0040);
+    p16(0x2116, vadr);
+    vadr = (uint16_t) (vadr + 0x0020);
+    ws(N + 0x3C, vadr);
+    p8(0x420B, 0x80);
+  }
+}
+
+static void notice_clear(void) {
   ws(N + 0x0C, 0xFFFF);
   ws(N + 0x00, 0x03D0);
   ws(N + 0x02, 0x2E40);
-  notice_call(r, 0xA68C, ret);
+  notice_erase(w(N + 0x08));
 }
 
 static void notice_start(uint16_t picture, uint16_t kind) {
@@ -283,7 +354,7 @@ static bool timer(uint16_t adr) {
 }
 
 // The notice on screen runs its timing ($C08B-$C0E7).
-static void notice_run(TgRegs* r) {
+static void notice_run(void) {
   bool done = false;
   switch(w(N + 0x04)) {
     case 1: // for $0E frames
@@ -310,7 +381,7 @@ static void notice_run(TgRegs* r) {
       break;
   }
   if(!done) return;
-  notice_clear(r, 0xC0BC);
+  notice_clear();
   ws(N + 0x06, 0);
   ws(N + 0x04, 0);
   ws(N + 0x08, 0);
@@ -341,16 +412,16 @@ static void panel_frame(TgRegs* r) {
     uint16_t a = w(N + 0x08);
     if(a != w(N + 0x0A)) return;
     if(neg(shown)) {
-      if(a == w(N + 0x0C)) notice_clear(r, 0xBF6C);
+      if(a == w(N + 0x0C)) notice_clear();
     } else if(a != w(N + 0x0C)) {
       ws(N + 0x0C, a);
       ws(N + 0x00, 0x03D0);
       ws(N + 0x02, 0x2E40);
-      notice_call(r, 0xA5FC, 0xBF89);
+      notice_draw(a);
     }
   }
   if(w(N + 0x04) == 0) notice_pick();
-  else notice_run(r);
+  else notice_run();
 }
 
 static void panel(TgRegs* r) {
@@ -379,10 +450,7 @@ static void panel(TgRegs* r) {
     // The notice's tiles.
     ws(N + 0x0A, w(N + 0x08));
     ws(N + 0x02, 0x2E40);
-    r->d = N;
-    r->db = 0x8C;
-    r->a = w(N + 0x0A);
-    tg_call_jsr(r, 0xA539, 0xC10F, TG_MX_16);
+    notice_tiles(w(N + 0x0A));
     return;
   }
   panel_frame(r);
