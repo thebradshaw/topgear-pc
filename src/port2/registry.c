@@ -14,6 +14,8 @@ void Tg2RaceColours2PBottom(TgRegs* r);
 void Tg2BuildRoad(TgRegs* r);
 void Tg2BuildRoad2P(TgRegs* r);
 void Tg2RaceVblank1P(TgRegs* r);
+void Tg2RaceLoop1P(TgRegs* r);
+void Tg2RaceLoop2P(TgRegs* r);
 void Tg2RaceVblank2P(TgRegs* r);
 void Tg2WindowsNone(TgRegs* r);
 void Tg2WindowsTunnel(TgRegs* r);
@@ -59,6 +61,8 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x008A41, "DriveCar1", Tg2DriveCar1, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00A2A5, "DriveCar2", Tg2DriveCar2, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00D726, "Cars", Tg2Cars, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x01826D, "RaceLoop1P", Tg2RaceLoop1P, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
+  { 0x018522, "RaceLoop2P", Tg2RaceLoop2P, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x019261, "RaceColours1P", Tg2RaceColours1P, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_Y },
   { 0x019284, "RaceColours2PTop", Tg2RaceColours2PTop, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_Y },
   { 0x0192A7, "RaceColours2PBottom", Tg2RaceColours2PBottom, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_Y },

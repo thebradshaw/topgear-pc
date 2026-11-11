@@ -46,6 +46,7 @@ add_library(tgcore STATIC
   src/port2/stream.c
   src/port2/windows.c
   src/port2/nmi.c
+  src/port2/race.c
   src/port2/sprites.c
   src/port/cars.c
   src/port/decompress.c

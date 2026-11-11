@@ -176,6 +176,20 @@ uint8_t tg_pull8(void) {
 }
 
 void tg_cpu_cli(void) { g_snes->cpu->i = false; }
+void tg_cpu_sei(void) { g_snes->cpu->i = true; }
+
+static uint32_t g_leave;
+static bool g_leaving;
+void tg_port_leave(uint32_t adr) {
+  g_leave = adr;
+  g_leaving = true;
+}
+bool tg_port_take_leave(uint32_t* adr) {
+  bool l = g_leaving;
+  g_leaving = false;
+  *adr = g_leave;
+  return l;
+}
 
 uint8_t tg_port_set_bank(uint8_t bank) {
   uint8_t old = g_snes->cpu->k;

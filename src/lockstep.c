@@ -363,6 +363,12 @@ static void returnFromC(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu, const TgR
     cpu->x &= 0xff;
     cpu->y &= 0xff;
   }
+  uint32_t leave;
+  if(tg_port_take_leave(&leave) && f->call == TG_CALL_NONE) {
+    cpu->k = (uint8_t) (leave >> 16);
+    cpu->pc = (uint16_t) leave;
+    return;
+  }
   // RTS / RTL: the stack is in bank 0 low RAM
   uint8_t* ram = ls->snes->ram;
   uint16_t sp = cpu->sp;

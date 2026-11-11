@@ -45,6 +45,12 @@ uint8_t tg_pull8(void);
 void tg_call_jsl(TgRegs* r, uint32_t target, uint16_t ret, uint8_t mx);
 // CLI: lets IRQs in.
 void tg_cpu_cli(void);
+// SEI: keeps them out.
+void tg_cpu_sei(void);
+// For a TG_CALL_NONE routine that does end: the original code it jumps to when it
+// returns (a JML out of the routine).
+void tg_port_leave(uint32_t adr);
+bool tg_port_take_leave(uint32_t* adr);
 // Sets the CPU's program bank, returning the old one: C code calling a translated routine
 // from another bank directly sets it first, as that routine's tg_call_* are in its bank.
 uint8_t tg_port_set_bank(uint8_t bank);
