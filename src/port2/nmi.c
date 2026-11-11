@@ -186,16 +186,109 @@ static void dashboard_upload(void) {
   vram_dma(0x80, 0x7840, 0x1801, 0x7E, 0xC990, 0x0640);
 }
 
-// The queued VRAM transfers ($E904), if the frame's DMA budget ($EA against $E2) has
-// room for `cost` more.
-static void queued_transfers(TgRegs* r, uint16_t cost, uint16_t ret) {
+// The queue of VRAM transfers ($0800, 32 entries of 16 bytes; $E6 next, $E4 how many).
+// An entry: flags (bit 6 words rather than bytes, bit 5 a block of rows, bit 7 of a byte
+// entry the high bytes, low bits the address step), source bank, source, VRAM address,
+// length (words or bytes; of a row for a block), how much of the row is sent, the gaps to
+// the next row in the source and in VRAM, and the rows left.
+enum { kQueue = 0x0800 };
+
+static void spend(uint16_t cost) { ws(0x00EA, (uint16_t) (w(0x00EA) + cost)); }
+
+static void queue_dma(uint16_t x, uint16_t len) {
+  p16(0x4372, w(kQueue + 2 + x));
+  p16(0x4375, len);
+  p16(0x2116, w(kQueue + 4 + x));
+  p8(0x420B, 0x80);
+}
+
+static void queue_add(uint16_t field, uint16_t x, uint16_t v) {
+  ws(kQueue + field + x, (uint16_t) (w(kQueue + field + x) + v));
+}
+
+// $E904: sends queued transfers until the frame's time ($EA, counted in CPU cycles
+// against $E2) runs out; the one that doesn't fit is cut and carries on next frame.
+// The costs added to $EA are the original's own cycle counts.
+static void run_queue(void) {
+  if(neg(w(0x00E0))) return spend(0x1C);
+  if(w(0x00E4) == 0) return spend(0x23);
+  spend(0x22);
+  uint16_t x = w(0x00E6);
+  for(;;) {
+    x &= 0x01F0;
+    p8(0x420B, 0x00);
+    p8(0x4374, b(kQueue + 1 + x));
+    uint8_t flags = b(kQueue + x);
+    bool words = (flags & 0x40) != 0, block = (flags & 0x20) != 0;
+    int sh = words ? 1 : 0; // bytes to a unit
+    uint16_t left = w(0x00E2);
+    if(words) {
+      p8(0x2115, (uint8_t) ((flags & 0x0F) | 0x80));
+      p16(0x4370, 0x1801);
+      spend(block ? 0x63 : 0x5A);
+    } else {
+      p8(0x2115, flags & 0x8F);
+      p16(0x4370, (flags & 0x80) ? 0x1900 : 0x1800);
+      spend((uint16_t) ((block ? 0x67 : 0x5C) + ((flags & 0x80) ? 2 : 0)));
+    }
+    bool next = false;
+    for(;;) {
+      uint16_t len = (uint16_t) ((block ? w(kQueue + 6 + x) - w(kQueue + 8 + x) : w(kQueue + 6 + x)) << sh);
+      uint16_t t = (uint16_t) (len + w(0x00EA));
+      if(t > left) {
+        // Only part of it fits.
+        uint16_t ea = w(0x00EA);
+        uint16_t part = (uint16_t) (left - ea);
+        if(words) part &= 0xFFFE;
+        if(left < ea) return spend(words ? (block ? 0x2B : 0x28) : (block ? 0x28 : 0x25));
+        if(part == 0) return spend(words ? (block ? 0x2D : 0x2A) : (block ? 0x2A : 0x27));
+        ws(0x00EA, (uint16_t) (part + ea + (words ? (block ? 0x87 : 0x89) : 0x84)));
+        queue_dma(x, part);
+        queue_add(2, x, part);
+        queue_add(4, x, part >> sh);
+        if(block) queue_add(8, x, part >> sh);
+        else queue_add(6, x, (uint16_t) -(part >> sh));
+        return;
+      }
+      bool last = t == left;
+      if(!block) {
+        ws(0x00EA, (uint16_t) (t + (last ? 0x4B : words ? 0x46 : 0x4A)));
+        queue_dma(x, len);
+        next = true;
+      } else {
+        ws(0x00EA, (uint16_t) (t + (words ? (last ? 0x7D : 0x8D) : (last ? 0x7B : 0x89))));
+        queue_dma(x, len);
+        queue_add(2, x, (uint16_t) (((len >> sh) + w(kQueue + 0x0A + x)) << sh));
+        queue_add(4, x, (uint16_t) ((len >> sh) + w(kQueue + 0x0C + x)));
+        ws(kQueue + 8 + x, 0);
+        uint16_t rows = (uint16_t) (w(kQueue + 0x0E + x) - 1);
+        ws(kQueue + 0x0E + x, rows);
+        if(rows == 0) {
+          spend(last ? 0x1E : words ? 0x0F : 0x11);
+          next = true;
+        } else if(!last) {
+          continue;
+        }
+      }
+      if(next) {
+        x = (uint16_t) (x + 0x10);
+        ws(0x00E6, x);
+        ws(0x00E4, (uint16_t) (w(0x00E4) - 1));
+      }
+      if(last) return;
+      break;
+    }
+    if(w(0x00E4) == 0) return spend(!block && words ? 0x12 : 0x10);
+  }
+}
+
+// The queued transfers, if the frame's budget has `cost` cycles to spare.
+static void queued_transfers(uint16_t cost) {
   uint16_t a = (uint16_t) (cost + w(0x00EA));
   if(!lt(a, w(0x00E2))) return;
   ws(0x00EA, (uint16_t) (a - 0x0200));
   ws(0x00E0, 0);
-  r->d = 0;
-  r->db = 0x82;
-  tg_call_jsr(r, 0xE904, ret, TG_MX_16);
+  run_queue();
   ws(0x00E0, (uint16_t) (w(0x00E0) - 1));
 }
 
@@ -390,7 +483,7 @@ static void notice_run(void) {
 // The frame's panel work when no message is waiting to be uploaded ($BEE0-$C0E9).
 static void panel_frame(TgRegs* r) {
   dashboard_upload();
-  queued_transfers(r, 0x0F00, 0xBF06);
+  queued_transfers(0x0F00);
   r->d = 0x0100;
   r->db = 0x8C;
   Tg2RaceColours1P(r);
@@ -443,7 +536,7 @@ static void panel(TgRegs* r) {
     ws(0x0162, 0);
     uint16_t len = message_upload();
     ws(0x0174, 0);
-    queued_transfers(r, (uint16_t) (len + 0x0E00), 0xC142);
+    queued_transfers((uint16_t) (len + 0x0E00));
     return;
   }
   if(w(0x0180) == 0 && w(N + 0x06) != 0 && w(N + 0x08) != w(N + 0x0A)) {
