@@ -18,6 +18,9 @@ void Tg2WindowsTunnel(TgRegs* r);
 void Tg2WindowsWall(TgRegs* r);
 void Tg2WindowsWallRight(TgRegs* r);
 void Tg2WindowsWalls(TgRegs* r);
+void Tg2WindowsRoadLeft(TgRegs* r);
+void Tg2WindowsRoadRight(TgRegs* r);
+void Tg2WindowsRoadBoth(TgRegs* r);
 void Tg2WindowsBand(TgRegs* r);
 void Tg2DrawObjects1P(TgRegs* r);
 void Tg2DrawObjects2P(TgRegs* r);
@@ -93,6 +96,9 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x0E8F1A, "WindowsWall", Tg2WindowsWall, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x0E9712, "WindowsWallRight", Tg2WindowsWallRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x0E9F2C, "WindowsWalls", Tg2WindowsWalls, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0EAE9F, "WindowsRoadLeft", Tg2WindowsRoadLeft, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0EAFAF, "WindowsRoadRight", Tg2WindowsRoadRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0EB0BF, "WindowsRoadBoth", Tg2WindowsRoadBoth, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0EB250, "WindowsBand", Tg2WindowsBand, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9167, "VramDma", Tg2VramDma, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9EDE, "ClearVram", Tg2ClearVram, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },

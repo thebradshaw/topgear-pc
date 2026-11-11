@@ -88,12 +88,8 @@ static void colour_list(TgRegs* r) {
   r->y = y;
 }
 
-// $8BCC: nothing seen: the window is open (left $00, right $FF... stored as $FF00 pairs)
-// on every line, and the colour window uses the one setting at $CA.
-void Tg2WindowsNone(TgRegs* r) {
-  zs(0xC8, 0);
-  pair(0xFF00, 0xFF00);
-  entry(z(0x30));
+// The colour-window list with the one setting at $CA on every line.
+static void colour_none(TgRegs* r) {
   uint16_t x = z(0xC4);
   uint16_t a = z(0x30);
   if(a < 0x80) {
@@ -113,6 +109,15 @@ void Tg2WindowsNone(TgRegs* r) {
   r->a = z(0xCA);
   r->x = x;
   flags_nz16(r, r->a);
+}
+
+// $8BCC: nothing seen: the window is open (left $00, right $FF... stored as $FF00 pairs)
+// on every line, and the colour window uses the one setting at $CA.
+void Tg2WindowsNone(TgRegs* r) {
+  zs(0xC8, 0);
+  pair(0xFF00, 0xFF00);
+  entry(z(0x30));
+  colour_none(r);
 }
 
 // $8C4B: a tunnel mouth ahead: open above it ($72), then the opening's left and right
@@ -614,8 +619,8 @@ static void wall_up(void) {
 }
 
 // Every line open, with its own pairs ($8F1A-$8F73).
-static void open_lines(void) {
-  zs(0xC8, w(0x0116));
+static void open_lines(uint16_t c8) {
+  zs(0xC8, c8);
   uint16_t x = z(0x9C);
   zs(0xA2, x);
   uint16_t y = z(0x30);
@@ -690,35 +695,102 @@ static void wall(const Side* side) {
 }
 
 void Tg2WindowsWall(TgRegs* r) {
-  open_lines();
+  open_lines(w(0x0116));
   wall(&kLeft);
   colour_list(r);
 }
 
 void Tg2WindowsWallRight(TgRegs* r) {
-  open_lines();
+  open_lines(w(0x0116));
   wall(&kRight);
   colour_list(r);
 }
 
 // $9F2C: walls on both sides.
 void Tg2WindowsWalls(TgRegs* r) {
-  open_lines();
+  open_lines(w(0x0116));
   wall(&kLeft);
   wall(&kRight);
   colour_list(r);
 }
 
-// $0E:8B40: the builder for what the object pass saw ($52). False for a builder that is
-// not translated yet.
-bool Tg2Windows(TgRegs* r) {
+// --- $AE9F / $AFAF / $B0BF: edges that follow the road ---
+//
+// No race in the game reaches these (the object pass never reports 8, 16 or 24), so they
+// are translated but not checked against the original.
+
+// One edge on lines $8A to $8C, from the road's centre ($CC, four bytes a line) and its
+// width at that depth (the hardware multiplier, times $50).
+static void road_edge(uint8_t at, bool right) {
+  uint16_t n = (uint16_t) (z(0x8C) - z(0x8A));
+  if(neg(n) || n == 0) return;
+  zs(0xB6, n);
+  uint16_t t = (uint16_t) ((uint16_t) ~z(0x8A) << 2);
+  uint16_t y = (uint16_t) (t + z(0xCC));
+  uint16_t x = (uint16_t) (t + z(0xA2));
+  zs(0xAE, (uint16_t) (z(0x8A) - z(0x2E) + 0x007E));
+  do {
+    uint16_t a = (uint16_t) (((uint16_t) (w((uint16_t) (y + 2)) - z(0xAE)) & 0x03FF) << 2);
+    tg_bus_write8(0x211B, (uint8_t) a);
+    tg_bus_write8(0x211B, (uint8_t) (a >> 8));
+    tg_bus_write8(0x211C, 0x50);
+    uint16_t prod = (uint16_t) (tg_bus_read8(0x2135) | tg_bus_read8(0x2136) << 8);
+    a = (uint16_t) (0x0200 - w(y));
+    a = right ? (uint16_t) (a + prod) : (uint16_t) (a - prod);
+    if(neg(a)) a = 0;
+    else if(!lt(a, 0x0100)) a = 0x00FF;
+    wb((uint16_t) (x + at), (uint8_t) a);
+    y = (uint16_t) (y - 4);
+    x = (uint16_t) (x - 4);
+    zs(0xAE, (uint16_t) (z(0xAE) + 1));
+    zs(0xB6, (uint16_t) (z(0xB6) - 1));
+  } while(z(0xB6) != 0);
+}
+
+// Keeps a line number inside the view.
+static void clamp_line(uint8_t o) {
+  if(lt(z(0x30), z(o))) zs(o, z(0x30));
+}
+
+void Tg2WindowsRoadLeft(TgRegs* r) {
+  clamp_line(0x8A);
+  clamp_line(0x8C);
+  open_lines(0);
+  road_edge(0, false);
+  colour_none(r);
+}
+
+// (The original clamps $8E/$90 here but still walks lines $8A to $8C.)
+void Tg2WindowsRoadRight(TgRegs* r) {
+  clamp_line(0x8E);
+  clamp_line(0x90);
+  open_lines(0);
+  road_edge(1, true);
+  colour_none(r);
+}
+
+void Tg2WindowsRoadBoth(TgRegs* r) {
+  clamp_line(0x8A);
+  clamp_line(0x8C);
+  clamp_line(0x8E);
+  clamp_line(0x90);
+  open_lines(0);
+  road_edge(0, false);
+  road_edge(1, true);
+  colour_none(r);
+}
+
+// $0E:8B40: the builder for what the object pass saw ($52).
+void Tg2Windows(TgRegs* r) {
   switch(z(0x52)) {
-    case 1: Tg2WindowsTunnel(r); return true;
-    case 2: Tg2WindowsWall(r); return true;
-    case 4: Tg2WindowsWallRight(r); return true;
-    case 32: Tg2WindowsBand(r); return true;
-    case 6: Tg2WindowsWalls(r); return true;
-    case 8: case 16: case 24: return false;
-    default: Tg2WindowsNone(r); return true;
+    case 1: Tg2WindowsTunnel(r); break;
+    case 2: Tg2WindowsWall(r); break;
+    case 4: Tg2WindowsWallRight(r); break;
+    case 6: Tg2WindowsWalls(r); break;
+    case 8: Tg2WindowsRoadLeft(r); break;
+    case 16: Tg2WindowsRoadRight(r); break;
+    case 24: Tg2WindowsRoadBoth(r); break;
+    case 32: Tg2WindowsBand(r); break;
+    default: Tg2WindowsNone(r); break;
   }
 }
