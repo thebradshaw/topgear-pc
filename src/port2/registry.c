@@ -107,6 +107,8 @@ void Tg2MenuStart(TgRegs* r);
 void Tg2OptionsFromTitle(TgRegs* r);
 void Tg2OptionsScreen(TgRegs* r);
 void Tg2RaceInfoScreen(TgRegs* r);
+void Tg2DrawTime(TgRegs* r);
+void Tg2NarrowText(TgRegs* r);
 void Tg2ShopDraw(TgRegs* r);
 void Tg2ShopLeft(TgRegs* r);
 void Tg2ShopRight(TgRegs* r);
@@ -328,5 +330,7 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1FDA69, "RestoreStandings", Tg2RestoreStandings, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FDBDC, "DrawBigString", Tg2DrawBigString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x1FDD7A, "DrawSmallString", Tg2DrawSmallString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
+  { 0x1FE125, "DrawTime", Tg2DrawTime, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FE385, "NarrowText", Tg2NarrowText, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
 };
 const int tg2_port_func_count = sizeof(tg2_port_funcs) / sizeof(tg2_port_funcs[0]);

@@ -1541,3 +1541,147 @@ void Tg2BoxEdges(TgRegs* r) {
   r->x = x;
   r->y = 0;
 }
+
+// ---- $1F:E125: a time (frames) to VRAM at Y as minutes'seconds"hundredths ----
+//
+// Each digit is a top and bottom tile pair from the tables at $9F:E1CD (tens) and $9F:E295
+// (units); the reads of $2139 between the fields step the VRAM address over a tile.
+void Tg2DrawTime(TgRegs* r) {
+  tg_bus_write16(0x2116, r->y);
+  uint16_t t = r->a;
+  dp_set(r, 0x00, t);
+  tg_bus_write16(0x4204, t);
+  tg_bus_write8(0x4206, 0x3C);
+  uint16_t secs = (uint16_t) (t / 60);
+  dp_set(r, 0x00, secs);
+  uint16_t frac = (uint16_t) ((t % 60) << 8);
+  tg_bus_write16(0x4204, frac);
+  tg_bus_write8(0x4206, 0x3C);
+  uint16_t q = (uint16_t) (frac / 60);
+  tg_bus_write8(0x211B, (uint8_t) q);
+  tg_bus_write8(0x211B, (uint8_t) (q >> 8));
+  tg_bus_write8(0x211C, 0x64);
+  uint16_t hs = (uint16_t) ((((int32_t) (int16_t) q * 100) >> 8) & 0xFF);
+  dp_set(r, 0x02, hs);
+  tg_bus_write16(0x4204, secs);
+  tg_bus_write8(0x4206, 0x3C);
+  dp_set(r, 0x04, (uint16_t) (secs % 60));
+  dp_set(r, 0x06, (uint16_t) (secs / 60));
+  uint16_t x = (uint16_t) (dp(r, 0x06) * 2);
+  tg_bus_write16(0x2118, rd(0x9FE295 + x));
+  tg_bus_read8(0x2139); tg_bus_read8(0x213A);
+  x = (uint16_t) (dp(r, 0x04) * 2);
+  tg_bus_write16(0x2118, rd(0x9FE1CD + x));
+  tg_bus_write16(0x2118, rd(0x9FE295 + x));
+  tg_bus_read8(0x2139); tg_bus_read8(0x213A);
+  x = (uint16_t) (hs * 2);
+  tg_bus_write16(0x2118, rd(0x9FE1CD + x));
+  r->a = rd(0x9FE295 + x);
+  tg_bus_write16(0x2118, r->a);
+  r->x = x;
+  flags_nz16(r, r->a);
+  r->c = false;
+}
+
+// ---- $1F:E3C3 / $E4D0: a string in the narrow font, drawn as 2bpp tiles ----
+//
+// The string at bank ($02):($00) goes into tiles at DB:($04), each letter (its 16 rows of
+// two bytes in the font at $7F:letter*32) shifted right by the pixels ($0A) already used
+// in the tile, its spill going into the next tile. Returns A = the end, Y = the tiles.
+static void text_tiles(TgRegs* r) {
+  uint8_t sb = (uint8_t) r->a;
+  uint32_t db = (uint32_t) (r->a >> 8) << 16;
+  dp_set(r, 0x00, r->y);
+  dp_set(r, 0x02, sb);
+  dp_set(r, 0x04, r->x);
+  dp_set(r, 0x06, 0);
+  uint16_t x = 0;
+  for(uint16_t y = dp(r, 0x04), n = 0; n < 0x10; n++, y += 2) wr(db | y, 0);
+  for(;;) {
+    uint8_t c = rd8((uint32_t) sb << 16 | dp(r, 0x00));
+    if(c == 0) break;
+    if(c == 0x20) {
+      dp_set(r, 0x04, (uint16_t) (dp(r, 0x04) + 0x20));
+      for(uint16_t y = dp(r, 0x04), n = 0; n < 0x10; n++, y += 2) wr(db | y, 0);
+      x = 0;
+      dp_set(r, 0x06, (uint16_t) (dp(r, 0x06) + 1));
+    } else {
+      uint8_t v = small_letter(c);
+      dp_set(r, 0x08, rd8(0x9FDDF5 + v));
+      dp_set(r, 0x10, rd8(0x9FEF6E + v));
+      // $E4D0: the letter's rows, shifted, into $1797 (this tile) and $17B7 (the next).
+      uint16_t f = (uint16_t) (v << 5), sh = dp(r, 0x0A);
+      dp_set(r, 0x0C, 0x0010);
+      dp_set(r, 0x0E, 0);
+      for(uint16_t i = 0; i < 0x20; i += 2, f += 2) {
+        uint16_t a = (uint16_t) ((g_ram[0x10000 + f] << 8) >> sh);
+        g_ram[0x17B7 + i] = (uint8_t) a;
+        g_ram[0x1797 + i] = (uint8_t) (a >> 8);
+        a = (uint16_t) ((g_ram[0x10000 + (uint16_t) (f + 1)] << 8) >> sh);
+        g_ram[0x17B8 + i] = (uint8_t) a;
+        g_ram[0x1798 + i] = (uint8_t) (a >> 8);
+      }
+      dp_set(r, 0x0E, 0x0020);
+      dp_set(r, 0x0C, (uint16_t) ((dp(r, 0x10) << 8) >> sh));
+      uint8_t m = (uint8_t) ((dp(r, 0x0C) ^ 0xFFFF) >> 8);
+      dp_set(r, 0x0C, (uint16_t) (m | m << 8));
+      uint16_t y = dp(r, 0x04);
+      for(x = 0; x < 0x20; x += 2, y += 2) wr(db | y, (uint16_t) ((rd(db | y) & dp(r, 0x0C)) | ram16((uint16_t) (0x1797 + x))));
+      for(; x < 0x40; x += 2, y += 2) wr(db | y, ram16((uint16_t) (0x1797 + x)));
+      uint16_t a = (uint16_t) (dp(r, 0x0A) + dp(r, 0x08));
+      dp_set(r, 0x0A, a & 0x0007);
+      if(a & 0x00F8) {
+        dp_set(r, 0x04, (uint16_t) (dp(r, 0x04) + 0x20));
+        dp_set(r, 0x06, (uint16_t) (dp(r, 0x06) + 1));
+      }
+    }
+    dp_set(r, 0x00, (uint16_t) (dp(r, 0x00) + 1));
+  }
+  r->c = false;
+  uint16_t a = adc16(r, dp(r, 0x0A), 0x0007);
+  if(a & 0x00F8) {
+    r->c = false;
+    dp_set(r, 0x04, adc16(r, dp(r, 0x04), 0x0020));
+    dp_set(r, 0x06, (uint16_t) (dp(r, 0x06) + 1));
+  }
+  r->a = dp(r, 0x04);
+  r->x = x;
+  r->y = dp(r, 0x06);
+  r->n = (r->db & 0x80) != 0;  // plb
+  r->z = r->db == 0;
+}
+
+void Tg2VramDma(TgRegs* r);
+
+// ---- $1F:E385: a narrow-font string (bank A, at Y) to VRAM ----
+//
+// Drawn into $7F:2000, its tiles get the next numbers ($16) in the map row at $14, then
+// go to VRAM ($12, which moves on past them).
+void Tg2NarrowText(TgRegs* r) {
+  r->x = 0x2000;
+  r->a = (uint16_t) ((r->a & 0x00FF) | 0x7F00);
+  text_tiles(r);
+  r->c = true;
+  uint16_t len = sbc16(r, r->a, 0x2000);
+  r->a = len;
+  if(len == 0) {
+    flags_nz16(r, 0);
+    return;
+  }
+  dp_set(r, 0x00, len);
+  r->c = false;
+  uint16_t next = adc16(r, (uint16_t) (len >> 1), dp(r, 0x12));
+  tg_bus_write16(0x2116, dp(r, 0x14));
+  r->c = false;
+  dp_set(r, 0x14, adc16(r, r->y, dp(r, 0x14)));
+  uint16_t t = dp(r, 0x16);
+  for(uint16_t n = r->y; n != 0; n--) tg_bus_write16(0x2118, t++);
+  dp_set(r, 0x16, t);
+  r->a = 0x007F;
+  r->x = 0x2000;
+  r->y = dp(r, 0x12);
+  Tg2VramDma(r);
+  r->a = next;
+  flags_nz16(r, next);
+  dp_set(r, 0x12, next);
+}

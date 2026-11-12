@@ -38,6 +38,8 @@ void Tg2RaceInfoScreen(TgRegs* r);
 static void title(TgRegs* r);
 static void opening(TgRegs* r);
 static bool results(TgRegs* r);
+static void standings(TgRegs* r);
+static void country_password(TgRegs* r);
 
 static uint16_t w(uint16_t adr) { return ram16(adr); }
 static void ws(uint16_t adr, uint16_t v) { ram16_set(adr, v); }
@@ -274,8 +276,8 @@ void Tg2MenuAfterRace(TgRegs* r) {
     return;
   }
   g_ram[0x01D2] = 0x02;
-  call(r, 0xDED5, 0x810C);
-  if(w(0x1CE5) == 0) call(r, 0xD904, 0x8114);
+  standings(r);
+  if(w(0x1CE5) == 0) country_password(r);
   to_race(r, true);
 }
 
@@ -1751,4 +1753,178 @@ static bool results(TgRegs* r) {
   if(w(0x1CE1) != 0x10) return false;
   call(r, 0xE52E, 0xED74);  // the last: the end
   return r->c;
+}
+
+// ---- $1F:DED5: the season's standings after a race ----
+
+void Tg2ClearVram(TgRegs* r);
+void Tg2DrawTime(TgRegs* r);
+void Tg2NarrowText(TgRegs* r);
+
+// A driver's name (car c) in the narrow font: with one player, the other cars' names come
+// one later in the table (the second player's name is not shown).
+static void driver_name(TgRegs* r, uint16_t car, uint16_t map) {
+  uint16_t x = (uint16_t) (car * 2);
+  if(!w(0x1CDB) && x != 0) x = (uint16_t) (x + 2);
+  dp_set_d(r, 0x14, map);
+  r->y = rom9f((uint16_t) (0xEF7D + x));
+  r->a = 0x009F;
+  dp_set_d(r, 0x0A, 0);
+  Tg2NarrowText(r);
+}
+
+static void wait_press(void) {
+  while(!take(0xD0C0)) tg_port_wait();
+}
+
+static void standings(TgRegs* r) {
+  regs(r);
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  Tg2PackSprites(r);
+  r->x = 0xB1EF; r->a = 0x009D;
+  Tg2SetScreenRegs(r);
+  Tg2ClearVram(r);
+  static const uint16_t pics[4][3] = {
+    { 0x009C, 0xA1B0, 0x1000 }, { 0x009E, 0xED01, 0x0C00 },
+    { 0x009C, 0xF2CD, 0x1640 }, { 0x009D, 0xB343, 0x0000 } };
+  for(int p = 0; p < 4; p++) {
+    r->a = pics[p][0]; r->x = pics[p][1]; r->y = pics[p][2];
+    Tg2UnpackToVram(r);
+  }
+  move_bytes(0x9D, 0xB152, 0x00, 0x1460, 0x0020);
+  move_bytes(0x9C, 0xFE94, 0x00, 0x1480, 0x0020);
+  move_bytes(0x9F, 0xBD3D, 0x00, 0x1380, 0x0020);
+  r->a = 0x009E; r->x = 0xEDC0; r->y = 0x6000;
+  Tg2UnpackToVram(r);
+  g_ram[0x1CFE] = 0;
+  g_ram[0x1D27] = 0;
+  // The top ten's times (two the same are told apart by a frame).
+  dp_set_d(r, 0x16, 0);
+  dp_set_d(r, 0x14, 0);
+  for(uint16_t x = 0, y = 0x00D5; x != 0x14; x += 2, y += 0x40) {
+    uint16_t a = (uint16_t) (w(0x1D9D + x) + dp_d(r, 0x16));
+    if(a == dp_d(r, 0x14)) {
+      a++;
+      dp_set_d(r, 0x16, (uint16_t) (dp_d(r, 0x16) + 1));
+    }
+    dp_set_d(r, 0x14, a);
+    r->a = a;
+    r->y = y;
+    Tg2DrawTime(r);
+  }
+  // The race's points to each car, then the cars sorted by their points.
+  for(uint16_t x = 0; x != 0x28; x += 2) {
+    uint16_t y = (uint16_t) (0x1DC5 + w(0x1D75 + x) * 2);
+    ws(y, (uint16_t) (rom9f((uint16_t) (0xE35D + x)) + w(y)));
+  }
+  for(uint16_t x = 0; x != 0x28; x += 2) {
+    ws(0x17D7 + x, x >> 1);
+    ws(0x17FF + x, w(0x1DC5 + x));
+  }
+  for(uint16_t x = 0; x != 0x26;) {
+    uint16_t a = w(0x17FF + x), b = w(0x1801 + x);
+    if(a < b) {
+      ws(0x1801 + x, a);
+      ws(0x17FF + x, b);
+      uint16_t c = w(0x17D7 + x);
+      ws(0x17D7 + x, w(0x17D9 + x));
+      ws(0x17D9 + x, c);
+      if(x != 0) {
+        x -= 2;
+        continue;
+      }
+    }
+    x += 2;
+  }
+  // The points, straight to VRAM.
+  dp_set_d(r, 0x00, 0x04BA);
+  for(uint16_t y = 0; y != 0x28; y += 2) {
+    tg_bus_write16(0x2116, dp_d(r, 0x00));
+    uint16_t a = w(0x17FF + y), x;
+    if(a >= 100) {
+      uint16_t h = 0;
+      while(a >= 100) {
+        h++;
+        a -= 100;
+      }
+      tg_bus_write16(0x2118, rom9f((uint16_t) (0xE295 + h * 2)));
+      x = (uint16_t) (a * 2);
+      tg_bus_write16(0x2118, rom9f((uint16_t) (0xE1CD + x)));
+    } else {
+      tg_bus_read8(0x2139);  // a blank first digit
+      tg_bus_read8(0x213A);
+      x = (uint16_t) (a * 2);
+      uint16_t t = rom9f((uint16_t) (0xE1CD + x));
+      if(t == 0x0064) {
+        tg_bus_read8(0x2139);
+        tg_bus_read8(0x213A);
+      } else {
+        tg_bus_write16(0x2118, t);
+      }
+    }
+    tg_bus_write16(0x2118, rom9f((uint16_t) (0xE295 + x)));
+    dp_set_d(r, 0x00, (uint16_t) (dp_d(r, 0x00) + 0x20));
+  }
+  // The names: the race's top ten, then the season's twenty.
+  dp_set_d(r, 0x12, 0x2000);
+  dp_set_d(r, 0x16, 0x0100);
+  for(uint16_t x = 0, y = 0x00C4; x != 0x14; x += 2, y += 0x40) driver_name(r, w(0x1D75 + x), y);
+  for(uint16_t x = 0, y = 0x04A2; x != 0x28; x += 2, y += 0x20) driver_name(r, w(0x17D7 + x), y);
+  Tg2PackSprites(r);
+  ws(0x0022, w(0x0022) | 0x0003);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  while(w(0x012C) != 0) tg_port_wait();
+  wait_press();
+  // A button scrolls down to the season's standings.
+  for(uint16_t x = 3, n = 0x40; n != 0; n--, x += 4) {
+    wait_frames(1);
+    tg_bus_write8(0x210E, (uint8_t) x);
+    tg_bus_write8(0x210E, (uint8_t) (x >> 8));
+  }
+  wait_press();
+  scroll_out();
+}
+
+// ---- $1F:D904: after a country's four races, its password ----
+
+static void country_password(TgRegs* r) {
+  regs(r);
+  r->x = 0xD2E2; r->a = 0x009F;
+  Tg2SetScreenRegs(r);
+  r->a = 0x009C; r->x = 0xA9D0; r->y = 0x0800;
+  Tg2UnpackToVram(r);
+  Tg2PasswordPictures(r);
+  r->y = 0; r->a = 0x7F9D; r->x = 0xA8C4;
+  Tg2Unpack(r);
+  vram_dma(r, 0x0700, 0x0700, 0x0000);
+  vram_dma(r, 0x0700, 0x1500, 0x0400);
+  r->a = 0x009D; r->x = 0xA8AC; r->y = 0x5000;
+  Tg2UnpackToVram(r);
+  move_bytes(0x9D, 0xB0B2, 0x00, 0x1380, 0x00C0);
+  move_bytes(0x9D, 0xB012, 0x00, 0x1480, 0x0020);
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  Tg2PackSprites(r);
+  ws(0x0022, 0x0003);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  dp_set_d(r, 0xA7, 0);
+  dp_set_d(r, 0xA5, 0x0028);
+  move_bytes(0x9F, 0xD256, 0x00, 0x17D3, 0x008C);
+  Tg2MakePassword(r);
+  for(uint16_t i = 0; i < 0x16; i++) g_ram[0x17D7 + i * 6] = g_ram[0x1780 + i];
+  dp_set_d(r, 0xA9, 0x0016);
+  do {
+    wait1(r);
+    dp_set_d(r, 0xAF, 0);
+    big_string(r, 0x3098, 0x1880, 0x8011);
+    big_string(r, 0x3000, 0x3636, 0x17D3);
+    Tg2PackSprites(r);
+    ws(0x0022, 0x0002);
+  } while(!take(0xF0C0));
+  scroll_out();
 }
