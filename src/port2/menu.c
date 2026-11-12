@@ -759,3 +759,28 @@ void Tg2MakePassword(TgRegs* r) {
   r->n = false;
   r->z = true;
 }
+
+// ---- $1F:9131: unpack to $7F:0000, then send it to VRAM word address Y ----
+void Tg2UnpackToVram(TgRegs* r) {
+  uint16_t vram = r->y;
+  r->y = 0;
+  r->a = (uint16_t) ((r->a & 0x00FF) | 0x7F00);
+  Tg2Unpack(r);
+  r->y = vram;
+  uint16_t len = r->a;
+  r->c = true;
+  r->v = false;
+  r->n = (len & 0x8000) != 0;
+  r->z = len == 0;
+  if(len == 0) return;
+  uint32_t db = (uint32_t) r->db << 16;
+  wr(db | 0x4305, len);
+  wr(db | 0x2116, vram);
+  wr(db | 0x4300, 0x1801);
+  wr(db | 0x4302, 0x0000);
+  wr8(db | 0x4304, 0x7F);
+  wr8(db | 0x420B, 0x01);
+  r->a = 0x0001;
+  r->n = false;
+  r->z = false;
+}

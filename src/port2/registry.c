@@ -19,6 +19,7 @@ void Tg2Decompress(TgRegs* r);
 void Tg2Unpack(TgRegs* r);
 void Tg2DrawBigString(TgRegs* r);
 void Tg2PackSprites(TgRegs* r);
+void Tg2UnpackToVram(TgRegs* r);
 void Tg2MakePassword(TgRegs* r);
 void Tg2MultiplyLong(TgRegs* r);
 void Tg2PasswordCheck(TgRegs* r);
@@ -185,6 +186,7 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x0EAFAF, "WindowsRoadRight", Tg2WindowsRoadRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0EB0BF, "WindowsRoadBoth", Tg2WindowsRoadBoth, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0EB250, "WindowsBand", Tg2WindowsBand, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F9131, "UnpackToVram", Tg2UnpackToVram, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9167, "VramDma", Tg2VramDma, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F97A9, "QueueFadeRow", Tg2QueueFadeRow, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F98C5, "PackSprites", Tg2PackSprites, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
