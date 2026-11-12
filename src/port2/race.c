@@ -155,6 +155,10 @@ static void race(TgRegs* r, bool two) {
   ws(0x00F6, (uint16_t) (w(0x001A) - 1));
   for(;;) {
     while(neg(w(0x0122))) tg_port_wait();
+    // The original takes about three frames an update (its logic is that slow), and scales
+    // the race by the frames elapsed ($00F8). In C the logic takes no machine time, so the
+    // loop keeps that pace (tg_port_race_frames); smooth motion sets 1.
+    while((uint16_t) (w(0x001A) - w(0x00F6)) < (uint16_t) tg_port_race_frames) tg_port_wait();
     ws(0x001E, (uint16_t) (w(0x001E) + 1));
     uint16_t now = w(0x001A);
     ws(0x00F8, (uint16_t) (now - w(0x00F6)));
