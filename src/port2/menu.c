@@ -1685,3 +1685,153 @@ void Tg2NarrowText(TgRegs* r) {
   flags_nz16(r, next);
   dp_set(r, 0x12, next);
 }
+
+// ---- $1F:D4B3: a typed password read back into the season ----
+//
+// Each of the 22 letters (at $1780) is a 5-bit digit (its place in $9F:D7D9), unscrambled
+// against the one before and the mask at $9F:D7F9, and shifted in from the top of the
+// 112-bit number at $06-$14. The number is then divided out ($D887) into the season's
+// values at $1797-$17D2; their sum modulo $6D must match the first. With the password from
+// practice ($01E3 bit 15), it must reach at least the country picked. Carry: refused.
+
+static bool g_pw_v;
+
+// $D887: the number at $06-$12 divided by A, back in place; returns the remainder.
+static uint16_t pw_divide(TgRegs* r, uint16_t d) {
+  dp_set(r, 0x00, d);
+  uint16_t a = 0;
+  for(int o = 0x12; o >= 0x06; o -= 2) {
+    uint16_t n = dp(r, (uint8_t) o);
+    bool c;
+    for(int i = 0; i < 16; i++) {
+      c = (n & 0x8000) != 0;
+      a = (uint16_t) (a << 1 | c);
+      bool q = a >= d;
+      if(q) {
+        uint16_t res = (uint16_t) (a - d);
+        g_pw_v = ((a ^ d) & (a ^ res) & 0x8000) != 0;
+        a = res;
+      }
+      n = (uint16_t) (n << 1 | q);
+    }
+    dp_set(r, (uint8_t) o, n);
+  }
+  r->x = 0;
+  return a;
+}
+
+// LSR $14 (or $12) then ROR down to $06: the number one bit right.
+static void pw_shift(TgRegs* r, uint8_t top) {
+  bool c = false;
+  for(int o = top; o >= 0x06; o -= 2) {
+    uint16_t v = dp(r, (uint8_t) o);
+    dp_set(r, (uint8_t) o, (uint16_t) (v >> 1 | (c ? 0x8000 : 0)));
+    c = v & 1;
+  }
+}
+
+
+void Tg2PasswordRead(TgRegs* r) {
+  g_pw_v = r->v;
+  dp_set(r, 0x00, 0x0016);
+  dp_set(r, 0x02, 0);
+  dp_set(r, 0x14, 0);
+  uint16_t y = 0;
+  do {
+    uint8_t ch = g_ram[0x1780 + y];
+    uint16_t x = 0;
+    while(rd8(0x9FD7D9 + x) != ch) {
+      if(++x == 0x20) {  // not a password letter
+        r->a = ch;
+        r->x = x;
+        r->y = y;
+        r->n = false;
+        r->z = true;
+        r->c = true;
+        r->v = g_pw_v;
+        return;
+      }
+    }
+    uint16_t p = dp(r, 0x02), res = (uint16_t) (x - p);
+    g_pw_v = ((x ^ p) & (x ^ res) & 0x8000) != 0;
+    dp_set(r, 0x14, (uint16_t) (((res ^ rd(0x9FD7F9 + y)) & 0x001F) | dp(r, 0x14)));
+    dp_set(r, 0x02, x);
+    for(int i = 0; i < 5; i++) pw_shift(r, 0x14);
+    y++;
+    dp_set(r, 0x00, (uint16_t) (dp(r, 0x00) - 1));
+  } while(dp(r, 0x00) != 0);
+  for(int i = 0; i < 2; i++) pw_shift(r, 0x12);
+  dp_set(r, 0x02, pw_divide(r, 0x006D));
+  ram16_set(0x17D1, pw_divide(r, 0x0002));
+  uint16_t a = pw_divide(r, 0x0041);
+  ram16_set(0x1797, 0);
+  ram16_set(0x1799, a >> 2);
+  static const struct { uint16_t d, adr; bool level; } kFields[] = {
+    { 0x0003, 0x179B, false }, { 0x0500, 0x179D, false }, { 0x000A, 0x17A1, true },
+    { 0x0002, 0x17A3, false }, { 0x0008, 0x17A5, false }, { 0x0005, 0x17A7, false },
+    { 0x0005, 0x17A9, false }, { 0x0005, 0x17AB, false }, { 0x0004, 0x17AD, false },
+    { 0x0004, 0x17AF, false }, { 0x0004, 0x17B1, false }, { 0x0004, 0x17CD, false },
+    { 0x0004, 0x179F, false }, { 0x0004, 0x17B3, false }, { 0x0500, 0x17B5, false },
+    { 0x000A, 0x17B9, true }, { 0x0002, 0x17BB, false }, { 0x0008, 0x17BD, false },
+    { 0x0005, 0x17BF, false }, { 0x0005, 0x17C1, false }, { 0x0005, 0x17C3, false },
+    { 0x0004, 0x17C5, false }, { 0x0004, 0x17C7, false }, { 0x0004, 0x17C9, false },
+    { 0x0004, 0x17CF, false }, { 0x0004, 0x17B7, false }, { 0x0004, 0x17CB, false },
+  };
+  for(size_t i = 0; i < sizeof kFields / sizeof kFields[0]; i++) {
+    uint16_t v = pw_divide(r, kFields[i].d);
+    if(kFields[i].level && v >= 5) {
+      uint16_t res = (uint16_t) (v - 5);
+      g_pw_v = ((v ^ 5) & (v ^ res) & 0x8000) != 0;
+      v = (uint16_t) (res | 0x8000);
+    }
+    ram16_set(kFields[i].adr, v);
+  }
+  // The check number.
+  uint16_t sum = 0;
+  for(uint16_t x = 0; x != 0x3C; x += 2) {
+    uint16_t b = ram16((uint16_t) (0x1797 + x));
+    uint16_t t = (uint16_t) (sum + b);
+    g_pw_v = (~(sum ^ b) & (sum ^ t) & 0x8000) != 0;
+    sum = t;
+  }
+  tg_bus_write16(0x4204, sum);
+  tg_bus_write8(0x4206, 0x6D);
+  uint16_t rem = (uint16_t) (sum % 0x6D);
+  r->x = 0x003C;
+  r->y = y;
+  r->v = g_pw_v;
+  cmp16(r, rem, dp(r, 0x02));
+  r->a = rem;
+  if(rem != dp(r, 0x02)) {
+    r->c = true;
+    return;
+  }
+  uint16_t country = ram16(0x1799);
+  r->a = country;
+  if(ram16(0x01E3) & 0x8000) {  // from practice
+    cmp16(r, country, ram16(0x1CE1));
+    if(country < ram16(0x1CE1)) {
+      r->c = true;
+      return;
+    }
+    ram16_set(0x1CE3, country);
+  } else {
+    ram16_set(0x1CE1, country);
+    if(country >= ram16(0x1CE3)) ram16_set(0x1CE3, country);
+  }
+  static const uint16_t kCopy[][2] = {
+    { 0x17D1, 0x1CDB }, { 0x179B, 0x1CDD }, { 0x179D, 0x1D42 }, { 0x179F, 0x1D40 },
+    { 0x17A1, 0x1D2A }, { 0x17A3, 0x1D28 }, { 0x17A5, 0x1D3E }, { 0x17A7, 0x1D3C },
+    { 0x17A9, 0x1D3A }, { 0x17AB, 0x1D38 }, { 0x17AD, 0x1D36 }, { 0x17AF, 0x1D34 },
+    { 0x17B1, 0x1D32 }, { 0x179F, 0x1D2E }, { 0x17CD, 0x1D30 }, { 0x17B3, 0x1D2C },
+    { 0x17B5, 0x1D19 }, { 0x17B7, 0x1D17 }, { 0x17B9, 0x1D01 }, { 0x17BB, 0x1CFF },
+    { 0x17BD, 0x1D15 }, { 0x17BF, 0x1D13 }, { 0x17C1, 0x1D11 }, { 0x17C3, 0x1D0F },
+    { 0x17C5, 0x1D0D }, { 0x17C7, 0x1D0B }, { 0x17C9, 0x1D09 }, { 0x17B7, 0x1D05 },
+    { 0x17CF, 0x1D07 }, { 0x17CB, 0x1D03 },
+  };
+  for(size_t i = 0; i < sizeof kCopy / sizeof kCopy[0]; i++) ram16_set(kCopy[i][1], ram16(kCopy[i][0]));
+  ram16_set(0x1CE5, 0);
+  r->a = ram16(0x17CB);
+  flags_nz16(r, r->a);
+  r->c = false;
+}

@@ -34,6 +34,7 @@ void Tg2UnpackSend(TgRegs* r);
 void Tg2UnpackSend2(TgRegs* r);
 void Tg2SetFadeIn(TgRegs* r);
 void Tg2ShopDraw(TgRegs* r);
+void Tg2PasswordRead(TgRegs* r);
 void Tg2RaceInfoScreen(TgRegs* r);
 static void title(TgRegs* r);
 static void opening(TgRegs* r);
@@ -1157,7 +1158,8 @@ static void pw_letters(TgRegs* r) {
 // screen says so ($D027) until a button (back to the letters) or START (the title).
 static int pw_enter(TgRegs* r) {
   for(uint16_t i = 0; i < 0x16; i++) g_ram[0x1780 + i] = g_ram[0x17D7 + i * 6];
-  call(r, 0xD4B3, 0xCFD7);
+  regs(r);
+  Tg2PasswordRead(r);
   if(!r->c) {
     if(w(0x01E3) & 0x8000) {  // from practice: that country's first race
       uint16_t c = w(0x1CE1);

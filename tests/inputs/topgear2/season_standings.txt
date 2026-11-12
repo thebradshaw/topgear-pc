@@ -1,0 +1,25 @@
+# Top Gear 2: first_race, then the finishing order poked so player 1 won and the season set
+# at the country's last race: the results, the season's standings (scrolled on) and the
+# country's password. Pokes are timed for --port verify.
+300 1 DOWN
+320 1 -
+400 1 DOWN
+420 1 -
+500 1 START
+520 1 -
+700 1 START
+720 1 -
+1100 1 START
+1120 1 -
+1300 1 START
+1320 1 -
+1500 1 X
+14300 poke FE9E 00
+14300 poke FEC4 12
+14300 poke FE0E 03
+14800 1 START
+14810 1 -
+15200 1 START
+15210 1 -
+15600 1 START
+15610 1 -
