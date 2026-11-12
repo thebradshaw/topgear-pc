@@ -1928,3 +1928,134 @@ static void country_password(TgRegs* r) {
   } while(!take(0xF0C0));
   scroll_out();
 }
+
+// ---- The shop's way in and out (bank $1F, script handlers) ----
+
+// $9185: asks the NMI ($93 bit 0) for a step of the second player's view, and waits until
+// it says done (bit 1).
+static void sync93(TgRegs* r) {
+  dp_set_d(r, 0x93, dp_d(r, 0x93) | 0x0001);
+  while(!(dp_d(r, 0x93) & 0x0002)) tg_port_wait();
+  dp_set_d(r, 0x93, dp_d(r, 0x93) & (uint16_t) ~0x0002);
+  r->a = 0x0002;
+  r->z = false;
+}
+
+// The view scrolls out ($2C/$2E), in two steps each followed by $9185.
+static void view_out(TgRegs* r, bool picture) {
+  dp_set_d(r, 0x2E, 0x0300);
+  dp_set_d(r, 0x2C, 0xFF80);
+  while(dp_d(r, 0x2C) != 0) tg_port_wait();
+  sync93(r);
+  dp_set_d(r, 0x2E, 0);
+  dp_set_d(r, 0x2C, 0xFF80);
+  while(dp_d(r, 0x2C) != 0) tg_port_wait();
+  if(picture) dp_set_d(r, 0x30, 0x8000);
+  sync93(r);
+}
+
+// $AC2F: a handler that does nothing.
+void Tg2NoAction(TgRegs* r) {
+  r->c = false;
+}
+
+// $A567: out of the shop once its fade-in ($9F) is over.
+void Tg2ShopLeave(TgRegs* r) {
+  uint16_t t = dp_d(r, 0x9F);
+  if(t != 0) {
+    r->a = t;
+    flags_nz16(r, t);
+    r->c = false;
+    return;
+  }
+  Tg2SetFadeIn(r);
+  wait1(r);
+  view_out(r, false);
+  r->a = 0x8000;
+  flags_nz16(r, r->a);
+  r->c = true;
+}
+
+// $AE3F: the shop done: as $A567, then the new parts ($1D03 + $A3, ten) are no longer new.
+void Tg2ShopDone(TgRegs* r) {
+  uint16_t t = dp_d(r, 0x9F);
+  if(t != 0) {
+    r->a = t;
+    flags_nz16(r, t);
+    r->c = false;
+    return;
+  }
+  Tg2SetFadeIn(r);
+  wait1(r);
+  ws(0x0022, w(0x0022) | 0x0004);
+  view_out(r, true);
+  uint16_t x = dp_d(r, 0xA3);
+  for(int n = 0; n < 10; n++, x += 2) ws(0x1D03 + x, w(0x1D03 + x) & 0x7FFF);
+  r->x = x;
+  r->y = 0;
+  r->a = 0xFFFF;
+  flags_nz16(r, r->a);
+  r->c = true;
+}
+
+// $A629: into the shop: its palettes, pictures and the car's paint, the windows set up,
+// then the item drawn; the view scrolls in (or, with one player and the second view to be
+// closed, the closing steps run first).
+void Tg2ShopScreen(TgRegs* r) {
+  dp_set_d(r, 0x30, 0x8000);
+  wait1(r);
+  dp_set_d(r, 0x7A, 0);
+  dp_set_d(r, 0xBB, 0);
+  dp_set_d(r, 0xBD, 0x0002);
+  dp_set_d(r, 0x8F, 0);
+  dp_set_d(r, 0x8D, 0);
+  dp_set_d(r, 0xA5, 0);
+  dp_set_d(r, 0xA7, 0);
+  dp_set_d(r, 0x4C, 0x0002);
+  wait1(r);
+  uint16_t p = dp_d(r, 0x70);
+  move_bytes(0x9E, 0x8020, 0x00, (uint16_t) (p + 0x0040), 0x0020);
+  move_bytes(0x9E, 0xEBEB, 0x00, (uint16_t) (p + 0x0060), 0x0060);
+  move_bytes(0x9E, 0xEC8B, 0x00, (uint16_t) (p + 0x0100), 0x0020);
+  move_bytes(0x9E, 0xEC4B, 0x00, (uint16_t) (p + 0x0120), 0x0020);
+  move_bytes(0x9E, 0xEC6B, 0x00, (uint16_t) (p + 0x01A0), 0x0020);
+  move_bytes(0x9E, 0xECAB, 0x00, (uint16_t) (p + 0x0140), 0x0060);
+  unpack_send_at(r, dp_d(r, 0x62), 0x009E, 0xEDC0);
+  unpack_send_at(r, dp_d(r, 0x6A), 0x009C, 0x85E9);
+  unpack_send_at(r, (uint16_t) (dp_d(r, 0x6A) + 0x1800), 0x009C, 0x98C9);
+  uint16_t c = dp_d(r, 0x6C);
+  unpack_7f(r, (uint16_t) (rom9f((uint16_t) (0xA202 + c)) | 0x7F00), rom9f((uint16_t) (0xA200 + c)), dp_d(r, 0x60));
+  unpack_7f(r, 0x7F9E, 0xEA8F, (uint16_t) (dp_d(r, 0x60) + 0x0380));
+  unpack_7f(r, 0x7F9E, 0xD129, (uint16_t) (dp_d(r, 0x60) + 0x0780));
+  wait1(r);
+  dp_set_d(r, 0x00, 0x01C0);
+  r->y = (uint16_t) (dp_d(r, 0x62) + 0x3720);
+  r->x = (uint16_t) (dp_d(r, 0x60) + 0x5780);
+  r->a = 0x007F;
+  Tg2VramDma(r);
+  dp_set_d(r, 0x4C, 0x0011);
+  dp_set_d(r, 0x00, (uint16_t) ((dp_d(r, 0x62) & 0xFC00) >> 8));
+  dp_set_d(r, 0x43, (uint16_t) ((dp_d(r, 0x64) & 0xFC00) | dp_d(r, 0x00)));
+  uint16_t a = (uint16_t) ((dp_d(r, 0x6A) >> 8) & 0x00F0);
+  dp_set_d(r, 0x47, a);
+  dp_set_d(r, 0x47, (uint16_t) ((a >> 4) | a));
+  g_ram[(uint16_t) (r->d + 0x42)] = (uint8_t) (((g_ram[(uint16_t) (r->d + 0x63)] & 0xE0) >> 5) | 0x30);
+  shop_draw(r, 0xA76D);
+  while(dp_d(r, 0x7A) != 0) tg_port_wait();
+  wait1(r);
+  if((dp_d(r, 0x93) & 0x4000) && w(0x1CDB) == 0) {
+    sync93(r);
+    sync93(r);
+    r->a = 0x8000;
+    flags_nz16(r, r->a);
+    r->c = true;
+    return;
+  }
+  dp_set_d(r, 0x30, 0);
+  dp_set_d(r, 0x2E, 0x0F00);
+  dp_set_d(r, 0x2C, 0x0040);
+  dp_set_d(r, 0x9F, 0x003C);
+  r->a = 0x003C;
+  flags_nz16(r, r->a);
+  r->c = false;
+}
