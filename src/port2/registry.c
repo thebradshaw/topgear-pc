@@ -18,6 +18,15 @@ void Tg2RaceLoop1P(TgRegs* r);
 void Tg2Decompress(TgRegs* r);
 void Tg2Unpack(TgRegs* r);
 void Tg2DrawBigString(TgRegs* r);
+void Tg2PackSprites(TgRegs* r);
+void Tg2PixelsToTiles(TgRegs* r);
+void Tg2FrontEndInit(TgRegs* r);
+void Tg2ResetPpu(TgRegs* r);
+void Tg2SetScreenRegs(TgRegs* r);
+void Tg2QueueFadeRow(TgRegs* r);
+void Tg2CopyMapBlock(TgRegs* r);
+void Tg2PackSpritesSwap(TgRegs* r);
+void Tg2PackSpritesKeep(TgRegs* r);
 void Tg2DrawSmallString(TgRegs* r);
 void Tg2SetPpu(TgRegs* r);
 void Tg2LoadTrack(TgRegs* r);
@@ -174,9 +183,18 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x0EB0BF, "WindowsRoadBoth", Tg2WindowsRoadBoth, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0EB250, "WindowsBand", Tg2WindowsBand, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9167, "VramDma", Tg2VramDma, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F97A9, "QueueFadeRow", Tg2QueueFadeRow, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F98C5, "PackSprites", Tg2PackSprites, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F98DA, "PackSpritesSwap", Tg2PackSpritesSwap, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F98F6, "PackSpritesKeep", Tg2PackSpritesKeep, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F9CA4, "FrontEndInit", Tg2FrontEndInit, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F9D7B, "ResetPpu", Tg2ResetPpu, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9EDE, "ClearVram", Tg2ClearVram, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F9F13, "CopyMapBlock", Tg2CopyMapBlock, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F9F74, "SetScreenRegs", Tg2SetScreenRegs, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x1FA117, "SetFadeIn", Tg2SetFadeIn, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA13D, "FillWords", Tg2FillWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FB744, "PixelsToTiles", Tg2PixelsToTiles, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FBF14, "Unpack", Tg2Unpack, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x1FDBDC, "DrawBigString", Tg2DrawBigString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x1FDD7A, "DrawSmallString", Tg2DrawSmallString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },

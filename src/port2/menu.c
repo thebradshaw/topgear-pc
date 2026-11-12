@@ -323,3 +323,305 @@ static void draw_string(TgRegs* r, bool big) {
 
 void Tg2DrawBigString(TgRegs* r) { draw_string(r, true); }
 void Tg2DrawSmallString(TgRegs* r) { draw_string(r, false); }
+
+// ---- $1F:990E / $98CF: the sprite table's high part ----
+//
+// Packs each of the 128 sprites' two high bits (bit 7 of its byte 1: the X position's
+// ninth bit; bit 0 of its byte 2: the size) four to a byte into the high part at x + $200,
+// shifting those bytes as the original's asl/lsr do. The sprites' bytes start at d. Then,
+// if fewer sprites were drawn this time ($AF) than last time ($B9), the left-over ones are
+// moved off screen ($E0E0). Leaves A, X, Y and the flags as the original does.
+static void sub_flags(TgRegs* r, uint16_t a, uint16_t b) {
+  uint32_t t = (uint32_t) a + (uint16_t) ~b + 1;
+  uint16_t v = (uint16_t) t;
+  r->c = t > 0xFFFF;
+  r->v = ((a ^ b) & (a ^ v) & 0x8000) != 0;
+  r->n = (v & 0x8000) != 0;
+  r->z = v == 0;
+}
+
+static void pack_high(TgRegs* r, uint16_t d, uint16_t x) {
+  uint32_t db = (uint32_t) r->db << 16;
+  for(int half = 0; half < 2; half++, d = (uint16_t) (d + 0x100)) {
+    for(int j = 0; j < 16; j++) {
+      uint8_t a = 0;
+      for(int k = 0; k < 4; k++) {
+        uint16_t p = (uint16_t) (d + 16 * j + 4 * k);
+        uint8_t hi = g_ram[(uint16_t) (p + 1)];
+        uint8_t sz = g_ram[(uint16_t) (p + 2)];
+        g_ram[(uint16_t) (p + 1)] = (uint8_t) (hi << 1);
+        g_ram[(uint16_t) (p + 2)] = (uint8_t) (sz >> 1);
+        a = (uint8_t) ((a >> 1) | (hi & 0x80));
+        a = (uint8_t) ((a >> 1) | ((sz & 1) << 7));
+      }
+      wr8(db | (uint16_t) (0x0200 + x + 16 * half + j), a);
+    }
+  }
+  uint16_t af = dp(r, 0xAF), b9 = dp(r, 0xB9);
+  sub_flags(r, af, b9);
+  uint16_t diff = (uint16_t) (af - b9);
+  r->a = diff;
+  r->x = x;
+  if(r->c) return;
+  uint16_t n = (uint16_t) ((uint16_t) (~diff + 1));
+  r->c = (n >> 1) & 1;  // the second lsr's carry
+  n >>= 2;
+  uint16_t i = af;
+  do {
+    wr(db | (uint16_t) (0x0500 + i), 0xE0E0);
+    i = (uint16_t) (i + 4);
+    n--;
+  } while(n != 0);
+  r->a = 0xE0E0;
+  r->x = i;
+  r->y = 0;
+  r->n = false;
+  r->z = true;
+}
+
+// $98C5: the high part for the table at $0500 (sprites' bytes at $0300), then $AF moves to
+// $B9 and starts again at 0.
+void Tg2PackSprites(TgRegs* r) {
+  pack_high(r, 0x0300, 0x0500);
+  uint16_t af = dp(r, 0xAF);
+  r->a = af;
+  dp_set(r, 0xB9, af);
+  dp_set(r, 0xAF, 0);
+  r->n = (af & 0x8000) != 0;
+  r->z = af == 0;
+}
+
+// $98DA / $98F6: the same for the double-buffered tables ($B3 / $B5): pack the one at $B5,
+// then swap them and start the next at $B3 - $500. $98F6 keeps A in $82.
+static void pack_swap(TgRegs* r) {
+  pack_high(r, (uint16_t) (dp(r, 0xB5) - 0x0200), dp(r, 0xB5));
+  dp_set(r, 0xB9, dp(r, 0xB7));
+  dp_set(r, 0xB7, dp(r, 0xAF));
+  uint16_t b3 = dp(r, 0xB3);
+  sub_flags(r, b3, 0x0500);
+  dp_set(r, 0xAF, (uint16_t) (b3 - 0x0500));
+}
+
+void Tg2PackSpritesSwap(TgRegs* r) {
+  pack_swap(r);
+  uint16_t b5 = dp(r, 0xB5), b3 = dp(r, 0xB3);
+  r->x = b5;
+  r->a = b3;
+  dp_set(r, 0xB5, b3);
+  dp_set(r, 0xB3, b5);
+  r->n = (b3 & 0x8000) != 0;
+  r->z = b3 == 0;
+}
+
+void Tg2PackSpritesKeep(TgRegs* r) {
+  uint16_t a = r->a;
+  pack_swap(r);
+  r->a = a;
+  dp_set(r, 0x82, a);
+  r->n = (a & 0x8000) != 0;
+  r->z = a == 0;
+}
+
+// ---- $1F:97A9: a palette row queued for a fade ----
+//
+// Splits the 15 colours at bank (A's low byte):X into their red, green and blue parts
+// (each scaled to bits 5-9) in the three fade lists at $1797 / $1957 / $1B17 from entry
+// $99. Each row starts with a header: A's top bit, $0400 if it is set, and Y (the row's
+// CGRAM place). Counts the row in $97 and asks for $20 steps ($95).
+void Tg2QueueFadeRow(TgRegs* r) {
+  uint32_t db = (uint32_t) (uint8_t) r->a << 16;
+  uint16_t y = dp(r, 0x99);
+  uint16_t top = r->a & 0x8000;
+  ram16_set((uint16_t) (0x1797 + y), top);
+  ram16_set((uint16_t) (0x1B17 + y), top ? 0x0400 : 0x0000);
+  ram16_set((uint16_t) (0x1957 + y), r->y);
+  y = (uint16_t) (y + 2);
+  uint16_t x = r->x;
+  dp_set(r, 0x02, 0x000F);
+  do {
+    uint16_t c = rd(db | x);
+    dp_set(r, 0x00, c);
+    ram16_set((uint16_t) (0x1797 + y), (uint16_t) ((c & 0x001F) << 5));
+    ram16_set((uint16_t) (0x1957 + y), c & 0x03E0);
+    ram16_set((uint16_t) (0x1B17 + y), (uint16_t) ((c & 0x7C00) >> 5));
+    x = (uint16_t) (x + 2);
+    y = (uint16_t) (y + 2);
+    dp_set(r, 0x02, (uint16_t) (dp(r, 0x02) - 1));
+  } while(dp(r, 0x02) != 0);
+  dp_set(r, 0x99, y);
+  dp_set(r, 0x97, (uint16_t) (dp(r, 0x97) + 1));
+  dp_set(r, 0x95, 0x0020);
+  r->a = 0x0020;
+  r->x = x;
+  r->y = y;
+  r->c = false;
+  r->n = (r->db & 0x80) != 0;
+  r->z = r->db == 0;
+}
+
+// ---- $1F:9F13: a block of tile map words ----
+//
+// Copies $06 rows of $04 words from bank $0D:$00 to $7E:$02 (or $7F when the destination
+// skip $0A isn't 0), adding $0E to each; after each row the source skips $08 bytes and the
+// destination $0A.
+void Tg2CopyMapBlock(TgRegs* r) {
+  uint32_t db = (uint32_t) g_ram[(uint16_t) (r->d + 0x0D)] << 16;
+  uint32_t out = dp(r, 0x0A) != 0 ? 0x7F0000 : 0x7E0000;
+  uint16_t x = dp(r, 0x02), y = dp(r, 0x00);
+  bool c = false, v = false;
+  do {
+    dp_set(r, 0x10, dp(r, 0x04));
+    do {
+      wr(out | x, (uint16_t) (rd(db | y) + dp(r, 0x0E)));
+      x = (uint16_t) (x + 2);
+      y = (uint16_t) (y + 2);
+      dp_set(r, 0x10, (uint16_t) (dp(r, 0x10) - 1));
+    } while(dp(r, 0x10) != 0);
+    y = (uint16_t) (y + dp(r, 0x08));
+    uint16_t k = dp(r, 0x0A);
+    uint32_t t = (uint32_t) x + k;
+    v = (~(x ^ k) & (x ^ (uint16_t) t) & 0x8000) != 0;
+    x = (uint16_t) t;
+    c = t > 0xFFFF;
+    dp_set(r, 0x06, (uint16_t) (dp(r, 0x06) - 1));
+  } while(dp(r, 0x06) != 0);
+  r->a = x;
+  r->x = x;
+  r->y = y;
+  r->c = c;
+  r->v = v;
+  r->n = (r->db & 0x80) != 0;
+  r->z = r->db == 0;
+}
+
+// ---- $1F:9F74: a screen's PPU set-up ----
+//
+// Writes the $44 bytes at bank (A's low byte):X to the PPU and CPU registers below, in
+// this order (the scroll and mode 7 ones twice, as their write-twice latches want).
+static const uint16_t kScreenRegs[0x44] = {
+  0x2100, 0x2101, 0x2102, 0x2103, 0x2105, 0x2106, 0x2107, 0x2108, 0x2109, 0x210A, 0x210B,
+  0x210C, 0x210D, 0x210D, 0x210E, 0x210E, 0x210F, 0x210F, 0x2110, 0x2110, 0x2111, 0x2111,
+  0x2112, 0x2112, 0x2113, 0x2113, 0x2114, 0x2114, 0x2115, 0x2116, 0x2117, 0x211A, 0x211B,
+  0x211B, 0x211C, 0x211C, 0x211D, 0x211D, 0x211E, 0x211E, 0x211F, 0x211F, 0x2120, 0x2120,
+  0x2121, 0x2123, 0x2124, 0x2125, 0x2126, 0x2127, 0x2128, 0x2129, 0x212A, 0x212B, 0x212C,
+  0x212D, 0x212E, 0x212F, 0x2130, 0x2131, 0x2132, 0x2133, 0x4200, 0x4207, 0x4208, 0x4209,
+  0x420A, 0x420D,
+};
+
+void Tg2SetScreenRegs(TgRegs* r) {
+  uint32_t db = (uint32_t) (uint8_t) r->a << 16;
+  uint8_t v = 0;
+  for(int i = 0; i < 0x44; i++) {
+    v = rd8(db | (uint16_t) (r->x + i));
+    wr8(db | kScreenRegs[i], v);
+  }
+  r->a = (uint16_t) ((r->a & 0xFF00) | v);
+  r->n = (r->db & 0x80) != 0;
+  r->z = r->db == 0;
+}
+
+// ---- $1F:9D7B: the PPU's power-on set-up ----
+// Every register $9F74 sets, plus $213E/$213F, to fixed values (screen off, mode 1).
+static const uint8_t kPpuDefaults[0x46] = {
+  0x8F, 0x62, 0x00, 0x00, 0x41, 0x00, 0x0C, 0x13, 0x13, 0x00, 0x50, 0x05, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0xE0, 0x00, 0x00, 0x00, 0x00, 0x84, 0x00, 0x01, 0x00, 0x01,
+};
+
+void Tg2ResetPpu(TgRegs* r) {
+  uint32_t db = (uint32_t) r->db << 16;
+  int k = 0;
+  for(int i = 0; i < 0x44; i++) {
+    wr8(db | kScreenRegs[i], kPpuDefaults[k++]);
+    if(kScreenRegs[i] == 0x2133) {
+      wr8(db | 0x213E, kPpuDefaults[k++]);
+      wr8(db | 0x213F, kPpuDefaults[k++]);
+    }
+  }
+  r->a = (uint16_t) ((r->a & 0xFF00) | 0x01);
+  r->n = false;
+  r->z = false;
+}
+
+// ---- $1F:9CA4: the front end's variables ----
+// Clears $0000-$1CD6 and fills $2000-$FDFF with $FFFF, sets the fades' defaults, points
+// the NMI and IRQ vectors in low RAM at $9F:9194 / $9F:92B7, and notes a PAL machine
+// ($0027 = $FFFF).
+void Tg2FillWords(TgRegs* r);
+
+void Tg2FrontEndInit(TgRegs* r) {
+  r->a = 0x0000;
+  r->x = 0x0000;
+  r->y = 0x1CD7;
+  Tg2FillWords(r);
+  r->a = 0xFFFF;
+  r->x = 0x2000;
+  r->y = 0xDE00;
+  Tg2FillWords(r);
+  ram16_set(0x0130, 0x8F00);
+  ram16_set(0x012C, 0);
+  ram16_set(0x012E, 0x8F00);
+  g_ram[0x0000] = 0x5C;
+  g_ram[0x0004] = 0x5C;
+  g_ram[0x0003] = 0x9F;
+  g_ram[0x0007] = 0x9F;
+  ram16_set(0x0001, 0x9194);
+  ram16_set(0x0005, 0x92B7);
+  ram16_set(0x0010, 0x9274);
+  ram16_set(0x012C, 0);
+  ram16_set(0x012E, 0);
+  ram16_set(0x0130, 0x8000);
+  uint16_t a = tg_read16(0x00213F) & 0x0010;
+  if(a) a = 0xFFFF;
+  ram16_set(0x0027, a);
+  ram16_set(0x01BF, 0);
+  r->a = a;
+  r->n = (a & 0x8000) != 0;
+  r->z = a == 0;
+}
+
+// ---- $1F:B744: packed pixels to 4-bit tiles ----
+//
+// Turns Y bytes of two-pixels-a-byte art at bank (A's low byte):X into 4-bitplane tiles
+// and sends them to VRAM from word address $00, one 32-byte tile at a time through a
+// buffer at $0100 (the direct page's $00-$1F).
+void Tg2PixelsToTiles(TgRegs* r) {
+  uint32_t db = (uint32_t) (uint8_t) r->a << 16;
+  uint16_t d = r->d;
+  tg_bus_write16(0x002116, dp(r, 0x00));
+  dp_set(r, 0x22, r->y);
+  uint16_t y = r->x;
+  do {
+    for(uint16_t x = 0; x < 0x10; x = (uint16_t) (x + 2)) {
+      uint8_t* p0 = &g_ram[(uint16_t) (d + x)];
+      uint8_t* p1 = &g_ram[(uint16_t) (d + x + 1)];
+      uint8_t* p2 = &g_ram[(uint16_t) (d + x + 0x10)];
+      uint8_t* p3 = &g_ram[(uint16_t) (d + x + 0x11)];
+      for(int i = 0; i < 4; i++) {
+        uint8_t a = rd8(db | (uint16_t) (y + i));
+        for(int px = 0; px < 2; px++, a = (uint8_t) (a << 4)) {
+          *p3 = (uint8_t) (*p3 << 1 | (a >> 7 & 1));
+          *p2 = (uint8_t) (*p2 << 1 | (a >> 6 & 1));
+          *p1 = (uint8_t) (*p1 << 1 | (a >> 5 & 1));
+          *p0 = (uint8_t) (*p0 << 1 | (a >> 4 & 1));
+        }
+      }
+      y = (uint16_t) (y + 4);
+    }
+    tg_bus_write16(0x004302, 0x0100);
+    tg_bus_write16(0x004300, 0x1801);
+    tg_bus_write16(0x004305, 0x0020);
+    tg_bus_write8(0x004304, 0x00);
+    tg_bus_write8(0x00420B, 0x01);
+    dp_set(r, 0x22, (uint16_t) (dp(r, 0x22) - 0x20));
+  } while(dp(r, 0x22) != 0);
+  r->a = 0;
+  r->x = 0x0010;
+  r->y = y;
+  r->c = true;
+  r->v = false;
+  r->n = (r->db & 0x80) != 0;
+  r->z = r->db == 0;
+}
