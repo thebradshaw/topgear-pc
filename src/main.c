@@ -361,7 +361,7 @@ static void updateTitle(void) {
            app.smooth && app.smoothOk ? ", smooth motion" : "",
            app.fullView && !app.plain ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
   if(app.wide && app.wideOk) SDL_strlcat(title, ", widescreen", sizeof(title));
-  if(app.sideBySide && !app.plain) SDL_strlcat(title, ", side by side", sizeof(title));
+  if(app.sideBySide && app.smoothOk) SDL_strlcat(title, ", side by side", sizeof(title));
   if(app.ghost && app.smoothOk) SDL_strlcat(title, ", ghost car", sizeof(title));
   if(app.autoSave && app.smoothOk) SDL_strlcat(title, ", auto-save", sizeof(title));
   if(app.highFps && !app.plain) SDL_strlcat(title, ", high frame rate", sizeof(title));
@@ -628,6 +628,7 @@ static void runFrame(int samples) {
   } else if(app.wideOk) {
     if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
     if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
+    if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
   }
   tg2_autosave = app.autoSave && !app.replaying && app.gameId == TG_GAME_TOPGEAR2 && !app.original;
   if(app.record) {

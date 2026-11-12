@@ -332,6 +332,15 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
     }
     if(!full || h > 60) continue;  // a picture (the pits), not part of the HUD
     if(q->x1 - q->x0 >= 200 && h <= 8) { dy[p] = 2 * SCREEN_LINES; continue; }  // the view's border: not shown
+    if(ppu->hudStay) {
+      // Top Gear 2 draws the player's car in the HUD layer, in the middle: it moves down
+      // with the road row under it; the rest of the HUD stays where it is.
+      if(hasBg[p] && cx >= HUD_LEFT && cx < HUD_RIGHT && q->x1 - q->x0 >= 32 && h >= 16) {
+        int bottom = q->y1 - f->off;
+        dy[p] = (int16_t) ((int) floorf(mapRow(f, (float) bottom) + 0.5f) - bottom);
+      }
+      continue;
+    }
     if(cx >= HUD_LEFT && cx < HUD_RIGHT) dy[p] = HUD_MOVE;
     else if(cy >= HUD_SPLIT) dy[p] = HUD_MOVE;
     if(cx < HUD_LEFT && dy[p] == 0 && h >= 16 && (map < 0 || h > part[map].y1 - part[map].y0 + 1)) map = p;

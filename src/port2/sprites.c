@@ -200,7 +200,8 @@ void Tg2DrawSprite(TgRegs* r) {
     zs(0x34, (uint16_t) -tg_port_wide_margin);
     zs(0x36, (uint16_t) (0x0100 + tg_port_wide_margin));
   }
-  g_ground = (int16_t) z(0x0E);
+  // The screen row the object stands on: $0E is its height above the view's bottom line ($2E).
+  g_ground = (int16_t) (z(0x2E) + 1 - z(0x0E));
   g_flags = (uint8_t) (((int16_t) z(0x0C) < 128 ? PPU_OBJ_LEFT_FLAG : 0) | (tg2_sprite_ghost ? PPU_OBJ_GHOST_FLAG : 0));
   g_mark_on = g_road || (tg_port_ghost && tg2_sprite_road);
   draw_records(y, split);
