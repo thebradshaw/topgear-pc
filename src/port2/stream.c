@@ -793,3 +793,182 @@ static void run(TgRegs* r, bool p2) {
 void Tg2Stream1(TgRegs* r) { run(r, false); }
 // $08:AB9F, player 2.
 void Tg2Stream2(TgRegs* r) { run(r, true); }
+
+// ---- $08:8000 (player 1) and $08:85E5 (player 2): the stream's start ----
+
+// The next object field of a stream run at dp $44: counts down a run of empty records at
+// $48, else reads a field. The road word for the column (0 where none).
+static uint16_t start_cell(int level) {
+  if(z(0x48) != 0) {
+    zdec(0x48);
+    return 0;
+  }
+  uint16_t x = z(0x44);
+  zs(0x44, (uint16_t) (x + 4));
+  uint16_t f = field(x, level);
+  if(!(f & 0x0380)) {
+    zs(0x48, f);
+    return 0;
+  }
+  zs(0x4A, f);
+  uint16_t i = (uint16_t) ((f & 0x0380) >> 6);
+  if(bus16(0x88EABBu + i) & z(0x22)) return 0;
+  uint16_t e = bus16(0x89B1EBu + (uint16_t) (i + z(0x46)));
+  if(!neg(e)) {
+    zs(0x4C, e & 0xFF);
+    return (uint16_t) ((ram16(DPB + 0x49) & 0x7F00) | z(0x4C));
+  }
+  if(e & 0x4000) return e;
+  zs(0x4C, e);
+  uint16_t s = z(0x2E);
+  ram16_set((uint16_t) (ad(0x9800) + s), z(0x30));
+  zs(0x2E, (uint16_t) ((s + 2) & 0x01FF));
+  uint16_t a = (uint16_t) ((z(0x4C) & 0x3FFF) + z(0x30));
+  if(a == z(0x00)) a = 0;
+  uint16_t old = z(0x30);
+  zs(0x30, a);
+  ram16_set((uint16_t) (0x6400 + old), (uint16_t) (ram16((uint16_t) (0x6400 + old)) | P(0x40, 0x20)));
+  return old | 0x8000;
+}
+
+// Runs a stream's run counter ($10/$0E, or $0C/$0A) n records on from the stream start for
+// segment seg; returns where it ends.
+static uint16_t run_ahead(uint16_t seg, int n, uint8_t cnt, uint8_t len, int level) {
+  uint16_t x = (uint16_t) (stream_start(seg) - 1);
+  for(int i = 0; i < n; i++) {
+    if(z(cnt) != 0) {
+      zdec(cnt);
+      zinc(len);
+      continue;
+    }
+    zs(len, 0);
+    x = (uint16_t) (x + 4);
+    uint16_t f = field(x, level);
+    if(!(f & 0x0380)) zs(cnt, f);
+  }
+  return x;
+}
+
+static void start(TgRegs* r, bool p2) {
+  set_player(p2);
+  int level = detail();
+  tg_push8(r->db);
+  tg_push16(r->d);
+  zs(0x2A, 0);
+  zs(0x2C, 0);
+  zs(0x2E, 0);
+  zs(0x30, 0);
+  zs(0x3A, 0x0020);
+  zs(0x3C, 0);
+  uint16_t t = (uint16_t) (ram16(0x0108) << 3);
+  ram16_set(0x010A, (uint16_t) (bus16(0x8A8002u + t) << 6));
+  uint16_t seg = bus16(0x8A8000u + t);
+  zs(0x3E, seg);
+  zs(0x24, seg);
+  zs(0x40, bus16(0x8A0000u + seg));
+  zs(0x42, bus16(0x8A0002u + seg));
+  // The first $20 rows.
+  do {
+    zs(0x22, g_ram[0x6200 + (uint16_t) ((uint16_t) (z(0x3E) - z(0x24)) >> 2)]);
+    uint16_t y = (uint16_t) ((0x20 - z(0x3A)) << 4);
+    ring_set(0, y, bus16(0x898000u + (uint16_t) (((z(0x42) & 0x3F00) >> 3) + z(0x3C))));
+    ring_set(2, y, bus16(0x898800u + (uint16_t) (((z(0x42) & 0x00FC) << 3) + z(0x3C))));
+    ring_set(4, y, bus16(0x898C40u + (uint16_t) (((ram16(DPB + 0x41) & 0x03F0) << 1) + z(0x3C))));
+    zs(0x44, (uint16_t) (stream_start(z(0x40)) + 3));
+    zs(0x46, (uint16_t) ((z(0x40) & 0x003F) << 4));
+    zs(0x48, 0);
+    if(z(0x3C) != 0) {
+      zs(0x4A, (uint16_t) (z(0x3C) << 1));
+      do {
+        if(z(0x48) != 0) {
+          zdec(0x48);
+        } else {
+          uint16_t x = z(0x44);
+          zs(0x44, (uint16_t) (x + 4));
+          uint16_t f = field(x, level);
+          if(!(f & 0x0380)) zs(0x48, f);
+        }
+        zdec(0x4A);
+      } while(z(0x4A) != 0);
+    }
+    for(int c = 0; c < 4; c++) ring_set((uint16_t) (6 + 2 * c), y, start_cell(level));
+    ring_set(0x0E, y, 0);
+    zs(0x3C, (uint16_t) ((z(0x3C) + 2) & 0x001E));
+    if(z(0x3C) == 0) {
+      zs(0x3E, (uint16_t) (z(0x3E) + 4));
+      zs(0x40, bus16(0x8A0000u + z(0x3E)));
+      zs(0x42, bus16(0x8A0002u + z(0x3E)));
+    }
+    zdec(0x3A);
+  } while(z(0x3A) != 0);
+
+  zs(0x24, g_ram[0x6200]);
+  for(uint16_t a = 0x0216; a <= 0x0220; a = (uint16_t) (a + 2)) ws(a, 0);
+  ws(0x0226, 0x0080);
+  ws(0x020C, 0);
+  ws(0x020E, 0x0020);
+  zs(0x04, 0);
+  zs(0x02, 0x007C);
+  zs(0x3A, bus16(0x8A8000u + t));
+  zs(0x3C, bus16(0x8A0000u + z(0x3A)));
+  zs(0x10, 0);
+  zs(0x08, run_ahead(z(0x3C), 4, 0x10, 0x0E, level));
+  zs(0x3E, 0);  // its loop counter
+  zs(0x3C, bus16(0x8A0004u + z(0x3A)));
+  zs(0x0C, 0);
+  zs(0x06, run_ahead(z(0x3C), 0x40, 0x0C, 0x0A, level));
+  zs(0x3E, 0);
+  zs(0x5E, 0x0048);
+  zs(0x62, 0x0048);
+
+  // The scenery animations already in view: each one's frames sent to VRAM, and the event
+  // lists' next entries noted ($6A).
+  uint16_t y = 0;
+  if(ram16(DPB + 0x5A) != 0) {
+    while(0x0048 >= ram16((uint16_t) (0x5800 + y))) {
+      uint16_t v = ram16((uint16_t) (0x5802 + y));
+      ram16_set(DPB + 0x3A, v);
+      y = (uint16_t) (y + 4);
+      uint16_t k = v >> 8;
+      if(k == 0) {
+        zs(0x6E, (uint16_t) ((v & 0xFF) << 1));
+        continue;
+      }
+      uint16_t i = (uint16_t) (k << 2);
+      uint32_t bank = (uint32_t) bus8(0x8BDBE5u + i) << 16;
+      uint16_t p = bus16(0x8BDBE3u + i);
+      p = bus16(bank | (uint16_t) (p + 8));
+      uint16_t obj = bus16(bank | (uint16_t) (p + 2));
+      uint16_t a = (uint16_t) ((v & 0xFF) << 1);
+      ram16_set((uint16_t) (P(0x1CF0, 0x1DF8) + obj), a);
+      ram16_set(DPB + 0x3A, (uint16_t) ((a << 4) + P(0x4000, 0x5000)));
+      ram16_set(DPB + 0x3C, ram16((uint16_t) (0x1BF0 + obj)));
+      uint16_t j = (uint16_t) (obj << 3);
+      uint16_t size = (uint16_t) (bus16(0x8BF34Fu + j) - bus16(0x8BF34Du + j));
+      if(size == 0) continue;
+      ram16_set(DPB + 0x3E, size);
+      ram16_set(DPB + 0x3C, (uint16_t) (bus16(0x8BF34Du + j) + ram16(DPB + 0x3C)));
+      tg_bus_write8(0x420B, 0x00);
+      tg_bus_write8(0x4374, 0x7F);
+      tg_bus_write8(0x2115, 0x80);
+      tg_bus_write16(0x2116, ram16(DPB + 0x3A));
+      tg_bus_write16(0x4370, 0x1801);
+      tg_bus_write16(0x4372, ram16(DPB + 0x3C));
+      tg_bus_write16(0x4375, ram16(DPB + 0x3E));
+      tg_bus_write8(0x420B, 0x80);
+    }
+    if(y == 0) y = ram16(DPB + 0x5A);
+    zs(0x6A, (uint16_t) (y - 4));
+  }
+  if(ram16(DPB + 0x5C) != 0) {
+    y = 0;
+    while(0x0048 >= ram16((uint16_t) (0x5D00 + y))) y = (uint16_t) (y + 4);
+    if(y == 0) y = ram16(DPB + 0x5C);
+    zs(0x6A, (uint16_t) (y - 4));
+  }
+  r->d = tg_pull16();
+  r->db = tg_pull8();
+}
+
+void Tg2StreamStart1(TgRegs* r) { start(r, false); }
+void Tg2StreamStart2(TgRegs* r) { start(r, true); }

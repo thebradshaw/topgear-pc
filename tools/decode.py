@@ -12,6 +12,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import disasm  # noqa: E402
 from disasm import OPS, insn_len, rom_off  # noqa: E402
 
 
@@ -66,6 +67,7 @@ def main():
     ap.add_argument("--x8", action="store_true")
     args = ap.parse_args()
     rom = open(args.rom, "rb").read()
+    disasm.ROM_SIZE = len(rom) & ~0x7FFF  # 1 MB for Top Gear 2 and 3000
     bank, pc = parse_addr(args.start)
     end = parse_addr(args.end)[1] if args.end else None
     m8, x8 = args.m8, args.x8

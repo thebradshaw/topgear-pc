@@ -1,0 +1,19 @@
+# Top Gear 2: the first race, paused (Start) during the race and resumed.
+# Checks the pause screen's setup (01:C649/C7CE, C953/CBF8).
+300 1 DOWN
+320 1 -
+400 1 DOWN
+420 1 -
+500 1 START
+520 1 -
+700 1 START
+720 1 -
+1100 1 START
+1120 1 -
+1300 1 START
+1320 1 -
+1500 1 X
+2400 1 X+START
+2410 1 X
+2700 1 X+START
+2710 1 X

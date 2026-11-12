@@ -32,7 +32,7 @@ typedef struct FuncStats {
   uint32_t calls, verified, verifiedInterrupted, verifiedIsolated, interrupted, wrongMode, mismatches, declined;
 } FuncStats;
 
-enum { kMaxHandlerWrites = 1024, kMaxApuReads = 64 };
+enum { kMaxHandlerWrites = 1024, kMaxApuReads = 64, kMaxCounterReads = 1024 };
 
 struct TgLockstep {
   Snes* snes;
@@ -59,7 +59,7 @@ struct TgLockstep {
   IoWrite apuReads[kMaxApuReads];
   // The H/V counters ($213C/$213D) as the original read them: C, running at another time,
   // reads the same (some random numbers mix them in).
-  IoWrite counterReads[kMaxApuReads];
+  IoWrite counterReads[kMaxCounterReads];
   int counterReadCount, counterReadPos;
   int apuReadCount, apuReadPos;
   char* details;   // text of the first mismatches
@@ -67,6 +67,7 @@ struct TgLockstep {
   // Registers poisoned after the last call, and their real values: an interrupt handler
   // saves registers on the stack whether or not they're dead, so it gets the real ones.
   bool poisoned;
+  uint8_t poisonDepth;  // interrupt depth of the poisoned call
   uint32_t poisonInts;
   uint16_t realA, realX, realY, junkA, junkX, junkY;
   uint16_t origMinSp;  // lowest stack pointer while the original ran
@@ -190,7 +191,7 @@ void tg_lockstep_on_read(TgLockstep* ls, uint32_t adr, uint8_t val) {
   if(ls->logTarget != ls->orig || ls->orig == NULL) return;
   if(ls->snes->cpu->intDepth > ls->baseDepth) return;
   if(isCounter(adr)) {
-    if(ls->counterReadCount < kMaxApuReads) ls->counterReads[ls->counterReadCount++] = (IoWrite) { (uint16_t) adr, val };
+    if(ls->counterReadCount < kMaxCounterReads) ls->counterReads[ls->counterReadCount++] = (IoWrite) { (uint16_t) adr, val };
     return;
   }
   if(!isApuPort(adr)) return;
@@ -438,6 +439,7 @@ static void poisonDead(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu) {
   ls->junkA = cpu->a; ls->junkX = cpu->x; ls->junkY = cpu->y;
   ls->poisoned = (f->dead & (TG_DEAD_A | TG_DEAD_X | TG_DEAD_Y)) != 0;
   ls->poisonInts = cpu->interrupts;
+  ls->poisonDepth = cpu->intDepth;
   if(f->dead & TG_DEAD_FLAGS) {
     cpu->n = !cpu->n; cpu->v = !cpu->v; cpu->z = !cpu->z; cpu->c = !cpu->c;
   } else if(f->dead & TG_DEAD_NVZ) {
@@ -521,6 +523,11 @@ static void countIsolated(TgLockstep* ls, const TgPortFunc* f, FuncStats* st, in
 
 bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   if(ls->mode == TG_PORT_OFF || ls->inOriginal || tg_port_in_emulated_call()) return false;
+  if(ls->poisoned && cpu->intDepth < ls->poisonDepth) {
+    // The interrupt handler the call ran in has returned: its caller's registers are back,
+    // and one matching the junk by chance must not be swapped.
+    ls->poisoned = false;
+  }
   if(ls->poisoned && cpu->interrupts != ls->poisonInts) {
     // An interrupt came before the caller replaced the junk: the handler is about to save
     // the registers on the stack, so give it the real values.

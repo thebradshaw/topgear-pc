@@ -145,3 +145,192 @@ void Tg2ClearVram(TgRegs* r) {
   r->n = false;
   r->z = false;
 }
+
+// --- Bank $01's clears and fills, all by DMA channel 7 ---
+
+static void ch7(uint8_t bank, uint16_t mode, uint16_t src, uint16_t len) {
+  tg_bus_write8(0x4374, bank);
+  tg_bus_write16(0x4370, mode);
+  tg_bus_write16(0x4372, src);
+  tg_bus_write16(0x4375, len);
+  tg_bus_write8(0x420B, 0x80);
+}
+
+// The multiplier's product, read by a B-to-A DMA, is the fill pattern.
+static void pattern(uint16_t v) {
+  tg_bus_write8(0x211B, (uint8_t) v);
+  tg_bus_write8(0x211B, (uint8_t) (v >> 8));
+  tg_bus_write8(0x211C, 0x01);
+}
+
+static void leaves(TgRegs* r, uint16_t a) {
+  r->a = a;
+  r->n = true;
+  r->z = false;
+}
+
+// $01:F28F / $01:F2BF. Fills Y bytes at $7E:X (or $7F:X) with the word A.
+static void fill(TgRegs* r, uint8_t bank) {
+  pattern(r->a);
+  tg_bus_write8(0x420B, 0x00);
+  ch7(bank, 0x3481, r->x, r->y);
+  leaves(r, 0x3480);
+}
+void Tg2Fill7E(TgRegs* r) { fill(r, 0x7E); }
+void Tg2Fill7F(TgRegs* r) { fill(r, 0x7F); }
+
+// $01:E794. Clears the $200 bytes of the palette buffer at $D8:$D6 (zero times one).
+void Tg2ClearPaletteBuffer(TgRegs* r) {
+  tg_bus_write8(0x211B, 0x00);
+  tg_bus_write8(0x211B, 0x00);
+  tg_bus_write8(0x211C, 0x00);
+  tg_bus_write8(0x420B, 0x00);
+  ch7(g_ram[(uint16_t) (r->d + 0xD8)], 0x3481, dp16(r, 0xD6), 0x0200);
+  leaves(r, 0x0280);
+}
+
+// $01:E867. Fills the $220 bytes of the sprite buffer at $DE:$DC with $55 (all sprites
+// off screen).
+void Tg2ClearSpriteBuffer(TgRegs* r) {
+  tg_bus_write8(0x211B, 0x55);
+  tg_bus_write8(0x211B, 0x55);
+  tg_bus_write8(0x211C, 0x01);
+  tg_bus_write8(0x420B, 0x00);
+  ch7(g_ram[(uint16_t) (r->d + 0xDE)], 0x3481, dp16(r, 0xDC), 0x0220);
+  leaves(r, 0x0280);
+}
+
+// $01:E7C6. Clears CGRAM (from the zero word at $81:E7F3).
+void Tg2ClearCgram(TgRegs* r) {
+  tg_bus_write8(0x2121, 0x00);
+  tg_bus_write8(0x420B, 0x00);
+  ch7(0x81, 0x220A, 0xE7F3, 0x0200);
+  leaves(r, 0x0280);
+}
+
+// $01:E89F. Clears OAM (from the word at $81:E8CF).
+void Tg2ClearOam(TgRegs* r) {
+  tg_bus_write8(0x420B, 0x00);
+  tg_bus_write8(0x4374, 0x81);
+  tg_bus_write16(0x2102, 0x0000);
+  tg_bus_write16(0x4370, 0x040A);
+  tg_bus_write16(0x4372, 0xE8CF);
+  tg_bus_write16(0x4375, 0x0220);
+  tg_bus_write8(0x420B, 0x80);
+  leaves(r, 0x0280);
+}
+
+// $01:EF05. Clears all of VRAM (from the zero word at $81:EF35).
+void Tg2ClearVram1(TgRegs* r) {
+  tg_bus_write8(0x420B, 0x00);
+  tg_bus_write8(0x4374, 0x81);
+  tg_bus_write16(0x2116, 0x0000);
+  tg_bus_write16(0x4370, 0x1809);
+  tg_bus_write16(0x4372, 0xEF35);
+  tg_bus_write16(0x4375, 0x0000);
+  tg_bus_write8(0x420B, 0x80);
+  leaves(r, 0x0080);
+}
+
+// --- Colours and tiles from the track data ---
+
+static uint8_t long8(const TgRegs* r, uint8_t ptr, uint16_t y) {
+  uint32_t a = (uint32_t) g_ram[(uint16_t) (r->d + ptr + 2)] << 16 | dp16(r, ptr);
+  return tg_bus_read8((a + y) & 0xFFFFFF);
+}
+static void long16_set(const TgRegs* r, uint8_t ptr, uint16_t y, uint16_t v) {
+  uint32_t a = (uint32_t) g_ram[(uint16_t) (r->d + ptr + 2)] << 16 | dp16(r, ptr);
+  tg_bus_write8((a + y) & 0xFFFFFF, (uint8_t) v);
+  tg_bus_write8((a + y + 1) & 0xFFFFFF, (uint8_t) (v >> 8));
+}
+
+// One colour channel: the byte (0-255) times the brightness at `scale` ($20 is full),
+// rounded, less the offset at `bias`, clamped to 0-$1F. *v gets the subtraction's overflow.
+static uint16_t channel(TgRegs* r, uint8_t byte, uint8_t scale, uint8_t bias, bool* v) {
+  tg_bus_write8(0x211B, byte);
+  tg_bus_write8(0x211B, 0x00);
+  uint8_t s = g_ram[(uint16_t) (r->d + scale)];
+  tg_bus_write8(0x211C, s);
+  unsigned sum = (unsigned) (s >> 1) + tg_bus_read8(0x2134) + (s & 1);
+  bool carry = sum > 0xFF;
+  uint16_t a = (uint16_t) (tg_bus_read8(0x2135) | tg_bus_read8(0x2136) << 8);
+  a = (uint16_t) (a + 1);
+  uint16_t m = dp16(r, bias);
+  uint16_t res = (uint16_t) (a - m - !carry);
+  *v = ((a ^ m) & (a ^ res) & 0x8000) != 0;
+  if(res & 0x8000) return 0;
+  return res >= 0x20 ? 0x1F : res;
+}
+
+// $01:DBA1. A colours, three bytes (red, green, blue) each from the long pointer $94, to
+// SNES colours at the long pointer $98, lit by the brightness at $B2-$B6 less $B8-$BC.
+void Tg2Colours(TgRegs* r) {
+  uint16_t count = r->a;
+  uint16_t y = 0;
+  dp16_set(r, 0xA6, 0);
+  uint16_t c = 0;
+  bool v = false;
+  do {
+    uint16_t red = channel(r, long8(r, 0x94, y++), 0xB2, 0xB8, &v);
+    dp16_set(r, 0xA2, red);
+    uint16_t green = channel(r, long8(r, 0x94, y++), 0xB4, 0xBA, &v);
+    dp16_set(r, 0xA2, (uint16_t) (green << 5 | red));
+    uint16_t blue = channel(r, long8(r, 0x94, y++), 0xB6, 0xBC, &v);
+    c = (uint16_t) (blue << 10 | dp16(r, 0xA2));
+    dp16_set(r, 0xA4, y);
+    long16_set(r, 0x98, dp16(r, 0xA6), c);
+    dp16_set(r, 0xA6, (uint16_t) (dp16(r, 0xA6) + 2));
+  } while(--count);
+  r->a = c;
+  r->x = 0;
+  r->y = y;
+  r->n = false;
+  r->z = true;
+  r->c = false;
+  r->v = v;
+}
+
+// $01:DAEA. $A0 tiles of 4-bit pixels (two to a byte, 32 bytes a tile) from the long
+// pointer $94 to SNES 4-bitplane tiles at the long pointer $98.
+void Tg2PlanarTiles(TgRegs* r) {
+  dp16_set(r, 0x9C, 0);
+  dp16_set(r, 0x9E, 0);
+  dp16_set(r, 0xA2, dp16(r, 0xA0));
+  uint16_t w1 = 0, y = 0, sum = 0;
+  bool c = false, v = false;
+  do {
+    dp16_set(r, 0xA4, 8);
+    do {
+      uint16_t s = dp16(r, 0x9C);
+      w1 = (uint16_t) (long8(r, 0x94, s) | long8(r, 0x94, (uint16_t) (s + 1)) << 8);
+      uint16_t w2 = (uint16_t) (long8(r, 0x94, (uint16_t) (s + 2)) | long8(r, 0x94, (uint16_t) (s + 3)) << 8);
+      dp16_set(r, 0x9C, (uint16_t) (s + 4));
+      uint8_t* plane = &g_ram[(uint16_t) (r->d + 0xA6)];
+      const uint8_t bytes[4] = { (uint8_t) w1, (uint8_t) (w1 >> 8), (uint8_t) w2, (uint8_t) (w2 >> 8) };
+      for(int i = 0; i < 4; i++)
+        for(int bit = 7; bit >= 0; bit--) {
+          int p = 3 - (7 - bit) % 4;  // planes $A9, $A8, $A7, $A6 in turn
+          plane[p] = (uint8_t) (plane[p] << 1 | (bytes[i] >> bit & 1));
+        }
+      y = dp16(r, 0x9E);
+      long16_set(r, 0x98, y, dp16(r, 0xA6));
+      y = (uint16_t) (y + 0x10);
+      long16_set(r, 0x98, y, dp16(r, 0xA8));
+      dp16_set(r, 0x9E, (uint16_t) (dp16(r, 0x9E) + 2));
+      dp16_set(r, 0xA4, (uint16_t) (dp16(r, 0xA4) - 1));
+    } while(dp16(r, 0xA4) != 0);
+    uint16_t e = dp16(r, 0x9E);
+    sum = (uint16_t) (e + 0x10);
+    c = (uint32_t) e + 0x10 > 0xFFFF;
+    v = (~(e ^ 0x10) & (e ^ sum) & 0x8000) != 0;
+    dp16_set(r, 0x9E, sum);
+    dp16_set(r, 0xA2, (uint16_t) (dp16(r, 0xA2) - 1));
+  } while(dp16(r, 0xA2) != 0);
+  r->a = sum;
+  r->x = w1;
+  r->y = y;
+  r->n = false;
+  r->z = true;
+  r->c = c;
+  r->v = v;
+}

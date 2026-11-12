@@ -15,8 +15,37 @@ void Tg2BuildRoad(TgRegs* r);
 void Tg2BuildRoad2P(TgRegs* r);
 void Tg2RaceVblank1P(TgRegs* r);
 void Tg2RaceLoop1P(TgRegs* r);
+void Tg2Decompress(TgRegs* r);
+void Tg2Unpack(TgRegs* r);
+void Tg2DrawBigString(TgRegs* r);
+void Tg2DrawSmallString(TgRegs* r);
+void Tg2SetPpu(TgRegs* r);
+void Tg2LoadTrack(TgRegs* r);
+void Tg2RaceSetup(TgRegs* r);
+void Tg2StreamStart1(TgRegs* r);
+void Tg2StreamStart2(TgRegs* r);
+void Tg2GameLoop(TgRegs* r);
+void Tg2DashboardMap1P(TgRegs* r);
+void Tg2DashboardMap2P(TgRegs* r);
+void Tg2FogBackdrop(TgRegs* r);
+void Tg2NightBackdrop(TgRegs* r);
+void Tg2SendCgram(TgRegs* r);
+void Tg2TrackObjects(TgRegs* r);
+void Tg2DashboardGraphics(TgRegs* r);
+void Tg2BackdropGraphics(TgRegs* r);
+void Tg2Colours(TgRegs* r);
+void Tg2PlanarTiles(TgRegs* r);
+void Tg2InitVectors(TgRegs* r);
+void Tg2Fill7E(TgRegs* r);
+void Tg2Fill7F(TgRegs* r);
+void Tg2ClearPaletteBuffer(TgRegs* r);
+void Tg2ClearSpriteBuffer(TgRegs* r);
+void Tg2ClearCgram(TgRegs* r);
+void Tg2ClearOam(TgRegs* r);
+void Tg2ClearVram1(TgRegs* r);
 void Tg2RaceOptions(TgRegs* r);
 void Tg2RacePlayers(TgRegs* r);
+void Tg2StartingGrid(TgRegs* r);
 void Tg2SendPalette(TgRegs* r);
 void Tg2SendSprites(TgRegs* r);
 void Tg2RunQueue(TgRegs* r);
@@ -67,9 +96,14 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x00A2A5, "DriveCar2", Tg2DriveCar2, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00CD09, "RaceOptions", Tg2RaceOptions, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00CD5E, "RacePlayers", Tg2RacePlayers, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00D0DA, "StartingGrid", Tg2StartingGrid, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00D726, "Cars", Tg2Cars, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x018145, "GameLoop", Tg2GameLoop, TG_CALL_NONE, TG_MX_ANY, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x01826D, "RaceLoop1P", Tg2RaceLoop1P, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x018522, "RaceLoop2P", Tg2RaceLoop2P, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
+  { 0x018717, "RaceSetup", Tg2RaceSetup, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x018FAB, "DashboardMap1P", Tg2DashboardMap1P, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0190BD, "DashboardMap2P", Tg2DashboardMap2P, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x019261, "RaceColours1P", Tg2RaceColours1P, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_Y },
   { 0x019284, "RaceColours2PTop", Tg2RaceColours2PTop, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_Y },
   { 0x0192A7, "RaceColours2PBottom", Tg2RaceColours2PBottom, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_Y },
@@ -77,12 +111,33 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x01A505, "UploadQueue1", Tg2UploadQueue1, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01AC79, "RaceVblank1P", Tg2RaceVblank1P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x01B345, "RaceVblank2P", Tg2RaceVblank2P, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x01D1F2, "FogBackdrop", Tg2FogBackdrop, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01D24E, "NightBackdrop", Tg2NightBackdrop, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01D2C2, "BackdropGraphics", Tg2BackdropGraphics, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01D30F, "DashboardGraphics", Tg2DashboardGraphics, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01D473, "LoadTrack", Tg2LoadTrack, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01D8AF, "TrackObjects", Tg2TrackObjects, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x01DAD6, "AddToWords", Tg2AddToWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x01DAEA, "PlanarTiles", Tg2PlanarTiles, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01DBA1, "Colours", Tg2Colours, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01DE85, "Decompress", Tg2Decompress, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x01E74F, "SendPalette", Tg2SendPalette, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x01E794, "ClearPaletteBuffer", Tg2ClearPaletteBuffer, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01E7C6, "ClearCgram", Tg2ClearCgram, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01E7F5, "SendCgram", Tg2SendCgram, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x01E821, "SendSprites", Tg2SendSprites, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x01E867, "ClearSpriteBuffer", Tg2ClearSpriteBuffer, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01E89F, "ClearOam", Tg2ClearOam, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x01E904, "RunQueue", Tg2RunQueue, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x01EF05, "ClearVram1", Tg2ClearVram1, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x01EF37, "VramDma7E", Tg2VramDma7E, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x01EF6C, "VramDma7F", Tg2VramDma7F, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01F28F, "Fill7E", Tg2Fill7E, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01F2BF, "Fill7F", Tg2Fill7F, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01F5B9, "InitVectors", Tg2InitVectors, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x01F657, "SetPpu", Tg2SetPpu, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
+  { 0x088000, "StreamStart1", Tg2StreamStart1, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x0885E5, "StreamStart2", Tg2StreamStart2, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x088BCA, "Stream1", Tg2Stream1, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_X | TG_DEAD_Y },
   { 0x08AB9F, "Stream2", Tg2Stream2, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_A | TG_DEAD_X | TG_DEAD_Y },
   { 0x08CB74, "BuildRoad", Tg2BuildRoad, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
@@ -122,5 +177,8 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1F9EDE, "ClearVram", Tg2ClearVram, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA117, "SetFadeIn", Tg2SetFadeIn, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA13D, "FillWords", Tg2FillWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FBF14, "Unpack", Tg2Unpack, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FDBDC, "DrawBigString", Tg2DrawBigString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
+  { 0x1FDD7A, "DrawSmallString", Tg2DrawSmallString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
 };
 const int tg2_port_func_count = sizeof(tg2_port_funcs) / sizeof(tg2_port_funcs[0]);

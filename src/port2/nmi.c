@@ -8,6 +8,7 @@
 // steps the things that run on the frame clock: the lightning flash, the weather
 // colours, the road-stripe cycle and the message at the top of the screen.
 
+#include <stddef.h>
 #include "../port/port.h"
 
 static uint16_t w(uint16_t adr) { return ram16(adr); }
@@ -16,8 +17,11 @@ static uint8_t b(uint16_t adr) { return g_ram[adr]; }
 static void wb(uint16_t adr, uint8_t v) { g_ram[adr] = v; }
 static bool neg(uint16_t v) { return (v & 0x8000) != 0; }
 static bool lt(uint16_t a, uint16_t c) { return neg((uint16_t) (a - c)); }
-static void p8(uint16_t adr, uint8_t v) { tg_bus_write8(adr, v); }
-static void p16(uint16_t adr, uint16_t v) { tg_bus_write16(adr, v); }
+// The data bank the register writes go through: the queue is once run with it at $7E
+// (by the starting grid), where its "register" writes land in RAM instead.
+static uint32_t g_bank;
+static void p8(uint16_t adr, uint8_t v) { tg_bus_write8(g_bank | adr, v); }
+static void p16(uint16_t adr, uint16_t v) { tg_bus_write16(g_bank | adr, v); }
 
 // The window and colour-math registers for the frame, and the backdrop colour.
 static void window_registers(void) {
@@ -213,8 +217,14 @@ static void queue_add(uint16_t field, uint16_t x, uint16_t v) {
 // $E904: sends queued transfers until the frame's time ($EA, counted in CPU cycles
 // against $E2) runs out; the one that doesn't fit is cut and carries on next frame.
 // The costs added to $EA are the original's own cycle counts.
+static void queue_body(void);
 static void run_queue(void) {
   if(neg(w(0x00E0))) return spend(0x1C);
+  queue_body();
+}
+
+// $01:E913 (also reached by the long call $E900): the queue's transfers that fit.
+static void queue_body(void) {
   if(w(0x00E4) == 0) return spend(0x23);
   spend(0x22);
   uint16_t x = w(0x00E6);
@@ -655,6 +665,47 @@ static void turn_cycle_colours(void) {
   ws(dst, first);
 }
 
+// $C649/$C7CE (one player) and $C953/$CBF8 (two players): when the screen mode changes,
+// the tiles and dashboard pieces for it go to VRAM. A negative mode (the pause screen) takes
+// the bank $94/$8C art; the race takes the race's own copies from $7E. Each row is one DMA:
+// bank, VRAM address, source, length.
+typedef struct { uint8_t bank; uint16_t vram, src, len; } ModeDma;
+static const ModeDma kMode1PPause[] = {
+  { 0x94, 0x2B70, 0xF44B, 0x00E0 }, { 0x94, 0x3240, 0xF62B, 0x0180 }, { 0x8C, 0x7875, 0xF288, 0x000E },
+  { 0x8C, 0x7843, 0xF296, 0x0010 }, { 0x8C, 0x7863, 0xF2A6, 0x0010 }, { 0x8C, 0x7883, 0xF2B6, 0x0010 },
+  { 0x8C, 0x78A3, 0xF2C6, 0x0010 }, { 0x8C, 0x78C3, 0xF2D6, 0x0010 },
+};
+static const ModeDma kMode1PRace[] = {
+  { 0x94, 0x2B70, 0xF52B, 0x00E0 }, { 0x94, 0x3240, 0xF7AB, 0x0180 }, { 0x7E, 0x7875, 0xC9FA, 0x000E },
+  { 0x7E, 0x7843, 0xC996, 0x0010 }, { 0x7E, 0x7863, 0xC9D6, 0x0010 }, { 0x7E, 0x7883, 0xCA16, 0x0010 },
+  { 0x7E, 0x78A3, 0xCA56, 0x0010 }, { 0x7E, 0x78C3, 0xCA96, 0x0010 },
+};
+static const ModeDma kMode2PPause[] = {
+  { 0x94, 0x2B70, 0xF44B, 0x00E0 }, { 0x94, 0x3240, 0xF62B, 0x0180 }, { 0x8C, 0x7858, 0xF288, 0x000E },
+  { 0x8C, 0x7820, 0xF2E6, 0x0010 }, { 0x8C, 0x7840, 0xF2F6, 0x0010 }, { 0x8C, 0x7860, 0xF306, 0x0010 },
+  { 0x8C, 0x7880, 0xF316, 0x0010 }, { 0x8C, 0x78A0, 0xF326, 0x0010 }, { 0x8C, 0x7A18, 0xF288, 0x000E },
+  { 0x8C, 0x79E0, 0xF2E6, 0x0010 }, { 0x8C, 0x7A00, 0xF2F6, 0x0010 }, { 0x8C, 0x7A20, 0xF306, 0x0010 },
+  { 0x8C, 0x7A40, 0xF316, 0x0010 }, { 0x8C, 0x7A60, 0xF326, 0x0010 },
+};
+static const ModeDma kMode2PRace[] = {
+  { 0x94, 0x2B70, 0xF52B, 0x00E0 }, { 0x94, 0x3240, 0xF7AB, 0x0180 }, { 0x7E, 0x7858, 0xC9C0, 0x000E },
+  { 0x7E, 0x7820, 0xC950, 0x0010 }, { 0x7E, 0x7840, 0xC990, 0x0010 }, { 0x7E, 0x7860, 0xC9D0, 0x0010 },
+  { 0x7E, 0x7880, 0xCA10, 0x0010 }, { 0x7E, 0x78A0, 0xCA50, 0x0010 }, { 0x7E, 0x7A18, 0xCD40, 0x000E },
+  { 0x7E, 0x79E0, 0xCCD0, 0x0010 }, { 0x7E, 0x7A00, 0xCD10, 0x0010 }, { 0x7E, 0x7A20, 0xCD50, 0x0010 },
+  { 0x7E, 0x7A40, 0xCD90, 0x0010 }, { 0x7E, 0x7A60, 0xCDD0, 0x0010 },
+};
+static void mode_setup(TgRegs* r, const ModeDma* d, size_t n) {
+  for(size_t i = 0; i < n; i++) {
+    p8(0x420B, 0x00);
+    vram_dma(0x80, d[i].vram, 0x1801, d[i].bank, d[i].src, d[i].len);
+  }
+  // It returns from `lda #$80` (8-bit) then `rep #$20`, after a 16-bit `lda #$0010`/`#$000E`.
+  r->a = 0x0080;
+  r->n = true;
+  r->z = false;
+}
+#define MODE_SETUP(r, t) mode_setup(r, t, sizeof t / sizeof t[0])
+
 void Tg2RaceVblank1P(TgRegs* r) {
   uint32_t db = (uint32_t) r->db << 16;
   uint16_t mode = w(0x0100);
@@ -663,8 +714,8 @@ void Tg2RaceVblank1P(TgRegs* r) {
     // The screen mode changed: set the PPU up for it.
     ws(0x00F2, mode);
     r->a = mode;
-    if(neg(mode)) tg_call_jsr(r, 0xC649, 0xAC89, TG_MX_16);
-    else tg_call_jsr(r, 0xC7CE, 0xAC8E, TG_MX_16);
+    if(neg(mode)) MODE_SETUP(r, kMode1PPause);
+    else MODE_SETUP(r, kMode1PRace);
   }
   if(changed || neg(mode)) {
     // That frame, and every frame of a negative mode, only sends the buffers.
@@ -887,8 +938,8 @@ void Tg2RaceVblank2P(TgRegs* r) {
   if(changed) {
     ws(0x00F2, mode);
     r->a = mode;
-    if(neg(mode)) tg_call_jsr(r, 0xC953, 0xB355, TG_MX_16);
-    else tg_call_jsr(r, 0xCBF8, 0xB35A, TG_MX_16);
+    if(neg(mode)) MODE_SETUP(r, kMode2PPause);
+    else MODE_SETUP(r, kMode2PRace);
   }
   if(changed || neg(mode)) {
     send_frame(0xBD44);
@@ -1028,4 +1079,10 @@ void Tg2SendSprites(TgRegs* r) {
 void Tg2RunQueue(TgRegs* r) {
   (void) r;
   run_queue();
+}
+
+void tg2_queue_body(uint8_t db) {
+  if(db == 0x7E || db == 0x7F) g_bank = (uint32_t) db << 16;
+  queue_body();
+  g_bank = 0;
 }

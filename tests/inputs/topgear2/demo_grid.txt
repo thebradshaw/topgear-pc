@@ -1,0 +1,16 @@
+# Top Gear 2: the demo race's set-up (its saved grid and random state), forced by setting the
+# demo number ($7E:FF1A) just before the first race starts.
+300 1 DOWN
+320 1 -
+400 1 DOWN
+420 1 -
+500 1 START
+520 1 -
+700 1 START
+720 1 -
+1100 1 START
+1120 1 -
+1290 poke FF1A 02
+1300 1 START
+1320 1 -
+1500 1 X
