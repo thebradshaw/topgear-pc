@@ -104,6 +104,8 @@ void Tg2VramDma(TgRegs* r);
 void Tg2SetFadeIn(TgRegs* r);
 void Tg2FillWords(TgRegs* r);
 void Tg2MenuStart(TgRegs* r);
+void Tg2MenuPowerOn(TgRegs* r);
+void Tg2MenuAfterRace(TgRegs* r);
 void Tg2ShopPanel(TgRegs* r);
 void Tg2ShopText(TgRegs* r);
 void Tg2NextDigit(TgRegs* r);
@@ -227,6 +229,8 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x0EAFAF, "WindowsRoadRight", Tg2WindowsRoadRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0EB0BF, "WindowsRoadBoth", Tg2WindowsRoadBoth, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0EB250, "WindowsBand", Tg2WindowsBand, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8030, "MenuPowerOn", Tg2MenuPowerOn, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
+  { 0x1F80B7, "MenuAfterRace", Tg2MenuAfterRace, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x1F8190, "SaveRecords", Tg2SaveRecords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F81D4, "LoadRecords", Tg2LoadRecords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8320, "MenuMusic", Tg2MenuMusic, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },

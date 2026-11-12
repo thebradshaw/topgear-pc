@@ -51,6 +51,7 @@ add_library(tgcore STATIC
   src/port2/decomp.c
   src/port2/load.c
   src/port2/menu.c
+  src/port2/menu_flow.c
   src/port2/sprites.c
   src/port/cars.c
   src/port/decompress.c
