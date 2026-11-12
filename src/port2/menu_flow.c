@@ -569,16 +569,62 @@ void Tg2OptionsFadeOut(TgRegs* r) {
 // $A7A1: the shop: the panel's frame, the four item boxes, the item's name, its picture
 // (sent by the $7A queue), the level sprites, the price list and the money (as a
 // number, $1D19 x 1000, without leading zeros); then swaps the sprite tables ($BB/$BD)
-// and waits for the NMI to take them. The paint shop (item 9) isn't in C yet: declined.
+// and waits for the NMI to take them. The paint shop (item 9) has eight small boxes
+// instead of four, and the colours ($9E:D109) in place of the levels and prices.
 static uint16_t rom9f(uint16_t adr) { return tg_read16(0x9F0000 | adr); }
 static uint32_t db9f(uint16_t adr) { return 0x9F0000 | adr; }
 
+// $AB18: one of the paint shop's 4x2-tile colour boxes (from $60 + $05F8) at $60 + A.
+static void paint_box(TgRegs* r, uint16_t at) {
+  dp_set_d(r, 0x02, (uint16_t) (at + dp_d(r, 0x60)));
+  dp_set_d(r, 0x00, (uint16_t) (dp_d(r, 0x60) + 0x05F8));
+  dp_set_d(r, 0x04, 0x0004);
+  dp_set_d(r, 0x06, 0x0002);
+  dp_set_d(r, 0x08, 0);
+  dp_set_d(r, 0x0A, 0x0038);
+  dp_set_d(r, 0x0C, 0x7F01);
+  r->a = 0x0D80;
+  dp_set_d(r, 0x0E, r->a);
+  Tg2CopyMapBlock(r);
+}
+
+// $A963: the paint shop's sprites: the cursor's own ($9F:B013/B02B/B043/B09F), the car's
+// colour in the big box, then the eight colours.
+static void paint_sprites(TgRegs* r) {
+  uint16_t b1 = dp_d(r, 0xB1);
+  uint16_t sel = (uint16_t) (dp_d(r, 0xA7) << 1);
+  dp_set_d(r, 0x00, (uint16_t) (rom9f((uint16_t) (0xB013 + sel)) + b1));
+  uint16_t x = rom9f((uint16_t) (0xB02B + sel));
+  uint16_t y = dp_d(r, 0xAF);
+  uint16_t a;
+  while((a = rom9f((uint16_t) (0xB043 + x))) != 0) {
+    wr16_9f(y + 0x0502, a);
+    wr16_9f(y + 0x0500, (uint16_t) (rom9f((uint16_t) (0xB09F + x)) + dp_d(r, 0x00)));
+    wr16_9f(y + 0x0301, 0);
+    x += 2;
+    y += 4;
+  }
+  dp_set_d(r, 0xAF, y);
+  uint16_t shade = rom9f((uint16_t) (0xAF2F + dp_d(r, 0xBD)));
+  uint16_t colour = tg_read16(db9f((uint16_t) ((dp_d(r, 0xA5) << 1) + dp_d(r, 0xA3) + 0x1D03)));
+  wr16_9f(y + 0x0502, (uint16_t) (tg_read16(0x9ED109 + (uint16_t) (colour << 1)) + shade));
+  wr16_9f(y + 0x0500, (uint16_t) (0x2860 + b1));
+  wr16_9f(y + 0x0301, 0x0100);
+  y += 4;
+  for(uint16_t k = 0; k < 0x10; k += 2) {
+    wr16_9f(y + 0x0502, (uint16_t) (tg_read16(0x9ED109 + k) + shade));
+    wr16_9f(y + 0x0500, (uint16_t) (tg_read16(0x9ED119 + k) + b1));
+    wr16_9f(y + 0x0301, 0x0100);
+    y += 4;
+  }
+  dp_set_d(r, 0x00, 0x0010);
+  dp_set_d(r, 0xAF, y);
+  r->x = 0x0010;
+  r->y = y;
+}
+
 void Tg2ShopDraw(TgRegs* r) {
   uint16_t item = dp_d(r, 0xA5);
-  if(item == 0x0009) {
-    tg_port_decline();
-    return;
-  }
   uint16_t b1 = dp_d(r, 0xB1);
   dp_set_d(r, 0x00, (uint16_t) (dp_d(r, 0x60) + 0x0380));
   dp_set_d(r, 0x02, (uint16_t) (dp_d(r, 0x60) + 0x000E));
@@ -590,10 +636,15 @@ void Tg2ShopDraw(TgRegs* r) {
   r->a = 0x0D80;
   dp_set_d(r, 0x0E, r->a);
   Tg2CopyMapBlock(r);
-  static const uint16_t kBoxes[4] = {0x006C, 0x0076, 0x01EC, 0x01F6};
-  for(int i = 0; i < 4; i++) {
-    dp_set_d(r, 0x02, (uint16_t) (dp_d(r, 0x60) + kBoxes[i]));
-    Tg2ShopPanel(r);
+  if(item == 0x0009) {
+    static const uint16_t kPaint[8] = {0x006C, 0x0076, 0x012C, 0x0136, 0x01EC, 0x01F6, 0x02AC, 0x02B6};
+    for(int i = 0; i < 8; i++) paint_box(r, kPaint[i]);
+  } else {
+    static const uint16_t kBoxes[4] = {0x006C, 0x0076, 0x01EC, 0x01F6};
+    for(int i = 0; i < 4; i++) {
+      dp_set_d(r, 0x02, (uint16_t) (dp_d(r, 0x60) + kBoxes[i]));
+      Tg2ShopPanel(r);
+    }
   }
   uint16_t i2 = (uint16_t) (item << 1);
   r->y = rom9f((uint16_t) (0xAE90 + i2));
@@ -605,6 +656,10 @@ void Tg2ShopDraw(TgRegs* r) {
   uint16_t bd = dp_d(r, 0xBD);
   dp_set_d(r, 0x80, (uint16_t) (rom9f((uint16_t) (0xAF2B + bd)) + dp_d(r, 0x62)));
   dp_set_d(r, 0x7A, 0x0800);
+  if(item == 0x0009) {
+    paint_sprites(r);
+    goto money;
+  }
   // The level marker and the four level boxes.
   uint16_t y = dp_d(r, 0xAF);
   uint16_t base = rom9f((uint16_t) (0xAC31 + i2));
@@ -667,6 +722,7 @@ void Tg2ShopDraw(TgRegs* r) {
     x += 4;
   }
   dp_set_d(r, 0xAF, r->y);
+money:
   wait1(r);
   r->c = false;  // $A627
   // The money: $1D19 x 1000 in 24 bits (x 1024 plus x -24 on the multiplier).
@@ -727,41 +783,79 @@ void Tg2ShopDraw(TgRegs* r) {
   }
 }
 
-// $A7A1 from C: the original when the C version declines (the paint shop).
-static void shop_draw(TgRegs* r, uint16_t ret) {
-  Tg2ShopDraw(r);
-  if(tg_port_take_declined()) {
-    uint16_t d = r->d;
-    tg_call_jsr(r, 0xA7A1, ret, TG_MX_16);
-    r->d = d;
-    r->db = 0x9F;
-  }
-}
-
-// $ACC7 / $ACEF / $AD60: the cursor moves between the shop's item levels (tables
-// $9F:ADAF, $9F:ADBB, $9F:ADD3 give the level to go to from each; in $AD60's a negative
-// one moves on to the next item instead, skipping item 5). Not yet for the paint shop.
-static void shop_move(TgRegs* r, uint16_t table, uint16_t ret, bool next_item) {
-  if(dp_d(r, 0xA5) == 0x0009) {
-    tg_port_decline();
-    return;
-  }
+// $ACC7 / $ACEF / $AD17 / $AD60: the cursor moves between the shop's item levels (or the
+// paint shop's colours): the tables give the level to go to from each, a different table
+// in the paint shop. In $AD17's and $AD60's a negative one moves to the item before or
+// after instead (skipping item 5 outside the paint shop), unless there is none.
+static void shop_move(TgRegs* r, uint16_t table, uint16_t paint_table, int step) {
   Tg2SetFadeIn(r);
-  uint16_t a = rom9f((uint16_t) (table + (dp_d(r, 0xA7) << 1)));
+  bool paint = dp_d(r, 0xA5) == 0x0009;
+  uint16_t a = rom9f((uint16_t) ((paint ? paint_table : table) + (dp_d(r, 0xA7) << 1)));
   r->x = (uint16_t) (dp_d(r, 0xA7) << 1);
-  if(next_item && (a & 0x8000)) {
-    dp_set_d(r, 0xA5, (uint16_t) (dp_d(r, 0xA5) + 1));
-    if(dp_d(r, 0xA5) == 0x0005) dp_set_d(r, 0xA5, 0x0006);
-    dp_set_d(r, 0xA7, 0);
-  } else {
+  uint16_t item = dp_d(r, 0xA5);
+  if(step == 0 || !(a & 0x8000)) {
     dp_set_d(r, 0xA7, a);
+  } else if(step > 0 ? item != 0x0009 : item != 0) {
+    item = (uint16_t) (item + step);
+    if(!paint && item == 0x0005) item = (uint16_t) (item + step);
+    dp_set_d(r, 0xA5, item);
+    dp_set_d(r, 0xA7, 0);
   }
-  shop_draw(r, ret);
+  Tg2ShopDraw(r);
   r->c = false;
 }
-void Tg2ShopLeft(TgRegs* r) { shop_move(r, 0xADAF, 0xACDE, false); }
-void Tg2ShopRight(TgRegs* r) { shop_move(r, 0xADBB, 0xAD06, false); }
-void Tg2ShopDown(TgRegs* r) { shop_move(r, 0xADD3, 0xAD8F, true); }
+void Tg2ShopLeft(TgRegs* r) { shop_move(r, 0xADAF, 0xADDF, 0); }
+void Tg2ShopRight(TgRegs* r) { shop_move(r, 0xADBB, 0xADF7, 0); }
+void Tg2ShopUp(TgRegs* r) { shop_move(r, 0xADC7, 0xAE0F, -1); }
+void Tg2ShopDown(TgRegs* r) { shop_move(r, 0xADD3, 0xAE27, 1); }
+
+// $AB9E: buys the level (or colour) under the cursor ($9F:AC43 gives it; negative: not
+// for sale). What was bought earlier on this visit (bit 15 of $1D03) is paid back first;
+// the price is in the item's list at $9F:AC5B. Without the money, both stay as they were.
+void Tg2ShopBuy(TgRegs* r) {
+  Tg2SetFadeIn(r);
+  r->x = (uint16_t) (dp_d(r, 0xA7) << 1);
+  uint16_t level = rom9f((uint16_t) (0xAC43 + r->x));
+  r->a = level;
+  if(level & 0x8000) {
+    r->c = false;
+    return;
+  }
+  dp_set_d(r, 0x00, level);
+  uint16_t a3 = dp_d(r, 0xA3);
+  uint16_t money_at = (uint16_t) (0x1D19 + a3);
+  dp_set_d(r, 0x06, tg_read16(db9f(money_at)));
+  uint16_t prices = rom9f((uint16_t) (0xAC5B + (dp_d(r, 0xA5) << 1)));
+  uint16_t slot = (uint16_t) (0x1D03 + (dp_d(r, 0xA5) << 1) + a3);
+  uint16_t had = tg_read16(db9f(slot));
+  r->x = (uint16_t) (slot - 0x1D03);
+  if(had & 0x8000) {
+    dp_set_d(r, 0x02, had);
+    dp_set_d(r, 0x04, had & 0x7FFF);
+    wr16_9f(money_at, (uint16_t) (rom9f((uint16_t) (prices + ((had & 0x7FFF) << 1))) + tg_read16(db9f(money_at))));
+  } else {
+    if(had == level) {
+      r->a = had;
+      r->z = true;
+      r->n = false;
+      r->c = false;
+      return;
+    }
+    dp_set_d(r, 0x02, had);
+  }
+  wr16_9f(slot, level | 0x8000);
+  uint16_t price = rom9f((uint16_t) (prices + (level << 1)));
+  uint16_t left = (uint16_t) (tg_read16(db9f(money_at)) - price);
+  if(left & 0x8000) {
+    wr16_9f(slot, dp_d(r, 0x02));
+    wr16_9f(money_at, dp_d(r, 0x06));
+  } else {
+    wr16_9f(money_at, left);
+    dp_set_d(r, 0xA7, 0);
+  }
+  Tg2ShopDraw(r);
+  r->c = false;
+}
 
 static void unpack_send2_at(TgRegs* r, uint16_t y, uint16_t bank, uint16_t src) {
   r->y = y;
@@ -2042,7 +2136,7 @@ void Tg2ShopScreen(TgRegs* r) {
   dp_set_d(r, 0x47, a);
   dp_set_d(r, 0x47, (uint16_t) ((a >> 4) | a));
   g_ram[(uint16_t) (r->d + 0x42)] = (uint8_t) (((g_ram[(uint16_t) (r->d + 0x63)] & 0xE0) >> 5) | 0x30);
-  shop_draw(r, 0xA76D);
+  Tg2ShopDraw(r);
   while(dp_d(r, 0x7A) != 0) tg_port_wait();
   wait1(r);
   if((dp_d(r, 0x93) & 0x4000) && w(0x1CDB) == 0) {

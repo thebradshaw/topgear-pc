@@ -134,6 +134,8 @@ void Tg2UnpackSend(TgRegs* r);
 void Tg2MenuPowerOn(TgRegs* r);
 void Tg2MenuAfterRace(TgRegs* r);
 void Tg2ShopPanel(TgRegs* r);
+void Tg2ShopBuy(TgRegs* r);
+void Tg2ShopUp(TgRegs* r);
 void Tg2ShopText(TgRegs* r);
 void Tg2NextDigit(TgRegs* r);
 void Tg2BoxEdges(TgRegs* r);
@@ -322,9 +324,11 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1FA7A1, "ShopDraw", Tg2ShopDraw, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FAAF2, "ShopPanel", Tg2ShopPanel, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FAB43, "ShopText", Tg2ShopText, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FAB9E, "ShopBuy", Tg2ShopBuy, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FAC2F, "NoAction", Tg2NoAction, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FACC7, "ShopLeft", Tg2ShopLeft, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FACEF, "ShopRight", Tg2ShopRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1FAD17, "ShopUp", Tg2ShopUp, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FAD60, "ShopDown", Tg2ShopDown, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FAE3F, "ShopDone", Tg2ShopDone, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FB265, "RaceInfoScreen", Tg2RaceInfoScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
