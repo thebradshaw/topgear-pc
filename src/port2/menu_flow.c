@@ -34,6 +34,10 @@ void Tg2UnpackSend(TgRegs* r);
 void Tg2UnpackSend2(TgRegs* r);
 void Tg2SetFadeIn(TgRegs* r);
 void Tg2ShopDraw(TgRegs* r);
+void Tg2RaceInfoScreen(TgRegs* r);
+static void title(TgRegs* r);
+static void opening(TgRegs* r);
+static bool results(TgRegs* r);
 
 static uint16_t w(uint16_t adr) { return ram16(adr); }
 static void ws(uint16_t adr, uint16_t v) { ram16_set(adr, v); }
@@ -191,7 +195,8 @@ static void front_end(TgRegs* r, uint16_t sync, uint16_t sync_end) {
 // $8114 on: the race's set up screens, then the music and on to the race.
 static void to_race(TgRegs* r, bool set_up) {
   if(set_up) {
-    call(r, 0xB265, 0x8117);
+    Tg2RaceInfoScreen(r);
+    regs(r);
     two_threads(r, 0x82F5, 0x881A, true);
   }
   ws(0x1DED, 0x809B);  // where the race comes back to
@@ -223,7 +228,8 @@ static void to_race(TgRegs* r, bool set_up) {
 // $8076: the title and main menus (both players' threads), then the race set up.
 static void menus(TgRegs* r) {
   Tg2RestoreStandings(r);
-  call(r, 0xC492, 0x807C);
+  title(r);
+  regs(r);
   if(tg_read16(0x001DF1) != 0) {
     to_race(r, false);
     return;
@@ -240,7 +246,8 @@ void Tg2MenuPowerOn(TgRegs* r) {
   tg_bus_write8(0x4200, 0x81);
   Tg2LoadSave(r);
   if(r->c) {  // no records yet: the opening
-    call(r, 0xC369, 0x8065);
+    opening(r);
+    regs(r);
     g_ram[0x01D2] = 0x01;
   } else {
     r->a = 0;
@@ -262,8 +269,7 @@ void Tg2MenuAfterRace(TgRegs* r) {
     menus(r);
     return;
   }
-  call(r, 0xEB7C, 0x80FB);  // the results; carry: back to the menus
-  if(r->c) {
+  if(results(r)) {  // the race's results; true: not in the top ten, back to the menus
     menus(r);
     return;
   }
@@ -847,4 +853,902 @@ void Tg2OptionsScreen(TgRegs* r) {
   fade_row(r, 0x0022, 0x009C, 0x9778);
   options_regs(r);
   screen_end(r, 0x0017);
+}
+
+// ---- $1F:B265: the race info screen (country, track map, length, laps, record) ----
+
+void Tg2PackSprites(TgRegs* r);
+void Tg2SetScreenRegs(TgRegs* r);
+void Tg2FillWords(TgRegs* r);
+void Tg2UnpackToVram(TgRegs* r);
+void Tg2PixelsToTiles(TgRegs* r);
+void Tg2VramDma(TgRegs* r);
+void Tg2NextDigit(TgRegs* r);
+void Tg2BoxEdges(TgRegs* r);
+
+// MVN: n bytes, one at a time (the blocks may overlap), from sb:x to db:y.
+static void move_bytes(uint8_t sb, uint16_t x, uint8_t db, uint16_t y, uint16_t n) {
+  for(uint16_t i = 0; i < n; i++)
+    tg_bus_write8((uint32_t) db << 16 | (uint16_t) (y + i), tg_read8((uint32_t) sb << 16 | (uint16_t) (x + i)));
+}
+
+static void copy_block(TgRegs* r, uint16_t src, uint16_t dest, uint16_t w4, uint16_t h6, uint16_t a) {
+  dp_set_d(r, 0x00, src);
+  dp_set_d(r, 0x02, dest);
+  dp_set_d(r, 0x04, w4);
+  dp_set_d(r, 0x06, h6);
+  dp_set_d(r, 0x08, 0);
+  dp_set_d(r, 0x0A, a);
+  dp_set_d(r, 0x0C, 0x7F01);
+  dp_set_d(r, 0x0E, 0);
+  Tg2CopyMapBlock(r);
+}
+
+static void vram_dma(TgRegs* r, uint16_t n, uint16_t src, uint16_t dest) {
+  dp_set_d(r, 0x00, n);
+  r->a = 0x007F;
+  r->x = src;
+  r->y = dest;
+  Tg2VramDma(r);
+}
+
+static void small_string(TgRegs* r, uint16_t a, uint16_t x, uint16_t y) {
+  r->a = a;
+  r->x = x;
+  r->y = y;
+  Tg2DrawSmallString(r);
+}
+
+static void box_edges(TgRegs* r, uint16_t x, uint16_t y) {
+  dp_set_d(r, 0x00, x);
+  dp_set_d(r, 0x02, y);
+  Tg2BoxEdges(r);
+}
+
+// One digit's two sprites (top and bottom half) at $0500 + x, tile t, position p.
+static void time_digit(uint16_t x, uint16_t t, uint16_t p) {
+  ws(0x0502 + x, t);
+  ws(0x0506 + x, (uint16_t) (t + 0x000C));
+  ws(0x0500 + x, (uint16_t) (0xB000 | p));
+  ws(0x0504 + x, (uint16_t) (0xB800 | p));
+  ws(0x0301 + x, 0);
+  ws(0x0305 + x, 0);
+}
+
+// $B4DC: the country's flag, the length and laps, the record time's sprites and the
+// country and track names, then sent to VRAM.
+static void race_info_text(TgRegs* r) {
+  uint16_t c = w(0x1CE1), k = w(0x1CE5);
+  uint16_t a = rom9f((uint16_t) (0xB855 + c * 2));
+  for(uint16_t n = k; n != 0; n--) a >>= 4;
+  copy_block(r, rom9f((uint16_t) (0xBDDD + (a & 0x000F) * 2)), 0x0C64, 5, 5, 0x0036);
+  uint16_t i = (uint16_t) (c << 2 | k);
+  dp_set_d(r, 0x00, rom9f((uint16_t) (0xB975 + i)));
+  Tg2NextDigit(r);
+  g_ram[0x17A4] = (uint8_t) r->a;
+  Tg2NextDigit(r);
+  g_ram[0x17A2] = (uint8_t) r->a;
+  i = (uint16_t) (i * 2);
+  uint8_t div = (uint8_t) rom9f((uint16_t) (0xB875 + i));
+  tg_bus_write16(0x4204, 0x0040);
+  tg_bus_write8(0x4206, div);
+  uint16_t q = div ? (uint16_t) (0x40 / div) : 0xFFFF;
+  g_ram[0x17B5] = (uint8_t) (q + 1 + 0x30);
+  uint16_t t = rom9f((uint16_t) (0xB8F5 + i));
+  dp_set_d(r, 0x00, t);
+  uint16_t x = dp_d(r, 0xAF);
+  if((t >> 12) & 7) {
+    time_digit(x, (uint16_t) (((t >> 12) & 7) | 0x3300), 0xC3);
+    x = (uint16_t) (x + 8);
+  }
+  time_digit(x, (uint16_t) (((t >> 8) & 0x0F) | 0x3300), 0xCB);
+  time_digit((uint16_t) (x + 8), (uint16_t) (((t >> 4) & 0x0F) | 0x3300), 0xD3);
+  time_digit((uint16_t) (x + 16), (uint16_t) ((t & 0x0F) | 0x3300), 0xDB);
+  uint16_t s = (t & 0x8000) ? 0x330A : 0x3316;
+  ws(0x051A + x, s);
+  ws(0x051E + x, (uint16_t) (s + 1));
+  ws(0x0518 + x, 0xC0CE);
+  ws(0x051C + x, 0xC0D6);
+  ws(0x0319 + x, 0);
+  ws(0x031D + x, 0);
+  dp_set_d(r, 0xAF, (uint16_t) (x + 0x20));
+  small_string(r, 0x309F, 0x4CB4, rom9f((uint16_t) (0xDB01 + c * 2)));
+  box_edges(r, 0x0240, 0x00B4);
+  small_string(r, 0x309F, 0x5CB4, rom9f((uint16_t) (0xB9B5 + ((c << 2 | k) << 1))));
+  box_edges(r, 0x02C0, 0x00B4);
+  small_string(r, 0x3000, 0x6CB4, 0x1797);
+  Tg2PackSprites(r);
+  ws(0x0022, w(0x0022) | 0x0002);
+  wait1(r);
+  vram_dma(r, 0x0700, 0x0700, 0x0000);
+}
+
+static void scroll_frame(TgRegs* r) {
+  wait1(r);
+  dp_set_d(r, 0xA5, (uint16_t) (dp_d(r, 0xA5) + 2));
+}
+
+void Tg2RaceInfoScreen(TgRegs* r) {
+  regs(r);
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  Tg2PackSprites(r);
+  r->x = 0xB809;
+  r->a = 0x009F;
+  Tg2SetScreenRegs(r);
+  Tg2ClearVram(r);
+  r->a = 0xE0E0; r->x = 0x0500; r->y = 0x0200;
+  Tg2FillWords(r);
+  r->a = 0x0000; r->x = 0x0700; r->y = 0x0020;
+  Tg2FillWords(r);
+  static const uint16_t pics[4][3] = {
+    { 0x009E, 0xEDC0, 0x6000 }, { 0x009F, 0xBDE7, 0x7000 },
+    { 0x009C, 0xA1B0, 0x1000 }, { 0x009D, 0x95F7, 0x2040 } };
+  for(int p = 0; p < 4; p++) {
+    r->a = pics[p][0]; r->x = pics[p][1]; r->y = pics[p][2];
+    Tg2UnpackToVram(r);
+  }
+  // The track's entry in the bank $87 tables.
+  uint16_t e = tg_read16(0x870000 | (uint16_t) (w(0x1CE5) * 2 + tg_read16(0x870000 | (uint16_t) (w(0x1CE1) * 2 + tg_read16(0x878000)))));
+  dp_set_d(r, 0x20, e);
+  r->y = tg_read16(0x870000 | e);
+  r->a = (uint16_t) (tg_read16(0x870000 | (uint16_t) (e + 2)) | 0x7F00);
+  r->x = r->y;
+  r->y = 0;
+  Tg2Unpack(r);
+  dp_set_d(r, 0x00, 0x1640);
+  r->y = tg_read16(0x870000 | (uint16_t) (e + 6));
+  r->x = tg_read16(0x870000 | (uint16_t) (e + 4));
+  r->a = 0x007F;
+  Tg2PixelsToTiles(r);
+  r->x = tg_read16(0x878004); r->a = 0x7F87; r->y = 0;
+  Tg2Unpack(r);
+  // The track picture's palette, 24-bit colours to the SNES's 15.
+  uint16_t x = tg_read16(0x870000 | (uint16_t) (e + 0x0A));
+  for(uint16_t y = 0x1440; y != 0x1460; y += 2, x += 3) {
+    uint16_t v = (uint16_t) ((g_ram[0x10000 + (uint16_t) (x + 2)] & 0xF8) << 7);
+    v |= (uint16_t) ((g_ram[0x10000 + (uint16_t) (x + 1)] & 0xF8) << 2);
+    v |= (uint16_t) ((g_ram[0x10000 + x] & 0xF8) >> 3);
+    ws(y, v);
+  }
+  ws(0x145E, tg_read16(0x870000 | (uint16_t) (e + 0x10)));
+  r->x = tg_read16(0x878002); r->a = 0x7F87; r->y = 0;
+  Tg2Unpack(r);
+  uint16_t m = tg_read16(0x870000 | (uint16_t) (e + 8));
+  for(uint16_t n = 0; n < 0x200; n++) {
+    uint32_t adr = 0x7F0000 | (uint16_t) (m + n * 2);
+    tg_bus_write16(adr, (uint16_t) (tg_read16(adr) + 0x1864));
+  }
+  move_bytes(0x7F, m, 0x7F, 0x0000, 0x0200);
+  move_bytes(0x7F, (uint16_t) (m + 0x0200), 0x7F, 0x1000, 0x0200);
+  move_bytes(0x7F, 0x1000, 0x7F, 0x0700, 0x0200);
+  vram_dma(r, 0x0700, 0x0700, 0x0800);
+  r->a = 0x7F9E; r->x = 0xED01; r->y = 0x0700;
+  Tg2Unpack(r);
+  move_bytes(0x7F, 0x0900, 0x7F, 0x0200, 0x0500);
+  r->a = 0x7F80; r->x = 0x8800; r->y = 0x0700;
+  Tg2Unpack(r);
+  copy_block(r, 0x0E00, 0x0300, 0x000C, 0x000C, 0x0028);
+  vram_dma(r, 0x0700, 0x0000, 0x0400);
+  move_bytes(0x9F, 0xBD3D, 0x00, 0x1380, 0x00A0);
+  move_bytes(0x9F, 0xBD3D, 0x00, 0x1480, 0x0040);
+  move_bytes(0x9D, 0xB152, 0x00, 0x1460, 0x0020);
+  move_bytes(0x9F, 0xBCDC, 0x00, 0x1797, 0x0021);
+  ws(0x0022, w(0x0022) | 0x0001);
+  race_info_text(r);
+  // HDMA channel 1 on, then the picture scrolls in, waits for a button and scrolls out.
+  tg_bus_write16(0x4310, 0x0F42);
+  tg_bus_write16(0x4312, 0xB84D);
+  tg_bus_write8(0x4317, 0x9F);
+  tg_bus_write8(0x4314, 0x9F);
+  wait_frames(1);
+  tg_bus_write8(0x420C, 0x02);
+  dp_set_d(r, 0xA5, 0x0080);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  do scroll_frame(r); while(w(0x012C) != 0);
+  for(;;) {
+    scroll_frame(r);
+    uint16_t b = w(0x012A);
+    ws(0x012A, b & (uint16_t) ~0xD0C0);
+    if(b & 0xD0C0) break;
+  }
+  Tg2SetFadeIn(r);
+  ws(0x012E, 0);
+  ws(0x012C, 0xFF80);
+  do scroll_frame(r); while(w(0x012C) != 0);
+  tg_bus_write16(0x420B, 0);
+  r->a = 0;
+  r->x = 0x0700;
+  r->y = 0;
+  r->n = false;
+  r->z = true;
+  r->c = true;
+}
+
+// ---- $1F:C492: the title screen and its menu ----
+
+void Tg2NewSeason(TgRegs* r);
+
+// Takes a press of any of `mask` from $012A (TRB): true when one was there.
+static bool take(uint16_t mask) {
+  uint16_t b = w(0x012A);
+  ws(0x012A, b & (uint16_t) ~mask);
+  return (b & mask) != 0;
+}
+
+// The picture scrolls out ($012C counts down in the NMI).
+static void scroll_out(void) {
+  ws(0x012E, 0);
+  ws(0x012C, 0xFF80);
+  while(w(0x012C) != 0) tg_port_wait();
+}
+
+
+// ---- $1F:CC35: the password screen ----
+
+void Tg2MakePassword(TgRegs* r);
+void Tg2PasswordPictures(TgRegs* r);
+
+enum { PW_GO_ON, PW_TITLE, PW_PRACTICE, PW_DONE };
+
+static void pw_put(uint16_t i, uint8_t v) { g_ram[0x17D3 + rom9f((uint16_t) (0xD228 + i * 2))] = v; }
+
+static void pw_clear(uint16_t i) {
+  uint16_t x = rom9f((uint16_t) (0xD228 + i * 2));
+  g_ram[0x17D3 + x] = 0;
+  g_ram[0x17D9 + x] = 0;
+}
+
+// The cursor's moves over the letters ($A5): right $CE6B, left $CEA6, down $CEE8, up $CF00.
+static void pw_right(TgRegs* r) {
+  uint16_t a = (uint16_t) (dp_d(r, 0xA5) + 1);
+  if(a == 0x0E) a = 0;
+  else if(a == 0x1C) a = 0x0E;
+  else if(a == 0x27) a = 0x28;
+  else if(a == 0x29 || a == 0x2A) a = 0x1C;
+  else if(a == 0x20) a = 0x26;
+  dp_set_d(r, 0xA5, a);
+}
+static void pw_left(TgRegs* r) {
+  uint16_t a = (uint16_t) (dp_d(r, 0xA5) - 1);
+  if(a == 0xFFFF) a = 0x0D;
+  else if(a == 0x0D) a = 0x1B;
+  else if(a == 0x26) a = 0x1F;
+  else if(a == 0x1B) a = 0x29;
+  else if(a == 0x28) a = 0x27;
+  else if(a == 0x25) a = 0x1F;
+  dp_set_d(r, 0xA5, a);
+}
+static void pw_down(TgRegs* r) {
+  uint16_t a = (uint16_t) (dp_d(r, 0xA5) + 0x0E);
+  if(a < 0x20 || (a >= 0x26 && a < 0x2A)) dp_set_d(r, 0xA5, a);
+}
+static void pw_up(TgRegs* r) {
+  uint16_t a = dp_d(r, 0xA5);
+  if(a >= 0x0E) dp_set_d(r, 0xA5, (uint16_t) (a - 0x0E));
+}
+
+// The entered letters' blinking cursor ($CE4D / $D047).
+static void pw_blink(TgRegs* r) {
+  pw_put(dp_d(r, 0xA9), (g_ram[0x01AB] & 0x10) ? 0x5F : 0x00);
+  g_ram[0x01AB]++;
+}
+
+static void pw_text(TgRegs* r, uint16_t y2, uint16_t x2, uint16_t a2) {
+  wait1(r);
+  dp_set_d(r, 0xAF, 0);
+  r->y = 0x8000; r->x = 0x0880; r->a = 0x3098;
+  Tg2DrawBigString(r);
+  r->y = y2; r->x = x2; r->a = a2;
+  Tg2DrawBigString(r);
+}
+
+static void pw_letters(TgRegs* r) {
+  r->y = 0x17D3; r->x = 0x7E36; r->a = 0x3000;
+  Tg2DrawBigString(r);
+  Tg2PackSprites(r);
+  ws(0x0022, 0x0002);
+}
+
+// $CFB9: the password given: when it is good, the season goes on from it; when not, the
+// screen says so ($D027) until a button (back to the letters) or START (the title).
+static int pw_enter(TgRegs* r) {
+  for(uint16_t i = 0; i < 0x16; i++) g_ram[0x1780 + i] = g_ram[0x17D7 + i * 6];
+  call(r, 0xD4B3, 0xCFD7);
+  if(!r->c) {
+    if(w(0x01E3) & 0x8000) {  // from practice: that country's first race
+      uint16_t c = w(0x1CE1);
+      tg_bus_write8(0x211B, (uint8_t) c);
+      tg_bus_write8(0x211B, (uint8_t) (c >> 8));
+      tg_bus_write8(0x211C, 0x0A);
+      uint16_t x = tg_read16(0x2134);
+      ws(0x1D19, x);
+      if(w(0x1CDB)) ws(0x1D42, x);
+    }
+    ws(0x1CE5, 0);
+    for(uint16_t x = 0x28; x != 0; x -= 2) ws(0x1DC3 + x, 0);
+    scroll_out();
+    ws(0x1DF1, 0);
+    return PW_DONE;
+  }
+  for(;;) {
+    pw_text(r, 0xA879, 0x3E80, 0x309D);
+    pw_blink(r);
+    pw_letters(r);
+    if(!(w(0x0130) & 0x7FFF)) return PW_TITLE;
+    if(take(0x1000)) {
+      ws(0x012E, 0);
+      ws(0x012C, 0xFF80);
+    }
+    if(take(0xE0C0)) {
+      Tg2SetFadeIn(r);
+      dp_set_d(r, 0xAB, 0x0010);
+      return PW_GO_ON;
+    }
+  }
+}
+
+// $CF0B: a button on the cursor's letter: END enters the password, the arrows take a
+// letter back, the others add theirs.
+static int pw_select(TgRegs* r) {
+  uint16_t a = dp_d(r, 0xA5);
+  if(a == 0x28 || a == 0x29) {
+    Tg2SetFadeIn(r);
+    return pw_enter(r);
+  }
+  if(dp_d(r, 0x1E) & 0x8000) {  // the first letter clears the old password
+    dp_set_d(r, 0x1E, 0);
+    dp_set_d(r, 0xA9, 0);
+    for(uint16_t i = 0; i < 0x15; i++) pw_clear(i);
+  }
+  uint16_t n = dp_d(r, 0xA9);
+  if(a == 0x26 || a == 0x27) {
+    if(n != 0) {
+      Tg2SetFadeIn(r);
+      dp_set_d(r, 0xA9, --n);
+      pw_clear(n);
+    }
+  } else if(n != 0x16) {
+    Tg2SetFadeIn(r);
+    pw_put(n, (uint8_t) rom9f((uint16_t) (0xD202 + a)));
+    dp_set_d(r, 0xA9, (uint16_t) (n + 1));
+  }
+  dp_set_d(r, 0xAB, 0x0010);
+  return PW_GO_ON;
+}
+
+static int password(TgRegs* r) {
+  r->x = 0xD2E2; r->a = 0x009F;
+  Tg2SetScreenRegs(r);
+  r->a = 0x009C; r->x = 0xA9D0; r->y = 0x0800;
+  Tg2UnpackToVram(r);
+  Tg2PasswordPictures(r);
+  r->y = 0; r->a = 0x7F9D; r->x = 0xA8C4;
+  Tg2Unpack(r);
+  vram_dma(r, 0x0700, 0x0000, 0x0000);
+  vram_dma(r, 0x0700, 0x0E00, 0x0400);
+  r->a = 0x009D; r->x = 0xA8AC; r->y = 0x5000;
+  Tg2UnpackToVram(r);
+  move_bytes(0x9D, 0xB0B2, 0x00, 0x1380, 0x00C0);
+  move_bytes(0x9D, 0xB012, 0x00, 0x1480, 0x0020);
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  Tg2PackSprites(r);
+  ws(0x0022, 0x0003);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  dp_set_d(r, 0xA7, 0);
+  dp_set_d(r, 0xA5, 0x0028);
+  move_bytes(0x9F, 0xD256, 0x00, 0x17D3, 0x008C);
+  dp_set_d(r, 0xA9, 0);
+  dp_set_d(r, 0xAD, 0);
+  if(!(dp_d(r, 0xE3) & 0x8000)) {  // the season so far as a password
+    Tg2MakePassword(r);
+    dp_set_d(r, 0x1E, 0xFFFF);
+    for(uint16_t i = 0; i < 0x16; i++) g_ram[0x17D7 + i * 6] = g_ram[0x1780 + i];
+    dp_set_d(r, 0xA9, 0x16);
+    dp_set_d(r, 0xAD, 0x16);
+  }
+  for(;;) {
+    pw_text(r, 0xF72E, 0x2725, 0x309E);
+    // The cursor's sprites.
+    uint16_t y = dp_d(r, 0xAF), i = (uint16_t) (dp_d(r, 0xA5) * 4);
+    uint16_t off = rom9f((uint16_t) (0xD0A2 + i)), x = rom9f((uint16_t) (0xD0A0 + i));
+    uint16_t t = rom9f((uint16_t) (0xD158 + x));
+    do {
+      ws(0x0502 + y, t);
+      ws(0x0500 + y, (uint16_t) (rom9f((uint16_t) (0xD15A + x)) + off));
+      ws(0x0301 + y, rom9f((uint16_t) (0xD15C + x)));
+      x = (uint16_t) (x + 6);
+      y = (uint16_t) (y + 4);
+    } while((t = rom9f((uint16_t) (0xD158 + x))) != 0);
+    dp_set_d(r, 0xAF, y);
+    pw_letters(r);
+    int res = PW_GO_ON;
+    if(take(0x0100)) { Tg2SetFadeIn(r); pw_right(r); dp_set_d(r, 0xA7, 0x10); }
+    if(take(0x0200)) { Tg2SetFadeIn(r); pw_left(r); dp_set_d(r, 0xA7, 0x10); }
+    if(take(0x0400)) { Tg2SetFadeIn(r); pw_down(r); dp_set_d(r, 0xA7, 0x10); }
+    if(take(0x0800)) { Tg2SetFadeIn(r); pw_up(r); dp_set_d(r, 0xA7, 0x10); }
+    if(take(0xE0C0)) {
+      Tg2SetFadeIn(r);
+      if((res = pw_select(r)) != PW_GO_ON) return res;
+      dp_set_d(r, 0xA7, 0x10);
+    }
+    if(take(0x1000)) {
+      Tg2SetFadeIn(r);
+      scroll_out();
+      return (w(0x01E3) & 0x8000) ? PW_PRACTICE : PW_TITLE;
+    }
+    uint16_t held = dp_d(r, 0x28);
+    if(held & 0xEFC0) {  // held: repeats
+      if(dp_d(r, 0xA7)) {
+        dp_set_d(r, 0xA7, (uint16_t) (dp_d(r, 0xA7) - 1));
+      } else {
+        if(held & 0x0100) { Tg2SetFadeIn(r); pw_right(r); }
+        if(held & 0x0200) { Tg2SetFadeIn(r); pw_left(r); }
+        if(held & 0x0400) { Tg2SetFadeIn(r); pw_down(r); }
+        if(held & 0x0800) { Tg2SetFadeIn(r); pw_up(r); }
+        if(held & 0xE0C0) {
+          if((res = pw_select(r)) != PW_GO_ON) return res;
+        }
+        dp_set_d(r, 0xA7, 0x0004);
+      }
+    }
+    pw_blink(r);
+  }
+}
+
+// ---- $1F:C738: practice: pick a country (those reached so far) ----
+
+static void copy_block_e(TgRegs* r, uint16_t src, uint16_t dest, uint16_t w4, uint16_t h6, uint16_t a,
+                         uint16_t e) {
+  dp_set_d(r, 0x0E, e);
+  dp_set_d(r, 0x00, src);
+  dp_set_d(r, 0x02, dest);
+  dp_set_d(r, 0x04, w4);
+  dp_set_d(r, 0x06, h6);
+  dp_set_d(r, 0x08, 0);
+  dp_set_d(r, 0x0A, a);
+  dp_set_d(r, 0x0C, 0x7F01);
+  Tg2CopyMapBlock(r);
+}
+
+// $1D19 (and $1D42 with two players) = country * 10: its first race.
+static void first_race_of(uint16_t c) {
+  tg_bus_write8(0x211B, (uint8_t) c);
+  tg_bus_write8(0x211B, (uint8_t) (c >> 8));
+  tg_bus_write8(0x211C, 0x0A);
+  uint16_t x = tg_read16(0x2134);
+  ws(0x1D19, x);
+  if(w(0x1CDB)) ws(0x1D42, x);
+}
+
+// A country's name: those not reached yet in another colour.
+static void country_name(TgRegs* r, uint16_t c, uint16_t x, uint16_t open, uint16_t shut, bool big) {
+  r->y = rom9f((uint16_t) (0xDB01 + c * 2));
+  r->x = x;
+  r->a = c > w(0x1CE3) ? shut : open;
+  if(big) Tg2DrawBigString(r);
+  else Tg2DrawSmallString(r);
+}
+
+static int practice(TgRegs* r) {
+  r->x = 0xCA35; r->a = 0x009F;
+  Tg2SetScreenRegs(r);
+  dp_set_d(r, 0x30, 0x8000);
+  r->a = 0x009C; r->x = 0xA9D0; r->y = 0x0800;
+  Tg2UnpackToVram(r);
+  r->a = 0x009E; r->x = 0xEDC0; r->y = 0x6000;
+  Tg2UnpackToVram(r);
+  r->y = 0; r->a = 0x7F9D; r->x = 0xAE80;
+  Tg2Unpack(r);
+  vram_dma(r, 0x0700, 0x0000, 0x0000);
+  r->a = 0x7F9D; r->x = 0x8000; r->y = 0x8000;
+  Tg2Unpack(r);
+  r->x = 0x82E9; r->y = 0x2000; r->a = 0x7E9E;
+  Tg2Unpack(r);
+  // $7F:0000-06FF cleared: DMA from the multiplier (0 * 0).
+  tg_bus_write8(0x211B, 0);
+  tg_bus_write8(0x211B, 0);
+  tg_bus_write8(0x211C, 0);
+  tg_bus_write8(0x4304, 0x7F);
+  tg_bus_write16(0x4300, 0x3481);
+  tg_bus_write16(0x4302, 0x0000);
+  tg_bus_write16(0x4305, 0x0700);
+  tg_bus_write8(0x420B, 0x01);
+  move_bytes(0x9D, 0xB0B2, 0x00, 0x1380, 0x00C0);
+  move_bytes(0x9E, 0x80A0, 0x00, 0x1460, 0x0020);
+  move_bytes(0x9D, 0xB032, 0x00, 0x1480, 0x0020);
+  move_bytes(0x9D, 0xB052, 0x00, 0x14A0, 0x0020);
+  move_bytes(0x9D, 0xB072, 0x00, 0x14C0, 0x0020);
+  move_bytes(0x9D, 0xB092, 0x00, 0x14E0, 0x0020);
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  Tg2PackSprites(r);
+  wait1(r);
+  ws(0x0022, 0x0003);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  dp_set_d(r, 0xA5, w(0x1CE1));
+  for(;;) {
+    wait1(r);
+    dp_set_d(r, 0xAF, 0);
+    uint16_t c = dp_d(r, 0xA5);
+    // The country's map: row (map number * $F2) of the maps at $7F:8520.
+    tg_bus_write8(0x211B, 0xF2);
+    tg_bus_write8(0x211B, 0x00);
+    tg_bus_write8(0x211C, tg_read8(0x9FDB21 + c));
+    copy_block_e(r, (uint16_t) (tg_read16(0x2134) + 0x8520), 0x0148, 0x000B, 0x000B, 0x002A, 0x2C00);
+    r->y = 0xDAEC; r->x = 0x0880; r->a = 0x309F;
+    Tg2DrawBigString(r);
+    country_name(r, c, 0x48AC, 0x309F, 0x329F, true);
+    uint16_t x = 0x3CAC;  // the three before it, above
+    for(uint16_t k = c, n = 3; n != 0 && k != 0; n--) {
+      k--;
+      country_name(r, k, x, 0x349F, 0x369F, false);
+      x = (uint16_t) (x - 0x0900);
+    }
+    x = 0x5CAC;  // and the three after, below
+    for(uint16_t k = c, n = 3; n != 0 && k + 1 != 0x10; n--) {
+      k++;
+      country_name(r, k, x, 0x349F, 0x369F, false);
+      x = (uint16_t) (x + 0x0900);
+    }
+    Tg2PackSprites(r);
+    ws(0x0022, 0x0002);
+    wait1(r);
+    dp_set_d(r, 0x00, 0x0800);
+    r->a = 0x007E; r->x = tg_read16(0x9C8000 + c * 2); r->y = 0x5000;
+    Tg2VramDma(r);
+    vram_dma(r, 0x0700, 0x0000, 0x0400);
+    if(take(0x0800) && dp_d(r, 0xA5) != 0) {
+      dp_set_d(r, 0xA5, (uint16_t) (dp_d(r, 0xA5) - 1));
+      Tg2SetFadeIn(r);
+    }
+    if(take(0x0400) && dp_d(r, 0xA5) != 0x0F) {
+      dp_set_d(r, 0xA5, (uint16_t) (dp_d(r, 0xA5) + 1));
+      Tg2SetFadeIn(r);
+    }
+    if(take(0x1000)) {
+      Tg2SetFadeIn(r);
+      scroll_out();
+      return PW_TITLE;
+    }
+    if(take(0xE0C0)) {
+      Tg2SetFadeIn(r);
+      c = dp_d(r, 0xA5);
+      if(c <= w(0x1CE3)) {  // reached: a season from that country
+        ws(0x1CE1, c);
+        Tg2NewSeason(r);
+        ws(0x1CE1, c);
+        first_race_of(c);
+        scroll_out();
+        ws(0x1DF1, 0);
+        return PW_DONE;
+      }
+      ws(0x1CE1, c);  // not yet: its password
+      scroll_out();
+      g_ram[0x01E4] = 0xFF;
+      return PW_GO_ON;
+    }
+  }
+}
+
+// After the title's menu: practice (`at` PW_PRACTICE) or the password (PW_GO_ON), which
+// lead to each other, until the title again (PW_TITLE) or a race (PW_DONE).
+static int after_title(TgRegs* r, int at) {
+  for(;;) {
+    int res = at == PW_PRACTICE ? practice(r) : password(r);
+    if(res == PW_TITLE || res == PW_DONE) return res;
+    if(res == PW_PRACTICE) ws(0x1CE1, w(0x1CE3));
+    at = res;
+  }
+}
+
+static void title_done(TgRegs* r) {
+  r->a = 0;
+  r->n = false;
+  r->z = true;
+}
+
+// $CBA8: the title's settings: difficulty and music.
+static void settings_text(TgRegs* r) {
+  r->y = 0xCC1B; r->a = 0x309F; r->x = 0x0000;
+  Tg2DrawBigString(r);
+  r->y = rom9f((uint16_t) (0xCBDE + w(0x1CDD) * 2)); r->a = 0x309F; r->x = 0x98AC;
+  Tg2DrawBigString(r);
+  r->y = rom9f((uint16_t) (0xCC0C + w(0x1CDF) * 2)); r->a = 0x309F; r->x = 0x9844;
+  Tg2DrawBigString(r);
+  Tg2PackSprites(r);
+}
+
+static void fade_rows(TgRegs* r, uint16_t bank, bool both) {
+  r->x = 0xB034; r->y = 0x1482; r->a = bank;
+  Tg2QueueFadeRow(r);
+  if(both) {
+    r->x = 0xAFF4; r->y = 0x13C2; r->a = bank;
+    Tg2QueueFadeRow(r);
+  }
+  ws(0x0193, w(0x0193) | 0x0004);
+}
+
+// $CA79: the settings over the title: left and right pick music or difficulty, up and down
+// change it; a button goes back to the title's menu ($CB70).
+static void title_settings(TgRegs* r) {
+  dp_set_d(r, 0xA5, 0);
+  settings_text(r);
+  ws(0x0022, w(0x0022) | 0x0003);
+  wait_frames(2);
+  fade_rows(r, 0x009D, true);
+  for(;;) {
+    ws(0x0022, w(0x0022) | 0x0002);
+    wait_frames(1);
+    vram_dma(r, 0x0700, dp_d(r, 0xA5) ? 0x0E00 : 0x0700, 0x0400);
+    if(take(0x0100)) dp_set_d(r, 0xA5, 1);
+    if(take(0x0200)) dp_set_d(r, 0xA5, 0);
+    if(take(0xF0C0) && !(w(0x0193) & 0x0004)) {
+      Tg2SetFadeIn(r);
+      break;
+    }
+    if(dp_d(r, 0xA5) == 0) {  // $CB08: music on or off
+      if(take(0x0800)) { Tg2SetFadeIn(r); ws(0x1CDF, 0); }
+      if(take(0x0400)) { Tg2SetFadeIn(r); ws(0x1CDF, 1); }
+    } else {  // $CB26: difficulty, each with its own country and progress
+      uint16_t x = (uint16_t) (w(0x1CDD) * 2);
+      ws(0x1CED + x, w(0x1CE1));
+      ws(0x1CE7 + x, w(0x1CE3));
+      if(take(0x0800)) { Tg2SetFadeIn(r); if(w(0x1CDD) != 0) ws(0x1CDD, w(0x1CDD) - 1); }
+      if(take(0x0400)) { Tg2SetFadeIn(r); if(w(0x1CDD) != 2) ws(0x1CDD, w(0x1CDD) + 1); }
+      x = (uint16_t) (w(0x1CDD) * 2);
+      ws(0x1CE1, w(0x1CED + x));
+      ws(0x1CE3, w(0x1CE7 + x));
+    }
+    settings_text(r);
+  }
+  fade_rows(r, 0x809D, true);
+  while(w(0x0193) & 0x0004) tg_port_wait();
+  fade_rows(r, 0x009D, false);
+}
+
+static void title(TgRegs* r) {
+restart:
+  regs(r);
+  ws(0x0010, 0x92B8);
+  dp_set_d(r, 0x99, 0);
+  dp_set_d(r, 0x97, 0);
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  Tg2PackSprites(r);
+  r->x = 0xC6F4; r->a = 0x009F;
+  Tg2SetScreenRegs(r);
+  r->a = 0x0098; r->x = 0x801C; r->y = 0x1000;
+  Tg2UnpackToVram(r);
+  r->a = 0x009E; r->x = 0xEDC0; r->y = 0x6000;
+  Tg2UnpackToVram(r);
+  r->y = 0; r->a = 0x7F9D; r->x = 0xAAFB;
+  Tg2Unpack(r);
+  vram_dma(r, 0x0700, 0x0000, 0x0000);
+  vram_dma(r, 0x0700, 0x0700, 0x0400);
+  move_bytes(0x9D, 0xAF94, 0x00, 0x1380, 0x0060);
+  move_bytes(0x9D, 0xB032, 0x00, 0x1480, 0x0020);
+  move_bytes(0x9D, 0xB152, 0x00, 0x1460, 0x0020);
+  ws(0x0022, w(0x0022) | 0x0001);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  dp_set_d(r, 0xA5, 0x0258);
+  for(;;) {
+    uint16_t t = w(0x0014);
+    while(w(0x0014) == t) tg_port_wait();
+    dp_set_d(r, 0xAF, 0);
+    dp_set_d(r, 0xA5, (uint16_t) (dp_d(r, 0xA5) - 1));  // counts, but nothing reads it
+    // 1 player or 2 players.
+    r->a = 0x309F; r->x = 0x5480; r->y = w(0x1CDB) ? 0xDAA2 : 0xDA96;
+    Tg2DrawBigString(r);
+    // The cursor's two sprites.
+    uint16_t item = dp_d(r, 0x8D), y = dp_d(r, 0xAF);
+    ws(0x0500 + y, rom9f((uint16_t) (0xC6E0 + item * 2)));
+    ws(0x0502 + y, 0x30E2);
+    ws(0x0301 + y, 0x0100);
+    ws(0x0504 + y, rom9f((uint16_t) (0xC6EA + item * 2)));
+    ws(0x0506 + y, 0x70E2);
+    ws(0x0305 + y, 0x0100);
+    dp_set_d(r, 0xAF, (uint16_t) (y + 8));
+    Tg2PackSprites(r);
+    ws(0x0022, w(0x0022) | 0x0002);
+    if(take(0x0400)) {  // down
+      dp_set_d(r, 0x8D, item + 1 == 5 ? 0 : item + 1);
+      Tg2SetFadeIn(r);
+      dp_set_d(r, 0xA5, 0x0258);
+    }
+    if(take(0x0800)) {  // up
+      item = dp_d(r, 0x8D);
+      dp_set_d(r, 0x8D, item == 0 ? 4 : item - 1);
+      Tg2SetFadeIn(r);
+      dp_set_d(r, 0xA5, 0x0258);
+    }
+    if(take(0x0200) && dp_d(r, 0x8D) == 0) {  // left: 1 player
+      Tg2SetFadeIn(r);
+      ws(0x1CDB, 0);
+      dp_set_d(r, 0xA5, 0x0258);
+    }
+    if(take(0x0100) && dp_d(r, 0x8D) == 0) {  // right: 2 players
+      Tg2SetFadeIn(r);
+      ws(0x1CDB, 1);
+      dp_set_d(r, 0xA5, 0x0258);
+    }
+    if(!take(0xF0C0)) continue;
+    Tg2SetFadeIn(r);
+    switch(dp_d(r, 0x8D)) {
+    case 0:  // players: toggles
+      ws(0x1CDB, w(0x1CDB) ^ 1);
+      continue;
+    case 1:  // start: a new season
+      scroll_out();
+      Tg2NewSeason(r);
+      ws(0x1DF1, 0);
+      title_done(r);
+      return;
+    case 2:  // practice: the country select
+      scroll_out();
+      if(after_title(r, PW_PRACTICE) == PW_TITLE) goto restart;
+      title_done(r);
+      return;
+    case 3:  // options
+      if(w(0x0193) & 0x0004) continue;
+      r->x = 0xB034; r->y = 0x1482; r->a = 0x809D;
+      Tg2QueueFadeRow(r);
+      ws(0x0193, w(0x0193) | 0x0004);
+      while(w(0x0193) & 0x0004) tg_port_wait();
+      title_settings(r);
+      dp_set_d(r, 0xA5, 0x0258);
+      continue;
+    default:  // password
+      scroll_out();
+      g_ram[0x01E4] = 0;
+      if(after_title(r, PW_GO_ON) == PW_TITLE) goto restart;
+      title_done(r);
+      return;
+    }
+  }
+}
+
+// ---- $1F:C369: the opening screen, three seconds with its music ----
+
+static void opening(TgRegs* r) {
+  regs(r);
+  ws(0x0010, 0x92B8);
+  dp_set_d(r, 0x99, 0);
+  dp_set_d(r, 0x97, 0);
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  Tg2PackSprites(r);
+  r->x = 0xC6F4; r->a = 0x009F;
+  Tg2SetScreenRegs(r);
+  r->a = 0x0098; r->x = 0x801C; r->y = 0x1000;
+  Tg2UnpackToVram(r);
+  r->a = 0x009E; r->x = 0xEDC0; r->y = 0x6000;
+  Tg2UnpackToVram(r);
+  r->y = 0; r->a = 0x7F9D; r->x = 0xAAFB;
+  Tg2Unpack(r);
+  move_bytes(0x7F, 0x00C0, 0x7F, 0x1700, 0x0140);
+  tg_bus_write16(0x7F173C, tg_read16(0x7F1C00));
+  tg_bus_write16(0x7F173E, tg_read16(0x7F1C02));
+  vram_dma(r, 0x0700, 0x1500, 0x0000);
+  move_bytes(0x9D, 0xAF94, 0x00, 0x1380, 0x0020);
+  move_bytes(0x9D, 0xA88C, 0x00, 0x13A0, 0x0020);
+  move_bytes(0x9D, 0xB032, 0x00, 0x1480, 0x0020);
+  small_string(r, 0x309D, 0x0080, 0xB172);
+  Tg2PackSprites(r);
+  ws(0x0022, w(0x0022) | 0x0003);
+  tg_bus_write8(0x212C, 0x11);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  dp_set_d(r, 0xA5, 0x00B4);
+  wait1(r);
+  ws(0x01C1, 0);
+  call(r, 0xF0A3, 0xC443);
+  g_ram[0x01D0] = 0xFF;
+  g_ram[0x01D1] = 0xFF;
+  g_ram[0x01D2] = 0;
+  g_ram[0x01D3] = 0;
+  g_ram[0x01D5] = 0;
+  g_ram[0x01D7] = 0;
+  g_ram[0x01D8] = 0;
+  g_ram[0x01D9] = 0;
+  g_ram[0x01DA] = 0;
+  g_ram[0x01CF] = 0;
+  do {
+    wait1(r);
+    dp_set_d(r, 0xA5, (uint16_t) (dp_d(r, 0xA5) - 1));
+  } while(dp_d(r, 0xA5) != 0);
+  scroll_out();
+}
+
+// ---- $1F:EB7C: the race's results ----
+
+void Tg2KeepStandings(TgRegs* r);
+
+static void big_string(TgRegs* r, uint16_t a, uint16_t x, uint16_t y) {
+  r->a = a;
+  r->x = x;
+  r->y = y;
+  Tg2DrawBigString(r);
+}
+
+// Shows the players' places ($2D, $2F); true (carry) when no player made the top ten:
+// the race's points are taken back and the menus come again. Else the season goes on:
+// the next race, or the next country after four, or the end after the last.
+static bool results(TgRegs* r) {
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  Tg2PackSprites(r);
+  for(uint16_t x = 0; x < 0x28; x += 2) {
+    uint16_t car = w(0x1D75 + x);
+    if(car == 0) ws(0x002D, x >> 1);
+    else if(car == 1) ws(0x002F, x >> 1);
+  }
+  bool out = w(0x002D) >= 10 && (!w(0x1CDB) || w(0x002F) >= 10);
+  ws(0x0031, out ? 0xFFFF : 0);
+  g_ram[0x01D2] = out ? 4 : 3;  // the music
+  r->x = 0xB2BB; r->a = 0x009D;
+  Tg2SetScreenRegs(r);
+  r->a = 0x0098; r->x = 0x952F; r->y = 0x1000;
+  Tg2UnpackToVram(r);
+  r->a = 0x009E; r->x = 0xEDC0; r->y = 0x6000;
+  Tg2UnpackToVram(r);
+  r->y = 0; r->a = 0x7F98; r->x = 0xAA55;
+  Tg2Unpack(r);
+  vram_dma(r, 0x0700, (uint16_t) ((w(0x1CDB) ? 0 : 0x0E00) + (out ? 0x0700 : 0)), 0x0000);
+  move_bytes(0x9C, 0xFAF5, 0x00, 0x1380, 0x0040);
+  move_bytes(0x9F, 0xBD3D, 0x00, 0x1480, 0x0020);
+  big_string(r, 0x2000, 0x1828, 0x1CF3);
+  big_string(r, 0x209C, 0x18C0, tg_read16(0x9CFB53 + w(0x002D) * 2));
+  big_string(r, 0x209C, 0x3080, tg_read16(0x9CFBF5 + w(0x002D) * 2));
+  if(w(0x1CDB)) {
+    big_string(r, 0x2000, 0x6028, 0x1D1C);
+    big_string(r, 0x209C, 0x60C0, tg_read16(0x9CFB53 + w(0x002F) * 2));
+    big_string(r, 0x209C, 0x7880, tg_read16(0x9CFBF5 + w(0x002F) * 2));
+  }
+  Tg2PackSprites(r);
+  ws(0x0022, w(0x0022) | 0x0003);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  // Up to 200 frames, or a button from either player.
+  for(uint16_t n = 0x00C8; n != 0; n--) {
+    wait_frames(1);
+    if(take(0xD0C0)) break;
+    if(w(0x1CDB)) {
+      uint16_t b = w(0x022A);
+      ws(0x022A, b & (uint16_t) ~0xD0C0);
+      if(b & 0xD0C0) break;
+    }
+  }
+  scroll_out();
+  if(out) {
+    for(uint16_t x = 0; x < 0x28; x += 2) {
+      uint16_t y = (uint16_t) (0x1DC5 + w(0x1D75 + x) * 2);
+      ws(y, (uint16_t) (w(y) - rom9f((uint16_t) (0xE35D + x))));
+    }
+    return true;
+  }
+  ws(0x1D19, (uint16_t) (w(0x1D19) + rom9f((uint16_t) (0xEF46 + w(0x002D) * 2))));
+  if(w(0x1CDB)) ws(0x1D42, (uint16_t) (w(0x1D42) + rom9f((uint16_t) (0xEF46 + w(0x002F) * 2))));
+  uint16_t k = (uint16_t) (w(0x1CE5) + 1);
+  if(!(k & 4)) {
+    ws(0x1CE5, k);
+    return false;
+  }
+  ws(0x1CE5, 0);  // the country's four races done
+  Tg2KeepStandings(r);
+  ws(0x1CE1, (uint16_t) (w(0x1CE1) + 1));
+  if(w(0x1CE1) >= w(0x1CE3)) ws(0x1CE3, w(0x1CE1));
+  if(w(0x1CE1) != 0x10) return false;
+  call(r, 0xE52E, 0xED74);  // the last: the end
+  return r->c;
 }

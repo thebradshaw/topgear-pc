@@ -106,6 +106,7 @@ void Tg2FillWords(TgRegs* r);
 void Tg2MenuStart(TgRegs* r);
 void Tg2OptionsFromTitle(TgRegs* r);
 void Tg2OptionsScreen(TgRegs* r);
+void Tg2RaceInfoScreen(TgRegs* r);
 void Tg2ShopDraw(TgRegs* r);
 void Tg2ShopLeft(TgRegs* r);
 void Tg2ShopRight(TgRegs* r);
@@ -311,6 +312,7 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1FACC7, "ShopLeft", Tg2ShopLeft, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FACEF, "ShopRight", Tg2ShopRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FAD60, "ShopDown", Tg2ShopDown, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1FB265, "RaceInfoScreen", Tg2RaceInfoScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FB6AC, "NextDigit", Tg2NextDigit, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FB6BE, "BoxEdges", Tg2BoxEdges, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FB744, "PixelsToTiles", Tg2PixelsToTiles, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
