@@ -625,3 +625,137 @@ void Tg2PixelsToTiles(TgRegs* r) {
   r->n = (r->db & 0x80) != 0;
   r->z = r->db == 0;
 }
+
+// ---- $1F:D819: a 112-bit number times A ----
+// The seven words at $06-$12 (low first) times A, plus X, back into $06-$12 (the password's
+// arithmetic). $14-$20 hold the sum as it builds.
+void Tg2MultiplyLong(TgRegs* r) {
+  dp_set(r, 0x04, r->a);
+  dp_set(r, 0x14, r->x);
+  for(uint8_t o = 0x16; o <= 0x20; o = (uint8_t) (o + 2)) dp_set(r, o, 0);
+  bool c = r->c, v = r->v;
+  do {
+    uint16_t m = dp(r, 0x04);
+    dp_set(r, 0x04, m >> 1);
+    if(m & 1) {
+      c = false;
+      for(int i = 0; i < 7; i++) {
+        uint16_t a = dp(r, (uint8_t) (0x06 + 2 * i)), b = dp(r, (uint8_t) (0x14 + 2 * i));
+        uint32_t t = (uint32_t) a + b + c;
+        v = (~(a ^ b) & (a ^ (uint16_t) t) & 0x8000) != 0;
+        c = t > 0xFFFF;
+        dp_set(r, (uint8_t) (0x14 + 2 * i), (uint16_t) t);
+      }
+    }
+    c = false;
+    for(int i = 0; i < 7; i++) {
+      uint16_t a = dp(r, (uint8_t) (0x06 + 2 * i));
+      dp_set(r, (uint8_t) (0x06 + 2 * i), (uint16_t) (a << 1 | c));
+      c = (a & 0x8000) != 0;
+    }
+  } while(dp(r, 0x04) != 0);
+  for(int i = 0; i < 7; i++) dp_set(r, (uint8_t) (0x06 + 2 * i), dp(r, (uint8_t) (0x14 + 2 * i)));
+  uint16_t a = dp(r, 0x20);
+  r->a = a;
+  r->c = c;
+  r->v = v;
+  r->n = (a & 0x8000) != 0;
+  r->z = a == 0;
+}
+
+// ---- $1F:D74F: the password's check number ----
+// The sum of the progress words the password holds, modulo $6D (by the CPU's divider).
+static const uint16_t kCheckWords[] = {
+  0x1D03, 0x1D2C, 0x1D09, 0x1D32, 0x1D0B, 0x1D34, 0x1D0D, 0x1D36, 0x1D0F, 0x1D38, 0x1D11,
+  0x1D3A, 0x1D13, 0x1D3C, 0x1D15, 0x1D3E, 0x1CFF, 0x1D28, 0x1D01, 0x1D2A, 0x1CDD, 0x1CE1,
+  0x1D19, 0x1D42, 0x1D05, 0x1D2E, 0x1D07, 0x1D30, 0x1CDB,
+};
+
+void Tg2PasswordCheck(TgRegs* r) {
+  uint32_t db = (uint32_t) r->db << 16;
+  uint16_t sum = 0;
+  bool c = false, v = false;
+  for(size_t i = 0; i < sizeof kCheckWords / sizeof kCheckWords[0]; i++) {
+    uint16_t b = rd(db | kCheckWords[i]);
+    uint32_t t = (uint32_t) sum + b;
+    v = (~(sum ^ b) & (sum ^ (uint16_t) t) & 0x8000) != 0;
+    c = t > 0xFFFF;
+    sum = (uint16_t) t;
+  }
+  wr(db | 0x4204, sum);
+  wr8(db | 0x4206, 0x6D);
+  uint16_t a = rd(db | 0x4216);
+  r->a = a;
+  r->c = c;
+  r->v = v;
+  r->n = (a & 0x8000) != 0;
+  r->z = a == 0;
+}
+
+// ---- $1F:D33F: the password for the progress so far ----
+//
+// Builds one big number from the progress words (each times its range, as digits of a
+// mixed-radix number, then the check number), then reads it out five bits at a time as 22
+// letters at $1780, each scrambled by a fixed table and the letter before it.
+static const struct { uint16_t adr; uint16_t range; } kPasswordDigits[] = {
+  { 0x1D03, 4 }, { 0x1D05, 4 }, { 0x1D07, 4 }, { 0x1D09, 4 }, { 0x1D0B, 4 }, { 0x1D0D, 4 },
+  { 0x1D0F, 5 }, { 0x1D11, 5 }, { 0x1D13, 5 }, { 0x1D15, 8 }, { 0x1CFF, 2 }, { 0x1D01, 10 },
+  { 0x1D19, 0x0500 }, { 0x1D2C, 4 }, { 0x1D2E, 4 }, { 0x1D30, 4 }, { 0x1D32, 4 },
+  { 0x1D34, 4 }, { 0x1D36, 4 }, { 0x1D38, 5 }, { 0x1D3A, 5 }, { 0x1D3C, 5 }, { 0x1D3E, 8 },
+  { 0x1D28, 2 }, { 0x1D2A, 10 }, { 0x1D42, 0x0500 }, { 0x1CDD, 3 }, { 0x1CE1, 0x41 },
+  { 0x1CDB, 2 },
+};
+
+void Tg2MakePassword(TgRegs* r) {
+  uint32_t db = (uint32_t) r->db << 16;
+  for(uint8_t o = 0x06; o <= 0x12; o = (uint8_t) (o + 2)) dp_set(r, o, 0);
+  for(size_t i = 0; i < sizeof kPasswordDigits / sizeof kPasswordDigits[0]; i++) {
+    uint16_t adr = kPasswordDigits[i].adr;
+    uint16_t v = rd(db | adr);
+    if(adr == 0x1D01 || adr == 0x1D2A) {
+      if(v & 0x8000) v = (uint16_t) ((v & 0x7FFF) + 5);  // a negative value counts from 5
+    } else if(adr == 0x1CE1) {
+      v = (uint16_t) (v << 2);
+    }
+    r->x = v;
+    r->a = kPasswordDigits[i].range;
+    Tg2MultiplyLong(r);
+  }
+  Tg2PasswordCheck(r);
+  r->x = r->a;
+  r->a = 0x006D;
+  Tg2MultiplyLong(r);
+  dp_set(r, 0x00, 0x0016);
+  dp_set(r, 0x02, 0);
+  uint16_t y = 0;
+  bool c = false, v = false;
+  uint8_t ch = 0;
+  do {
+    uint16_t a = dp(r, 0x06) ^ rd(0x9F0000u | (uint16_t) (0xD7F9 + y));
+    uint16_t b = dp(r, 0x02);
+    uint32_t t = (uint32_t) a + b;
+    v = (~(a ^ b) & (a ^ (uint16_t) t) & 0x8000) != 0;
+    uint16_t k = (uint16_t) t & 0x001F;
+    dp_set(r, 0x02, k);
+    ch = rd8(0x9F0000u | (uint16_t) (0xD7D9 + k));
+    wr8(db | (uint16_t) (0x1780 + y), ch);
+    for(int s = 0; s < 5; s++) {
+      c = false;
+      for(int i = 6; i >= 0; i--) {
+        uint8_t o = (uint8_t) (0x06 + 2 * i);
+        uint16_t w = dp(r, o);
+        dp_set(r, o, (uint16_t) (w >> 1 | (c ? 0x8000 : 0)));
+        c = w & 1;
+      }
+    }
+    y++;
+    dp_set(r, 0x00, (uint16_t) (dp(r, 0x00) - 1));
+  } while(dp(r, 0x00) != 0);
+  r->a = ch;
+  r->x = 0;
+  r->y = y;
+  r->c = c;
+  r->v = v;
+  r->n = false;
+  r->z = true;
+}

@@ -19,6 +19,9 @@ void Tg2Decompress(TgRegs* r);
 void Tg2Unpack(TgRegs* r);
 void Tg2DrawBigString(TgRegs* r);
 void Tg2PackSprites(TgRegs* r);
+void Tg2MakePassword(TgRegs* r);
+void Tg2MultiplyLong(TgRegs* r);
+void Tg2PasswordCheck(TgRegs* r);
 void Tg2PixelsToTiles(TgRegs* r);
 void Tg2FrontEndInit(TgRegs* r);
 void Tg2ResetPpu(TgRegs* r);
@@ -196,6 +199,9 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1FA13D, "FillWords", Tg2FillWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FB744, "PixelsToTiles", Tg2PixelsToTiles, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FBF14, "Unpack", Tg2Unpack, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FD33F, "MakePassword", Tg2MakePassword, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FD74F, "PasswordCheck", Tg2PasswordCheck, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FD819, "MultiplyLong", Tg2MultiplyLong, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FDBDC, "DrawBigString", Tg2DrawBigString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x1FDD7A, "DrawSmallString", Tg2DrawSmallString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
 };
