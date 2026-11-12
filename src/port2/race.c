@@ -184,7 +184,11 @@ static void race(TgRegs* r, bool two) {
     if(w(0x0514) == 0) ws(0x0122, 0xFFFF);
     // Lightning: when the last flash is over, the next comes at random. (The original
     // stirs in whatever X, Y and the carry the drawing left; here they are zero.)
-    if(neg(w(0x0500)) && w(0x0502) == 0) {
+    // Smooth motion updates three times as often, so it rolls only every third update to
+    // keep the original's odds per second.
+    static unsigned thirds;
+    bool roll = tg_port_race_frames != 1 || ++thirds % 3 == 0;
+    if(neg(w(0x0500)) && w(0x0502) == 0 && roll) {
       uint16_t a = tg2_random16(0, 0, 0, false);
       if(a < 0x0080) ws(0x0502, (uint16_t) ((a >> 2) + 4));
     }

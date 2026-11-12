@@ -61,6 +61,7 @@ static struct {
   bool original;  // the game's own code throughout (--original)
   TgGameId gameId;  // which of the three games the ROM is
   bool plain;  // no Top Gear 1 extras: --original, or Top Gear 2 / 3000 (not there yet)
+  bool smoothOk;  // smooth motion: the C port runs the race (TG1, TG2)
   bool wideOk;  // widescreen works: Top Gear 1, or Top Gear 2's C port
   bool smooth;  // enhancement: race logic every frame instead of every third (F6, --smooth)
   bool recordedSmooth;
@@ -333,7 +334,7 @@ static void updateTitle(void) {
   char title[128];
   snprintf(title, sizeof(title), "%s  |  %s, %s%s%s%s%s", tg_games[app.gameId].name, aspectNames[app.aspect], filterNames[app.filter],
            app.integerScale ? ", integer scale" : "",
-           app.smooth && !app.plain ? ", smooth motion" : "",
+           app.smooth && app.smoothOk ? ", smooth motion" : "",
            app.fullView && !app.plain ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
   if(app.wide && app.wideOk) SDL_strlcat(title, ", widescreen", sizeof(title));
   if(app.sideBySide && !app.plain) SDL_strlcat(title, ", side by side", sizeof(title));
@@ -590,7 +591,7 @@ static void runFrame(int samples) {
   }
   // Smooth motion runs the race logic every frame; the original updates it every third
   // frame (its pace is scaled by the frames elapsed, so the race takes the same time).
-  tg_port_race_frames = app.smooth && !app.plain ? 1 : 3;
+  tg_port_race_frames = app.smooth && app.smoothOk ? 1 : 3;
   int margin = app.replaying ? app.replay.wide : wantedMargin();
   if(app.gameId == TG_GAME_TOPGEAR) {
     if(app.fullView != tg_port_full_view) tg_game_set_full_view(app.game, app.fullView);
@@ -1044,6 +1045,7 @@ int main(int argc, char** argv) {
   app.gameId = rom.game;
   app.plain = original || rom.game != TG_GAME_TOPGEAR;
   app.wideOk = !original && rom.game != TG_GAME_TOPGEAR3000;
+  app.smoothOk = app.wideOk;
   // Top Gear 3000 has no C port yet, so it always runs the game's own code.
   tg_game_set_port_mode(app.game, original || rom.game == TG_GAME_TOPGEAR3000 ? TG_PORT_OFF : TG_PORT_NATIVE);
 
