@@ -104,6 +104,8 @@ void Tg2VramDma(TgRegs* r);
 void Tg2SetFadeIn(TgRegs* r);
 void Tg2FillWords(TgRegs* r);
 void Tg2MenuStart(TgRegs* r);
+void Tg2OptionsFromTitle(TgRegs* r);
+void Tg2OptionsScreen(TgRegs* r);
 void Tg2ShopDraw(TgRegs* r);
 void Tg2ShopLeft(TgRegs* r);
 void Tg2ShopRight(TgRegs* r);
@@ -295,6 +297,8 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1F9F74, "SetScreenRegs", Tg2SetScreenRegs, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x1FA117, "SetFadeIn", Tg2SetFadeIn, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA13D, "FillWords", Tg2FillWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FA24C, "OptionsFromTitle", Tg2OptionsFromTitle, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1FA3B8, "OptionsScreen", Tg2OptionsScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FA4F4, "OptionsCursorY", Tg2OptionsCursorY, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA4FF, "OpenScreen1", Tg2OpenScreen1, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA519, "OpenScreen2", Tg2OpenScreen2, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },

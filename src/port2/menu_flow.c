@@ -29,6 +29,9 @@ void Tg2UnitsPicture(TgRegs* r);
 void Tg2ShopPanel(TgRegs* r);
 void Tg2ShopText(TgRegs* r);
 void Tg2PackSpritesKeep(TgRegs* r);
+void Tg2OptionsCursorY(TgRegs* r);
+void Tg2UnpackSend(TgRegs* r);
+void Tg2UnpackSend2(TgRegs* r);
 void Tg2SetFadeIn(TgRegs* r);
 void Tg2ShopDraw(TgRegs* r);
 
@@ -309,16 +312,17 @@ static void run_fade(TgRegs* r, void (*each)(TgRegs*)) {
   } while(!r->z);
 }
 
-// Has the NMI send $0380 bytes from $7F:src to VRAM dest (the $7A queue) and waits for it.
-static void send_7a(TgRegs* r, uint16_t src, uint16_t dest) {
+// Has the NMI send bytes from $7F:src to VRAM dest (the $7A queue) and waits for it.
+static void send_7a_n(TgRegs* r, uint16_t src, uint16_t dest, uint16_t n) {
   dp_set_d(r, 0x7C, src);
   dp_set_d(r, 0x7E, 0x007F);
   dp_set_d(r, 0x80, dest);
-  dp_set_d(r, 0x7A, 0x0380);
+  dp_set_d(r, 0x7A, n);
   while(dp_d(r, 0x7A) != 0) tg_port_wait();
   r->a = 0;
   flags_nz16(r, 0);
 }
+static void send_7a(TgRegs* r, uint16_t src, uint16_t dest) { send_7a_n(r, src, dest, 0x0380); }
 
 // $910D / $90E9: unpacks bank (A):X into $7F:($60), then has the NMI send it to VRAM Y
 // through the queue at $7A (or $72), waiting for the queue to be free and then done.
@@ -749,3 +753,98 @@ static void shop_move(TgRegs* r, uint16_t table, uint16_t ret, bool next_item) {
 void Tg2ShopLeft(TgRegs* r) { shop_move(r, 0xADAF, 0xACDE, false); }
 void Tg2ShopRight(TgRegs* r) { shop_move(r, 0xADBB, 0xAD06, false); }
 void Tg2ShopDown(TgRegs* r) { shop_move(r, 0xADD3, 0xAD8F, true); }
+
+static void unpack_send2_at(TgRegs* r, uint16_t y, uint16_t bank, uint16_t src) {
+  r->y = y;
+  r->a = bank;
+  r->x = src;
+  Tg2UnpackSend2(r);
+}
+
+// The options screen's pictures, shared by $A24C and $A3B8 (send: $910D or $90E9).
+static void options_pictures(TgRegs* r, void (*send)(TgRegs*, uint16_t, uint16_t, uint16_t), bool title) {
+  unpack_send_at(r, (uint16_t) (0x2000 + dp_d(r, 0x6E)), 0x009E, 0xEDC0);
+  if(title) send(r, dp_d(r, 0x6A), 0x009C, 0x85E9);
+  uint16_t i = dp_d(r, 0x6C);
+  send(r, dp_d(r, 0x64), tg_read16(0x9FA202 + i), tg_read16(0x9FA200 + i));
+  send(r, (uint16_t) (dp_d(r, 0x6A) + 0x1000), 0x009C, 0x9796);
+  send(r, (uint16_t) (dp_d(r, 0x6A) + 0x10C0), 0x009C, 0x9817);
+  unpack_7f(r, 0x7F9C, 0x983D, dp_d(r, 0x60));
+  send_7a(r, dp_d(r, 0x60), dp_d(r, 0x62));
+  send_7a_n(r, (uint16_t) (dp_d(r, 0x60) + 0x0700), dp_d(r, 0x66), 0x0800);
+  r->y = 0xA5F5;
+  r->x = (uint16_t) (dp_d(r, 0xB1) + 0x10A4);
+  r->a = 0x309F;
+  Tg2DrawSmallString(r);
+  Tg2PackSpritesSwap(r);
+}
+
+// The options screen's layers, maps and window, and the cursor.
+static void options_regs(TgRegs* r) {
+  dp_set_d(r, 0x4C, 0x0017);
+  uint16_t a = (uint16_t) ((dp_d(r, 0x62) >> 8) & 0x00FC);
+  dp_set_d(r, 0x00, a);
+  dp_set_d(r, 0x43, (uint16_t) ((dp_d(r, 0x64) & 0xFC00) | a));
+  dp_set_d(r, 0x45, (uint16_t) ((dp_d(r, 0x66) >> 8) & 0x00FC));
+  uint16_t v = (uint16_t) ((dp_d(r, 0x6A) >> 8) & 0x00F0);
+  dp_set_d(r, 0x47, v);
+  v = (uint16_t) (((v >> 4) + 1) | v);
+  dp_set_d(r, 0x47, v);
+  dp_set_d(r, 0x47, (uint16_t) (((v & 0x000F) << 8) | v));
+  uint8_t b = g_ram[(uint16_t) (r->d + 0x6F)];
+  g_ram[(uint16_t) (r->d + 0x42)] = (uint8_t) (((uint8_t) (b + 0x20) & 0xF0) >> 5);
+  g_ram[(uint16_t) (r->d + 0x3E)] = 0x09;
+  Tg2OptionsCursorY(r);
+}
+
+static void options_start(TgRegs* r) {
+  wait1(r);
+  dp_set_d(r, 0x7A, 0);
+  dp_set_d(r, 0x8F, 0);
+  dp_set_d(r, 0x8D, dp_d(r, 0xA1));
+}
+
+// $A24C: the options screen from the title: its palettes straight in, then a scroll in
+// ($2C/$2E) unless the second player's view is to be closed.
+void Tg2OptionsFromTitle(TgRegs* r) {
+  dp_set_d(r, 0x30, 0x8000);
+  options_start(r);
+  options_pictures(r, unpack_send2_at, true);
+  uint16_t p = dp_d(r, 0x70);
+  for(uint16_t i = 0; i < 0x20; i++) {
+    g_ram[(uint16_t) (p + 0x40 + i)] = tg_bus_read8(0x9E8020 + i);
+    g_ram[(uint16_t) (p + 0x60 + i)] = tg_bus_read8(0x9C9736 + i);
+    g_ram[(uint16_t) (p + 0x100 + i)] = tg_bus_read8(0x9C9756 + i);
+  }
+  wr16_9f((uint16_t) (p + 0x0022), 0x14BF);
+  options_regs(r);
+  if((dp_d(r, 0x93) & 0x4000) && w(0x1CDB) == 0) {
+    uint16_t d = r->d;
+    tg_call_jsr(r, 0x9185, 0xA397, TG_MX_16);
+    regs(r); r->d = d;
+    tg_call_jsr(r, 0x9185, 0xA39A, TG_MX_16);
+    regs(r); r->d = d;
+    r->a = 0x8000;
+    flags_nz16(r, r->a);
+    r->c = true;
+    return;
+  }
+  dp_set_d(r, 0x30, 0);
+  dp_set_d(r, 0x2E, 0x0F00);
+  dp_set_d(r, 0x2C, 0x0040);
+  dp_set_d(r, 0x9F, 0x0040);
+  wait1(r);
+  r->c = false;
+}
+
+// $A3B8: the options screen, faded in.
+void Tg2OptionsScreen(TgRegs* r) {
+  dp_set_d(r, 0x4C, 0x0002);
+  options_start(r);
+  options_pictures(r, unpack_send_at, false);
+  fade_row(r, 0x0062, 0x009C, 0x9738);
+  fade_row(r, 0x0102, 0x009C, 0x9758);
+  fade_row(r, 0x0022, 0x009C, 0x9778);
+  options_regs(r);
+  screen_end(r, 0x0017);
+}
