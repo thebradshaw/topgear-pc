@@ -205,13 +205,13 @@ bool tg_game_ghosts_changed(TgGame* game) {
   return c;
 }
 
-// File: "TGGHOST1", then per course with a lap: course byte, lap time word, sample count
-// word, samples (4 little-endian words each).
+// File: "TGGHOST2", then per course with a lap: course byte, lap time word, sample count
+// word, samples (5 little-endian words each; "TGGHOST1" files have 4, no section).
 bool tg_game_save_ghosts(TgGame* game, const char* path) {
   (void) game;
   FILE* f = fopen(path, "wb");
   if(f == NULL) return false;
-  fwrite("TGGHOST1", 1, 8, f);
+  fwrite("TGGHOST2", 1, 8, f);
   for(int c = 0; c < TG_GHOST_COURSES; c++) {
     const TgGhostLap* l = &tg_port_ghosts[c];
     if(l->count == 0) continue;
@@ -219,8 +219,8 @@ bool tg_game_save_ghosts(TgGame* game, const char* path) {
     fwrite(h, 1, 5, f);
     for(int i = 0; i < l->count; i++) {
       const TgGhostSample* s = &l->samples[i];
-      uint16_t w[4] = {s->time, s->pos, s->side, s->kind};
-      for(int k = 0; k < 4; k++) {
+      uint16_t w[5] = {s->time, s->pos, s->side, s->kind, s->pos_hi};
+      for(int k = 0; k < 5; k++) {
         uint8_t b[2] = {(uint8_t) w[k], (uint8_t) (w[k] >> 8)};
         fwrite(b, 1, 2, f);
       }
@@ -234,7 +234,8 @@ bool tg_game_load_ghosts(TgGame* game, const char* path) {
   FILE* f = fopen(path, "rb");
   if(f == NULL) return false;
   char magic[8];
-  bool ok = fread(magic, 1, 8, f) == 8 && memcmp(magic, "TGGHOST1", 8) == 0;
+  bool ok = fread(magic, 1, 8, f) == 8 && memcmp(magic, "TGGHOST", 7) == 0 && (magic[7] == '1' || magic[7] == '2');
+  int words = ok && magic[7] == '2' ? 5 : 4;
   uint8_t h[5];
   while(ok && fread(h, 1, 5, f) == 5) {
     int c = h[0], count = h[3] | h[4] << 8;
@@ -242,10 +243,11 @@ bool tg_game_load_ghosts(TgGame* game, const char* path) {
     TgGhostLap* l = &tg_port_ghosts[c];
     l->time = (uint16_t) (h[1] | h[2] << 8);
     for(int i = 0; i < count && ok; i++) {
-      uint8_t b[8];
-      ok = fread(b, 1, 8, f) == 8;
+      uint8_t b[10] = {0};
+      ok = fread(b, 1, (size_t) words * 2, f) == (size_t) words * 2;
       l->samples[i] = (TgGhostSample) {(uint16_t) (b[0] | b[1] << 8), (uint16_t) (b[2] | b[3] << 8),
-                                       (uint16_t) (b[4] | b[5] << 8), (uint16_t) (b[6] | b[7] << 8)};
+                                       (uint16_t) (b[4] | b[5] << 8), (uint16_t) (b[6] | b[7] << 8),
+                                       (uint16_t) (b[8] | b[9] << 8)};
     }
     l->count = ok ? count : 0;
   }

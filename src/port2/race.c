@@ -153,6 +153,7 @@ static void rain_after(uint16_t state, uint16_t shown) {
 // A race, from its first frame until it is over.
 static void race(TgRegs* r, bool two) {
   ws(0x00F6, (uint16_t) (w(0x001A) - 1));
+  if(w(0xFF1A) == 0) tg2_raced = true;
   for(;;) {
     while(neg(w(0x0122))) tg_port_wait();
     // The original takes about three frames an update (its logic is that slow), and scales
@@ -177,6 +178,7 @@ static void race(TgRegs* r, bool two) {
     in_bank(0x80, Tg2DriveCar1, r);
     if(two) in_bank(0x80, Tg2DriveCar2, r);
     in_bank(0x80, Tg2Cars, r);
+    if(!two) tg2_ghost_update();
     in_bank(0x88, Tg2Stream1, r);
     if(two) in_bank(0x88, Tg2Stream2, r);
     in_bank(0x88, two ? Tg2BuildRoad2P : Tg2BuildRoad, r);

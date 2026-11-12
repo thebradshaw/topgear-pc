@@ -40,6 +40,7 @@ add_library(tgcore STATIC
   src/port2/road.c
   src/port2/objects.c
   src/port2/objpass.c
+  src/port2/ghost.c
   src/port2/colours.c
   src/port2/drive.c
   src/port2/cars.c

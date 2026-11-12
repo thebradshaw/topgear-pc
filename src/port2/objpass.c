@@ -814,7 +814,11 @@ static void strip_cars(TgRegs* r, bool first) {
     if(v >= z(0x58)) return;
     if(!first) zs(0x62, (uint16_t) (((v - z(0x58)) & 0x003E) << 1));
     zs(0x46, (uint16_t) (y + 8));
-    if(!neg(w((uint16_t) (0xC340 + y)))) draw_car(r, y, first);
+    if(!neg(w((uint16_t) (0xC340 + y)))) {
+      tg2_sprite_ghost = (int) y == tg2_ghost_entry;
+      draw_car(r, y, first);
+      tg2_sprite_ghost = false;
+    }
     zs(0x42, (uint16_t) (z(0x42) - 1));
   }
 }

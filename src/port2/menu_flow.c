@@ -4,6 +4,7 @@
 // from here. The NMI ($1F:9194) and the two players' threads it switches between stay the
 // original.
 
+#include <string.h>
 #include <stddef.h>
 
 #include "../port/port.h"
@@ -1317,6 +1318,17 @@ static int pw_select(TgRegs* r) {
   return PW_GO_ON;
 }
 
+bool tg2_autosave;
+uint8_t tg2_saved_password[TG2_PASSWORD_LETTERS];
+bool tg2_password_changed;
+bool tg2_raced;
+
+static bool saved_password(void) {
+  for(int i = 0; i < TG2_PASSWORD_LETTERS; i++)
+    if(tg2_saved_password[i] != 0) return true;
+  return false;
+}
+
 static int password(TgRegs* r) {
   r->x = 0xD2E2; r->a = 0x009F;
   Tg2SetScreenRegs(r);
@@ -1343,7 +1355,14 @@ static int password(TgRegs* r) {
   move_bytes(0x9F, 0xD256, 0x00, 0x17D3, 0x008C);
   dp_set_d(r, 0xA9, 0);
   dp_set_d(r, 0xAD, 0);
-  if(!(dp_d(r, 0xE3) & 0x8000)) {  // the season so far as a password
+  if(tg2_autosave && !tg2_raced && saved_password()) {
+    // Auto-save: nothing raced since power-on, so the last country's password is filled in
+    // in place of the starting season's.
+    dp_set_d(r, 0x1E, 0xFFFF);
+    for(uint16_t i = 0; i < 0x16; i++) g_ram[0x17D7 + i * 6] = tg2_saved_password[i];
+    dp_set_d(r, 0xA9, 0x16);
+    dp_set_d(r, 0xAD, 0x16);
+  } else if(!(dp_d(r, 0xE3) & 0x8000)) {  // the season so far as a password
     Tg2MakePassword(r);
     dp_set_d(r, 0x1E, 0xFFFF);
     for(uint16_t i = 0; i < 0x16; i++) g_ram[0x17D7 + i * 6] = g_ram[0x1780 + i];
@@ -2346,6 +2365,10 @@ static void country_password(TgRegs* r) {
   move_bytes(0x9F, 0xD256, 0x00, 0x17D3, 0x008C);
   Tg2MakePassword(r);
   for(uint16_t i = 0; i < 0x16; i++) g_ram[0x17D7 + i * 6] = g_ram[0x1780 + i];
+  if(tg2_autosave && memcmp(tg2_saved_password, &g_ram[0x1780], TG2_PASSWORD_LETTERS) != 0) {
+    memcpy(tg2_saved_password, &g_ram[0x1780], TG2_PASSWORD_LETTERS);
+    tg2_password_changed = true;
+  }
   dp_set_d(r, 0xA9, 0x0016);
   do {
     wait1(r);

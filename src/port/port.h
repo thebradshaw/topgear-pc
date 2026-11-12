@@ -199,11 +199,12 @@ extern int16_t tg_port_obj_grounds[0x2000];
 // Ghost car (ghost.c), an enhancement: the player's best race on each course, replayed as a
 // see-through car in 1-player races. The sprite builder flags the ghost's OAM entries in
 // tg_port_obj_flags (PPU_OBJ_GHOST) for the PPU to draw them see-through.
-#define TG_GHOST_COURSES 32
+#define TG_GHOST_COURSES 64  // Top Gear 2: 16 countries x 4 races
 #define TG_GHOST_SAMPLES 8192
 typedef struct TgGhostSample {
   uint16_t time;  // the race clock
   uint16_t pos, side, kind;  // the car record's track position, side position, kind bits
+  uint16_t pos_hi;           // Top Gear 2: the track section (pos is its fraction); kind is the height
 } TgGhostSample;
 typedef struct TgGhostLap {
   uint16_t time;  // the race's finishing time
@@ -216,6 +217,17 @@ extern bool tg_port_ghosts_changed;  // set when a new best lap is recorded
 extern uint16_t tg_port_ghost_key, tg_port_ghost_word;
 extern uint8_t tg_port_obj_flags[0x2000];
 void tg_port_ghost_update(void);
+void tg2_ghost_update(void);  // port2/ghost.c
+// Top Gear 2 auto-save (an enhancement, off by default): each country's password is kept
+// (menu_flow.c), and the password screen starts with the last one filled in.
+#define TG2_PASSWORD_LETTERS 22
+extern bool tg2_autosave;
+extern uint8_t tg2_saved_password[TG2_PASSWORD_LETTERS];  // all zero: none yet
+extern bool tg2_password_changed;
+extern bool tg2_raced;  // a season race has run since power-on (race.c)
+void tg2_ghost_show(void);
+extern bool tg2_sprite_ghost;
+extern int tg2_ghost_entry;
 
 // High frame rate (an enhancement): in-between frames are drawn from the last two race
 // frames (LakeSnes ppu_full.c). The renderer records each road line's depth and camera

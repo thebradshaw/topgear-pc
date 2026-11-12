@@ -17,6 +17,8 @@
 // (native mode); the default is 3, the original's pace without its slowdown.
 // --interp-steps turns on high frame rate and, with --shots-every, also writes each shot's
 // in-between pictures from the frame before (frameNNNNNN_k.ppm, k of K of the way).
+// --auto-save turns on Top Gear 2's auto-save and prints the password it keeps; --password2
+// gives it a kept password to start with.
 // --ghosts loads ghost-car races from FILE and saves them back if a better race is driven.
 
 #include <stdbool.h>
@@ -116,6 +118,14 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--watch-word") == 0 && next) watchWord = strtol(argv[++i], NULL, 16);
     else if(strcmp(argv[i], "--frame-hashes") == 0 && next) frameHashes = argv[++i];
     else if(strcmp(argv[i], "--ghosts") == 0 && next) ghostsPath = argv[++i];
+    else if(strcmp(argv[i], "--auto-save") == 0) tg2_autosave = true;
+    else if(strcmp(argv[i], "--password2") == 0 && next) {  // the kept password, as 44 hex digits
+      const char* hex = argv[++i];
+      for(int k = 0; k < TG2_PASSWORD_LETTERS && hex[k * 2] && hex[k * 2 + 1]; k++) {
+        char two[3] = {hex[k * 2], hex[k * 2 + 1], 0};
+        tg2_saved_password[k] = (uint8_t) strtol(two, NULL, 16);
+      }
+    }
     else if(strcmp(argv[i], "--interp-steps") == 0 && next) interpSteps = (int) strtol(argv[++i], NULL, 10);
     else if(strcmp(argv[i], "--dsp") == 0 && next) dspPath = argv[++i];
     else if(strcmp(argv[i], "--race-frames") == 0 && next) tg_port_race_frames = (int) strtol(argv[++i], NULL, 10);
@@ -265,6 +275,11 @@ int main(int argc, char** argv) {
   }
   free(pixels);
   if(ghostsPath != NULL && tg_game_ghosts_changed(game)) tg_game_save_ghosts(game, ghostsPath);
+  if(tg2_password_changed) {  // --auto-save: the Top Gear 2 password it kept
+    printf("auto-save password:");
+    for(int i = 0; i < TG2_PASSWORD_LETTERS; i++) printf(" %02x", tg2_saved_password[i]);
+    printf("\n");
+  }
   tg_game_destroy(game);
   tg_input_script_free(&script);
   tg_rom_free(&rom);

@@ -7,6 +7,8 @@
 
 void Tg2ObjectPass(TgRegs* r);
 
+static bool g_two_views;  // the ghost car is for 1-player races only
+
 static uint16_t z(uint8_t o) { return ram16(DPB + o); }
 static void zs(uint8_t o, uint16_t v) { ram16_set(DPB + o, v); }
 // Bank $7E words.
@@ -118,6 +120,7 @@ static void close_lists(uint16_t n, uint16_t v) {
 
 // $0B:8000. One player: the full-screen view.
 void Tg2DrawObjects1P(TgRegs* r) {
+  g_two_views = false;
   uint16_t d = r->d;
   uint8_t db = r->db;
   select_buffers(0x0BF0, 0x0FF0);
@@ -140,6 +143,7 @@ void Tg2DrawObjects1P(TgRegs* r) {
 
 // $0B:818A. Two players: player 2's view (bottom half) first, then player 1's (top).
 void Tg2DrawObjects2P(TgRegs* r) {
+  g_two_views = true;
   uint16_t d = r->d;
   uint8_t db = r->db;
   select_buffers(0x13F0, 0x17F0);
@@ -284,6 +288,7 @@ void Tg2ListVisibleCars(TgRegs* r) {
   ws((uint16_t) (0xC342 + x), 0);
   ws((uint16_t) (0xC344 + x), 0);
   ws((uint16_t) (0xC346 + x), 0x7FFE);
+  if(tg_port_ghost && !(z(0xCE) & 0x8000) && !g_two_views) tg2_ghost_show();
 }
 
 // Roadside object types (the $9F97 table): from the object record y in $6400 (flags,

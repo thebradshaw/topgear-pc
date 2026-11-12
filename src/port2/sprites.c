@@ -10,6 +10,7 @@
 
 #define DPB 0x0400u
 #define PPU_OBJ_LEFT_FLAG 2   // PPU_OBJ_LEFT (ppu.h)
+#define PPU_OBJ_GHOST_FLAG 1  // PPU_OBJ_GHOST
 #define TG_NO_GROUND (-32768) // PPU_NO_GROUND
 
 static uint16_t z(uint8_t o) { return ram16(DPB + o); }
@@ -23,7 +24,7 @@ static bool neg(uint16_t v) { return (v & 0x8000) != 0; }
 static uint8_t g_mark[0x2000], g_stamp = 1;
 static int16_t g_ground;
 bool tg2_sprite_road;  // set by the road objects' pass (objpass.c) while it draws
-static bool g_road;
+static bool g_road, g_mark_on;
 static uint8_t g_flags;
 
 // The record's bank (the original's data bank while drawing).
@@ -46,7 +47,7 @@ typedef struct PartKind {
 
 // One OAM entry at the buffer slot x (and its high-table copy at x + $200).
 static void oam(uint16_t x, uint16_t px, uint16_t py, uint16_t tile, bool big) {
-  if(g_road) {
+  if(g_mark_on) {
     g_mark[x & 0x1FFF] = g_stamp;
     tg_port_obj_grounds[x & 0x1FFF] = g_ground;
     tg_port_obj_flags[x & 0x1FFF] = g_flags;
@@ -200,13 +201,14 @@ void Tg2DrawSprite(TgRegs* r) {
     zs(0x36, (uint16_t) (0x0100 + tg_port_wide_margin));
   }
   g_ground = (int16_t) z(0x0E);
-  g_flags = (int16_t) z(0x0C) < 128 ? PPU_OBJ_LEFT_FLAG : 0;
+  g_flags = (uint8_t) (((int16_t) z(0x0C) < 128 ? PPU_OBJ_LEFT_FLAG : 0) | (tg2_sprite_ghost ? PPU_OBJ_GHOST_FLAG : 0));
+  g_mark_on = g_road || (tg_port_ghost && tg2_sprite_road);
   draw_records(y, split);
   if(widen) {
     zs(0x34, left0);
     zs(0x36, right0);
   }
-  g_road = false;
+  g_road = g_mark_on = false;
 }
 
 static void draw_records(uint16_t y, bool split) {
@@ -306,7 +308,7 @@ void Tg2FinishOam(TgRegs* r) {
   r->c = false;
   r->n = (r->db & 0x80) != 0;
   r->z = r->db == 0;
-  if(tg_port_wide_margin) {
+  if(tg_port_wide_margin || tg_port_ghost) {
     // The entries no object drew this frame (the HUD's, wherever their buffer) are not
     // the road's.
     for(uint16_t a = 0; a < 0x2000; a++) {

@@ -83,6 +83,7 @@ static struct {
   bool autoSave;  // enhancement: countries reached are remembered between sessions (Shift+F1, --auto-save)
   uint8_t saved[3];  // the countries open at each skill level, as saved
   char progressPath[2400];
+  char password2Path[2400];  // Top Gear 2 auto-save: the last country's password
   char settingsPath[2400];  // the options, remembered between sessions
   int recordedWide;
 } app;
@@ -317,6 +318,29 @@ static void saveProgress(void) {
   fclose(f);
 }
 
+// Top Gear 2: the password as 22 two-digit hex letter codes.
+static void savePassword2(void) {
+  FILE* f = app.password2Path[0] ? fopen(app.password2Path, "w") : NULL;
+  if(f == NULL) return;
+  for(int i = 0; i < TG2_PASSWORD_LETTERS; i++) fprintf(f, "%02x", tg2_saved_password[i]);
+  fprintf(f, "\n");
+  fclose(f);
+}
+
+static void loadPassword2(void) {
+  char* text = app.password2Path[0] ? SDL_LoadFile(app.password2Path, NULL) : NULL;
+  if(text == NULL) return;
+  uint8_t letters[TG2_PASSWORD_LETTERS];
+  bool ok = true;
+  for(int i = 0; i < TG2_PASSWORD_LETTERS && ok; i++) {
+    unsigned v;
+    ok = sscanf(text + i * 2, "%2x", &v) == 1 && v >= 0x20 && v < 0x80;
+    letters[i] = (uint8_t) v;
+  }
+  if(ok) memcpy(tg2_saved_password, letters, sizeof letters);
+  SDL_free(text);
+}
+
 static void loadProgress(void) {
   char* text = app.progressPath[0] ? SDL_LoadFile(app.progressPath, NULL) : NULL;
   if(text == NULL) return;
@@ -338,8 +362,8 @@ static void updateTitle(void) {
            app.fullView && !app.plain ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
   if(app.wide && app.wideOk) SDL_strlcat(title, ", widescreen", sizeof(title));
   if(app.sideBySide && !app.plain) SDL_strlcat(title, ", side by side", sizeof(title));
-  if(app.ghost && !app.plain) SDL_strlcat(title, ", ghost car", sizeof(title));
-  if(app.autoSave && !app.plain) SDL_strlcat(title, ", auto-save", sizeof(title));
+  if(app.ghost && app.smoothOk) SDL_strlcat(title, ", ghost car", sizeof(title));
+  if(app.autoSave && app.smoothOk) SDL_strlcat(title, ", auto-save", sizeof(title));
   if(app.highFps && !app.plain) SDL_strlcat(title, ", high frame rate", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
@@ -603,7 +627,9 @@ static void runFrame(int samples) {
     if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
   } else if(app.wideOk) {
     if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
+    if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
   }
+  tg2_autosave = app.autoSave && !app.replaying && app.gameId == TG_GAME_TOPGEAR2 && !app.original;
   if(app.record) {
     if(reset) fprintf(app.record, "%u reset\n", app.frame);
     if(app.smooth != app.recordedSmooth) {
@@ -662,7 +688,7 @@ static void runFrame(int samples) {
   tg_game_run_frame(app.game);
   app.frame++;
   // A new best race is saved straight away (not while replaying someone's recording).
-  if(app.gameId == TG_GAME_TOPGEAR && tg_game_ghosts_changed(app.game) && !app.replaying && app.ghostPath[0]) tg_game_save_ghosts(app.game, app.ghostPath);
+  if(app.smoothOk && tg_game_ghosts_changed(app.game) && !app.replaying && app.ghostPath[0]) tg_game_save_ghosts(app.game, app.ghostPath);
   if(app.autoSave && !app.replaying && app.gameId == TG_GAME_TOPGEAR) {
     uint8_t open[3];
     tg_game_progress(app.game, open);
@@ -674,6 +700,10 @@ static void runFrame(int samples) {
       }
     }
     if(more) saveProgress();
+  }
+  if(tg2_password_changed) {
+    tg2_password_changed = false;
+    savePassword2();
   }
   rumble();
 
@@ -986,9 +1016,11 @@ int main(int argc, char** argv) {
   if(prefDir) {
     snprintf(app.settingsPath, sizeof(app.settingsPath), "%ssettings.txt", prefDir);
     snprintf(app.progressPath, sizeof(app.progressPath), "%sprogress.txt", prefDir);
+    snprintf(app.password2Path, sizeof(app.password2Path), "%spassword2.txt", prefDir);
     SDL_free(prefDir);
     loadSettings();
     loadProgress();
+    loadPassword2();
   }
   const char* romArg = NULL;
   const char* replayPath = NULL;
@@ -1061,9 +1093,10 @@ int main(int argc, char** argv) {
   // Ghost cars: the best race on each course, kept with the settings.
   char* pref = SDL_GetPrefPath("topgear-pc", "Top Gear");
   if(pref) {
-    snprintf(app.ghostPath, sizeof(app.ghostPath), "%sghosts.bin", pref);
+    // One file per game: Top Gear 2's courses are numbered differently.
+    snprintf(app.ghostPath, sizeof(app.ghostPath), app.gameId == TG_GAME_TOPGEAR2 ? "%sghosts2.bin" : "%sghosts.bin", pref);
     SDL_free(pref);
-    if(app.gameId == TG_GAME_TOPGEAR) tg_game_load_ghosts(app.game, app.ghostPath);
+    if(app.smoothOk) tg_game_load_ghosts(app.game, app.ghostPath);
   }
 
   loadControls();
