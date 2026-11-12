@@ -9,10 +9,22 @@
 #include "../port/port.h"
 
 #define DPB 0x0400u
+#define PPU_OBJ_LEFT_FLAG 2   // PPU_OBJ_LEFT (ppu.h)
+#define TG_NO_GROUND (-32768) // PPU_NO_GROUND
 
 static uint16_t z(uint8_t o) { return ram16(DPB + o); }
 static void zs(uint8_t o, uint16_t v) { ram16_set(DPB + o, v); }
 static bool neg(uint16_t v) { return (v & 0x8000) != 0; }
+
+// Widescreen (an enhancement, off by default): objects are kept out to the wider edges,
+// and each OAM entry an object adds is marked as the road's (not the HUD's) for the PPU
+// (ppu_full.c), with which side of the screen it is on. g_mark[entry] == g_stamp: drawn
+// this frame by an object.
+static uint8_t g_mark[0x2000], g_stamp = 1;
+static int16_t g_ground;
+bool tg2_sprite_road;  // set by the road objects' pass (objpass.c) while it draws
+static bool g_road;
+static uint8_t g_flags;
 
 // The record's bank (the original's data bank while drawing).
 static uint8_t g_bank;
@@ -34,6 +46,11 @@ typedef struct PartKind {
 
 // One OAM entry at the buffer slot x (and its high-table copy at x + $200).
 static void oam(uint16_t x, uint16_t px, uint16_t py, uint16_t tile, bool big) {
+  if(g_road) {
+    g_mark[x & 0x1FFF] = g_stamp;
+    tg_port_obj_grounds[x & 0x1FFF] = g_ground;
+    tg_port_obj_flags[x & 0x1FFF] = g_flags;
+  }
   ram16_set(x, px);
   ram16_set((uint16_t) (x + 0x200), big ? (uint16_t) (px | 0x0200) : (uint16_t) (px & 0xFDFF));
   ram16_set((uint16_t) (x + 1), py);
@@ -154,6 +171,8 @@ static const PartKind kBigUpper = { true, 0x32 }, kSmallUpper = { false, 0x32 };
 
 // $0B:A6EA. Draws the object frame $08 (scaled by $0A) at ($0C, $0E), from the slot
 // count $28 and buffer position $2C.
+static void draw_records(uint16_t y, bool split);
+
 void Tg2DrawSprite(TgRegs* r) {
   (void) r;
   if(z(0x28) == 0) return;
@@ -172,6 +191,25 @@ void Tg2DrawSprite(TgRegs* r) {
   zs(0x3C, (uint16_t) ((z(0x3A) != 0) | (z(0x34) != 0) << 1 | (z(0x36) != 0x0100) << 2 |
                        (z(0x38) != z(0x30)) << 3));
   bool split = z(0x30) != z(0x32);
+  // Widescreen: a window as wide as the screen reaches the wider edges (no covers there).
+  uint16_t left0 = z(0x34), right0 = z(0x36);
+  g_road = tg_port_wide_margin && tg2_sprite_road;
+  bool widen = g_road && !split && left0 == 0 && right0 == 0x0100;
+  if(widen) {
+    zs(0x34, (uint16_t) -tg_port_wide_margin);
+    zs(0x36, (uint16_t) (0x0100 + tg_port_wide_margin));
+  }
+  g_ground = (int16_t) z(0x0E);
+  g_flags = (int16_t) z(0x0C) < 128 ? PPU_OBJ_LEFT_FLAG : 0;
+  draw_records(y, split);
+  if(widen) {
+    zs(0x34, left0);
+    zs(0x36, right0);
+  }
+  g_road = false;
+}
+
+static void draw_records(uint16_t y, bool split) {
 
   for(;;) {
     // The record's position, scaled.
@@ -268,6 +306,17 @@ void Tg2FinishOam(TgRegs* r) {
   r->c = false;
   r->n = (r->db & 0x80) != 0;
   r->z = r->db == 0;
+  if(tg_port_wide_margin) {
+    // The entries no object drew this frame (the HUD's, wherever their buffer) are not
+    // the road's.
+    for(uint16_t a = 0; a < 0x2000; a++) {
+      if(g_mark[a] != g_stamp) {
+        tg_port_obj_grounds[a] = TG_NO_GROUND;
+        tg_port_obj_flags[a] = 0;
+      }
+    }
+    if(++g_stamp == 0) g_stamp = 1;
+  }
   for(int k = 0; k < 32; k++) {
     uint8_t packed = 0;
     for(int j = 0; j < 4; j++) {

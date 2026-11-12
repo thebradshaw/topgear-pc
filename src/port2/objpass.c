@@ -93,20 +93,26 @@ static uint16_t mul_wide(uint16_t v, int n) {
   return a;
 }
 
+extern bool tg2_sprite_road;
 static void draw(TgRegs* r) {
   r->d = DPB;
   r->db = 0x7E;
+  tg2_sprite_road = true;
   Tg2DrawSprite(r);
+  tg2_sprite_road = false;
 }
 
-// Player-car slot o ($DC, $E2, $E8): its sprite set, OAM bits and track position.
+// Player-car slot o ($DC, $E2, $E8): its marker on the map, from its track position.
 static void player_car(TgRegs* r, uint8_t o) {
   ws((uint16_t) (0x1DF2 + z(0x10)), z((uint8_t) (o + 4)));
   zs(0x08, z((uint8_t) (o + 2)));
   uint16_t t = w((uint16_t) (0x5000 + ((z(o) >> 2) & 0xFFFE)));
   zs(0x0C, (uint16_t) ((t & 0xFF) + z(0xD8)));
   zs(0x0E, (uint16_t) (z(0xDA) - (t >> 8)));
-  draw(r);
+  // A marker on the dashboard map: the HUD's, not the road's (widescreen moves it with the map).
+  r->d = DPB;
+  r->db = 0x7E;
+  Tg2DrawSprite(r);
 }
 
 // The camera car's effects block at $D6 (+2: active parts; +4: last frame's; +6: kind;

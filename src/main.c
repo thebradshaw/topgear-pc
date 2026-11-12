@@ -61,6 +61,7 @@ static struct {
   bool original;  // the game's own code throughout (--original)
   TgGameId gameId;  // which of the three games the ROM is
   bool plain;  // no Top Gear 1 extras: --original, or Top Gear 2 / 3000 (not there yet)
+  bool wideOk;  // widescreen works: Top Gear 1, or Top Gear 2's C port
   bool smooth;  // enhancement: race logic every frame instead of every third (F6, --smooth)
   bool recordedSmooth;
   bool highFps;  // enhancement: in-between frames at the display's rate (Shift+F6, --high-fps)
@@ -334,7 +335,7 @@ static void updateTitle(void) {
            app.integerScale ? ", integer scale" : "",
            app.smooth && !app.plain ? ", smooth motion" : "",
            app.fullView && !app.plain ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
-  if(app.wide && !app.plain) SDL_strlcat(title, ", widescreen", sizeof(title));
+  if(app.wide && app.wideOk) SDL_strlcat(title, ", widescreen", sizeof(title));
   if(app.sideBySide && !app.plain) SDL_strlcat(title, ", side by side", sizeof(title));
   if(app.ghost && !app.plain) SDL_strlcat(title, ", ghost car", sizeof(title));
   if(app.autoSave && !app.plain) SDL_strlcat(title, ", auto-save", sizeof(title));
@@ -492,7 +493,7 @@ static void rumble(void) {
 
 // Widescreen: the margin that makes the picture as wide as the window.
 static int wantedMargin(void) {
-  if(!app.wide || app.plain) return 0;
+  if(!app.wide || !app.wideOk) return 0;
   int outW, outH;
   if(!SDL_GetCurrentRenderOutputSize(app.renderer, &outW, &outH) || outH <= 0) return 0;
   double pixel = app.aspect == ASPECT_4_3 ? SNES_H * 4.0 / 3.0 / SNES_W : 1.0;
@@ -599,6 +600,8 @@ static void runFrame(int samples) {
     if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
     if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
     if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
+  } else if(app.wideOk) {
+    if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
   }
   if(app.record) {
     if(reset) fprintf(app.record, "%u reset\n", app.frame);
@@ -1040,6 +1043,7 @@ int main(int argc, char** argv) {
   app.original = original;
   app.gameId = rom.game;
   app.plain = original || rom.game != TG_GAME_TOPGEAR;
+  app.wideOk = !original && rom.game != TG_GAME_TOPGEAR3000;
   // Top Gear 3000 has no C port yet, so it always runs the game's own code.
   tg_game_set_port_mode(app.game, original || rom.game == TG_GAME_TOPGEAR3000 ? TG_PORT_OFF : TG_PORT_NATIVE);
 
