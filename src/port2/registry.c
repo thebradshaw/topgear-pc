@@ -104,6 +104,7 @@ void Tg2VramDma(TgRegs* r);
 void Tg2SetFadeIn(TgRegs* r);
 void Tg2FillWords(TgRegs* r);
 void Tg2MenuStart(TgRegs* r);
+void Tg2OptionsFadeOut(TgRegs* r);
 void Tg2NameEntryScreen(TgRegs* r);
 void Tg2NameEntryFadeOut(TgRegs* r);
 void Tg2GearsScreen(TgRegs* r);
@@ -295,6 +296,7 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1FA519, "OpenScreen2", Tg2OpenScreen2, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA533, "OpenScreen3", Tg2OpenScreen3, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA54D, "OpenScreen4", Tg2OpenScreen4, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FA59A, "OptionsFadeOut", Tg2OptionsFadeOut, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1FAAF2, "ShopPanel", Tg2ShopPanel, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FAB43, "ShopText", Tg2ShopText, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FB6AC, "NextDigit", Tg2NextDigit, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },

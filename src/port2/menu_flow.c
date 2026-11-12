@@ -532,3 +532,14 @@ void Tg2NameEntryScreen(TgRegs* r) {
   flags_nz16(r, r->a);
   r->c = false;
 }
+
+// $A59A: the options screen fades out.
+void Tg2OptionsFadeOut(TgRegs* r) {
+  fade_row(r, 0x0062, 0x809C, 0x9738);
+  fade_row(r, 0x0102, 0x809C, 0x9758);
+  fade_row(r, 0x0022, 0x809C, 0x9778);
+  run_fade(r, NULL);
+  r->a = 0xFFFF;
+  dp_set_d(r, 0x3C, r->a);
+  flags_nz16(r, r->a);
+}
