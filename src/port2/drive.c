@@ -18,11 +18,12 @@ static const uint8_t kDp2[][2] = {
   { 0x4C, 0x4E }, { 0x50, 0x52 }, { 0x54, 0x58 }, { 0x56, 0x5A }, { 0x5C, 0x5E }, { 0x60, 0x62 }, { 0x64, 0x66 },
   { 0x68, 0x6A }, { 0x6C, 0x6E }, { 0x70, 0x72 }, { 0x7A, 0x9C }, { 0x7C, 0x9E }, { 0x7E, 0xA0 },
   { 0x80, 0xA2 }, { 0x82, 0xA4 }, { 0x84, 0xA6 }, { 0x86, 0xA8 }, { 0x88, 0xAA }, { 0x8A, 0xAC },
-  { 0x8C, 0xAE }, { 0x8E, 0xB0 }, { 0x90, 0xB2 }, { 0x92, 0xB4 }, { 0x94, 0xB6 }, { 0xBC, 0xBE },
+  { 0x8C, 0xAE }, { 0x8E, 0xB0 }, { 0x90, 0xB2 }, { 0x92, 0xB4 }, { 0x94, 0xB6 }, { 0x96, 0xB8 }, { 0x97, 0xB9 }, { 0xBC, 0xBE },
   { 0xC0, 0xC2 }, { 0xC4, 0xC6 }, { 0xCA, 0xCB }, { 0xCC, 0xCE },
 };
 static const uint16_t kAbs2[][2] = {
-  { 0x0028, 0x002A }, { 0x0030, 0x0032 }, { 0x0178, 0x017A }, { 0x017C, 0x017E }, { 0x018C, 0x018E },
+  { 0x0028, 0x002A }, { 0x0030, 0x0032 }, { 0x0178, 0x017A }, { 0x017C, 0x017E }, { 0x0184, 0x0186 },
+  { 0x018C, 0x018E }, { 0x0190, 0x0192 }, { 0xFE38, 0xFE61 }, { 0xFE3C, 0xFE65 }, { 0xFE9A, 0xFE9C },
   { 0x019A, 0x019C }, { 0x01A4, 0x01BE }, { 0x01A6, 0x01C0 }, { 0x01A8, 0x01C2 }, { 0x01AA, 0x01C4 },
   { 0x01AE, 0x01C8 }, { 0x01B2, 0x01CC }, { 0x01B4, 0x01CE }, { 0x01B6, 0x01D0 }, { 0x01B8, 0x01D2 },
   { 0x0204, 0x0240 }, { 0x0206, 0x0242 }, { 0x0212, 0x024E }, { 0x0214, 0x0250 }, { 0x0226, 0x0262 },
@@ -101,6 +102,298 @@ static uint16_t call(uint16_t p1_target, uint16_t p1_site, uint16_t a, uint16_t 
   return r->a;
 }
 static void sound(uint16_t id, uint16_t site, uint16_t x) { call(0xA29B, site, id, x); }
+
+// --- What the car meets on the road ($9BFD) ---
+//
+// The track data lists things by distance: roadside objects to hit, wall sections, and
+// things lying on the road (pick-ups, puddles and the like, kept at $7E:6400).
+
+static uint16_t g_y;  // the Y register, which the random numbers mix in
+
+// The car's speed across the road and its heading ($1C-$1E, 24 bits) halved.
+static void halve_turn(void) {
+  uint32_t v = (uint32_t) z(0x1C) | (uint32_t) zb(0x1E) << 16;
+  v = (v >> 1) | (v & 0x800000);
+  zs(0x1C, (uint16_t) v);
+  zbs(0x1E, (uint8_t) (v >> 16));
+}
+
+// A message for the panel (the picture, and how fast it plays).
+static void say(uint16_t picture, uint16_t pace) {
+  ws(0x018C, 0xFFFF);
+  ws(0x0190, pace);
+  ws(0x0184, picture);
+  ws(0x017C, 0);
+}
+
+static void add_damage(uint16_t at, uint16_t v) {
+  if(w(at) < 0x2000) ws(at, (uint16_t) (w(at) + v));
+}
+
+// $A1D5: scraping along a wall: it pushes the car away, and knocks count up ($40) to a
+// spin or a crash.
+static void scrape(void) {
+  uint16_t a = (uint16_t) ((absw(z(0x10)) >> 3) + z(0x40));
+  zs(0x40, a);
+  bool left = neg(w(0x0206));
+  uint16_t push = left ? 0x0600 : 0xFA00;
+  if(a >= 0x0600) {
+    zor(0x34, 0x0100);
+    zs(0xCA, 0);
+    zs(0x68, 0);
+    halve_turn();
+    say(left ? 3 : 0, 0);
+  } else if(a >= 0x0200) {
+    zor(0x34, 0x0600);
+    halve_turn();
+    say(left ? 0x000A : 0x0009, 0);
+  } else {
+    halve_turn();
+  }
+  g_y = push;
+  zs(0x46, push);
+}
+
+// $A155: the car is through a wall's line: it is put back on the road side of it, turned
+// back at half the speed.
+static void bounce(void) {
+  zclr(0x06, g_y);
+  uint32_t v = (uint32_t) z(0x1C) | (uint32_t) zb(0x1E) << 16;
+  v = (v >> 1) | (v & 0x800000);
+  v = (0 - v) & 0xFFFFFF;
+  zs(0x1C, (uint16_t) v);
+  zbs(0x1E, (uint8_t) (v >> 16));
+  if(!neg(z(0x10))) {
+    uint32_t e2 = (uint16_t) (z(0x14) - 0x73FF);
+    bool borrow = z(0x14) < 0x73FF;
+    uint16_t e4 = (uint16_t) (z(0x16) - z(0xEA) - borrow - z(0xD8));
+    zs(0xE2, (uint16_t) e2);
+    zs(0xE4, e4);
+    uint16_t lo = (uint16_t) (0x73FF - e2);
+    borrow = 0x73FF < e2;
+    zs(0x14, lo);
+    zs(0x16, (uint16_t) (z(0xD8) + z(0xEA) - e4 - borrow));
+  } else {
+    bool carry = (uint32_t) z(0xD6) + 0x2000 > 0xFFFF;
+    uint16_t e2 = (uint16_t) (z(0xD8) - z(0xEA) + carry);
+    zs(0xE2, e2);
+    zs(0x14, (uint16_t) (0 - z(0x14)));
+    zs(0x16, e2);
+  }
+}
+
+// $A103 / $A12C: a wall on the left at `line` (or on the right). False if the car is
+// clear of it.
+static bool wall_left(uint32_t line) {
+  uint32_t pos = (uint32_t) w(0x0204) | (uint32_t) w(0x0206) << 16;
+  uint32_t d = line - pos;
+  zs(0xE2, (uint16_t) d);
+  if(d & 0x80000000) {
+    zs(0x46, 0xFC00);
+    bounce();
+    return true;
+  }
+  zs(0xE4, (uint16_t) (d >> 16));
+  if(d >= 0x156C) return false;
+  scrape();
+  return true;
+}
+static bool wall_right(uint32_t line) {
+  uint32_t pos = (uint32_t) w(0x0204) | (uint32_t) w(0x0206) << 16;
+  uint32_t d = line - pos;
+  zs(0xE2, (uint16_t) d);
+  if(!(d & 0x80000000)) {
+    zs(0x46, 0x0400);
+    bounce();
+    return true;
+  }
+  zs(0xE4, (uint16_t) (d >> 16));
+  if(d < 0xFFFFEA94) return false;
+  scrape();
+  return true;
+}
+
+// $9C86: a wall section starts or ends ($06 keeps which walls the car is between).
+static void wall_item(uint16_t item) {
+  static const uint8_t kForwards[10] = { 0, 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+  static const uint8_t kBackwards[10] = { 0, 0, 2, 1, 4, 3, 6, 5, 8, 7 };
+  uint16_t i = item & 0x000F;
+  if(i >= 10) return;
+  switch(neg(z(0x10)) ? kBackwards[i] : kForwards[i]) {
+    case 1:
+      zor(0x06, 1);
+      g_y = 1;
+      if(!wall_left(0x0000C000)) wall_right(0xFFFF4000);
+      break;
+    case 2: zclr(0x06, 1); break;
+    case 3:
+      g_y = 2;
+      zor(0x06, 2);
+      wall_right(0xFFFF1000);
+      break;
+    case 4: zclr(0x06, 2); break;
+    case 5:
+      g_y = 4;
+      zor(0x06, 4);
+      wall_left(0x0000F000);
+      break;
+    case 6: zclr(0x06, 4); break;
+    case 7:
+      g_y = 6;
+      zor(0x06, 6);
+      if(!wall_left(0x0000F000)) wall_right(0xFFFF1000);
+      break;
+    case 8: zclr(0x06, 6); break;
+    default: break;
+  }
+}
+
+// $9F7B: the car hits something solid: damage by where it was hit, and a bump, a spin
+// or a crash by how hard and how often.
+static void hit(void) {
+  TgRegs* r = g_r;
+  if(w(0x0610) >= 0x0200) {
+    r->c = true;
+    r->y = g_y;
+    ws(0x0A1E, call(0xBB07, 0x9F89, 0x000E, 0xCB43));
+  }
+  zor(0x34, 0x2000);
+  uint16_t speed = absw(z(0x10));
+  uint16_t a = (uint16_t) (z(0xEA) + 0x0620);
+  if(!neg(a)) a = (a >> 5) & 0xFFFC;
+  zs(0xEC, a);
+  m7a(speed);
+  m7b(tg_bus_read8((0x80CC1B + (uint16_t) (a + w(0xFE3C))) & 0xFFFFFF));
+  add_damage(0x01B4, rd16(0x2135));
+  m7b(tg_bus_read8((0x80CBB7 + (uint16_t) (a + w(0xFE38))) & 0xFFFFFF));
+  add_damage(0x01B2, rd16(0x2135));
+  m7b(tg_bus_read8((0x80CB53 + (uint16_t) (a + w(0xFE38))) & 0xFFFFFF));
+  add_damage(0x01B6, rd16(0x2135));
+  bool left = neg(w(0x0206));
+  uint16_t knocks = 0;
+  if(ram16(0xFF1A) == 0) {
+    knocks = (uint16_t) ((speed >> 2) + z(0x40));
+    zs(0x40, knocks);
+  }
+  if(knocks >= 0x0600) {
+    zor(0x34, 0x0100);
+    zs(0xCA, 0);
+    zs(0x68, 0);
+    zs(0x40, 0);
+    halve_turn();
+    say(left ? 3 : 0, 0x0380);
+  } else if(knocks >= 0x0200) {
+    zor(0x34, 0x0600);
+    halve_turn();
+    say(left ? 0x000A : 0x0009, 0x0380);
+  } else {
+    halve_turn();
+  }
+  g_y = left ? 0x0000 : 0xFFFE;  // counted down once
+  a = (uint16_t) ((absw(z(0x10)) >> 1) + 0x0C00);
+  zs(0x46, left ? a : (uint16_t) (0 - a));
+}
+
+// Whether a thing on the road at x is under the car: within `reach` across the road.
+static bool across(uint16_t x, uint16_t reach) {
+  uint16_t a = (uint16_t) (asr((uint16_t) ((ram16(0x6400 + x) & 0x7F00) - 0x4000)) - z(0xE8));
+  return neg(a) ? !lt(a, (uint16_t) (0 - reach)) : lt(a, reach);
+}
+
+// $9D4D: something lying on the road (its record is at $7E:6400 + x; bit 7 set once taken).
+static void road_item(uint16_t x) {
+  uint16_t at = (uint16_t) (0x6400 + x);
+  uint16_t v = ram16(at);
+  if(v & 0x0080) return;
+  switch(v & 0x000F) {
+    case 0: case 2: case 4: case 6:  // a nitro, up to nine
+      if(!across(x, 0x0800) || (w(0x01A6) & 0x000F) == 9) return;
+      ws(0x01A6, (uint16_t) (w(0x01A6) + 1));
+      ram16_set(at, ram16(at) | 0x0080);
+      zor(0x34, 0x4000);
+      return;
+    case 1: case 5: case 7:  // money
+      if(!across(x, 0x0800)) return;
+      ws(0xFE9A, (uint16_t) (w(0xFE9A) + 1));
+      ram16_set(at, ram16(at) | 0x0080);
+      zor(0x34, 0x4000);
+      return;
+    case 3:
+      if(!across(x, 0x0800)) return;
+      zs(0x64, 0x0168);
+      zor(0x34, 0x4000);
+      return;
+    case 8: case 9:  // something that sends a fast car flying
+      if((z(0x34) & 0x0002) || !across(x, 0x0900)) return;
+      if(neg(z(0x10)) || lt(z(0x10), 0x0500)) return hit();
+      say(6, 0x0600);
+      zor(0x34, 0x0002);
+      zs(0x68, 0);
+      return;
+    case 10: {  // something that breaks when run over
+      if(g_ram[(uint16_t) (at + 1)] != 0) return;
+      uint16_t a = zb(0xE9);
+      if(a & 0x0080) a |= 0xFF00;
+      a = (uint16_t) ((uint16_t) (a << 1) - ram16((uint16_t) (at + 2)));
+      if(neg(a) ? lt(a, 0xFFF7) : !lt(a, 0x0009)) return;
+      ram16_set(at, (uint16_t) (((ram16(at) | 0x0010) & 0x00FF) | 0x0100));
+      ram16_set((uint16_t) (at + 4), ram16(0x001A));
+      zor(0x34, 0x2000);
+      uint16_t t = z(0x1D);
+      for(int i = 0; i < 4; i++) t = asr(t);
+      zs(0x1D, (uint16_t) (z(0x1D) - t));
+      uint16_t speed = absw(z(0x10));
+      m7a(speed);
+      m7b(zb(0x96));
+      add_damage(0x01B4, rd16(0x2135));
+      m7a(speed);
+      m7b(zb(0x97));
+      add_damage(0x01B2, rd16(0x2135) >> 1);
+      add_damage(0x01B6, rd16(0x2135) >> 1);
+      return;
+    }
+    default: return;
+  }
+}
+
+// $9BFD: one entry of the track's list.
+static void track_item(uint16_t item) {
+  zs(0xDE, item);
+  if(item & 0x8000) {
+    if(item & 0x4000) wall_item(item);
+    else road_item(item & 0x3FFF);
+    return;
+  }
+  // A roadside object: is the car within its width (tables by kind, for its two sides)?
+  uint16_t kind = item & 0x00FF;
+  uint16_t a = (uint16_t) ((item & 0x7F00) - 0x4000);
+  zs(0xE4, a);
+  a = (uint16_t) (a - z(0xE8));
+  if(!neg(a)) {
+    a = (uint16_t) (a - rom16(0x80BC83 + kind * 2));
+    zs(0xEA, a);
+    if(!neg(a)) return;
+  } else {
+    a = (uint16_t) (a - rom16(0x80BB23 + kind * 2));
+    zs(0xEA, a);
+    if(neg(a)) return;
+  }
+  if(kind == 0x1B || kind == 0x1C || kind == 0x3F) {
+    // Soft things only slow the car and push it aside.
+    zs(0x6C, 0x000F);
+    zs(0x46, neg(z(0xEA)) ? 0x0800 : 0xF800);
+    if(ram16(0x05A1) == 0) {
+      ram16_set(0x05A1, 0xFF1F);
+      ram16_set(0x05A3, 0x003F);
+    }
+  } else if(kind == 0x51) {
+    if(lt(z(0x10), 0x0070)) return;
+    zs(0x6C, 0x001E);
+    zs(0x46, neg(z(0xEA)) ? 0x0C00 : 0xF400);
+  } else {
+    hit();
+  }
+}
 
 // $9AE3: the engine note from the engine speed in A (pitch $059B, volume $059D).
 static void engine_note(uint16_t a) {
@@ -688,23 +981,17 @@ drag_done:
     c = (uint32_t) z(0xDE) + z(0xE2) > 0xFFFF;
     uint16_t n = (uint16_t) (z(0xE4) + c);
     zs(0xE6, n);
-    r->y = y;
+    g_y = y;
     if(n) {
       x = (uint16_t) (((x >> 1) + z(0xE0) + (x & 1)) << 1);
-      bool cy = false;  // the carry 9BFD gets (its random numbers add it in)
       do {
         uint16_t o = track((uint16_t) (6 + x));
         if(o) {
-          tg_push16(x);
-          r->c = cy;
-          call(0x9BFD, 0x91F3, o, x);
-          cy = r->c;
-          tg_pull16();
+          track_item(o);
         }
         uint16_t a = (uint16_t) (z(0xE0) + 1);
         if(a & 0xFFFC) {
           x = (uint16_t) (x + 8);
-          cy = false;
           a = 0;
         }
         zs(0xE0, a);
@@ -725,27 +1012,21 @@ drag_done:
     c = (uint32_t) z(0xDE) + z(0xE2) > 0xFFFF;
     uint16_t n = (uint16_t) (z(0xE4) + c);
     zs(0xE6, n);
-    r->y = y;
+    g_y = y;
     if(n) {
       zs(0xE6, (uint16_t) (0 - n));
       x = (uint16_t) (((x >> 1) + z(0xE0) + (x & 1)) << 1);
-      bool cy = false;
       do {
         uint16_t a = (uint16_t) (z(0xE0) - 1);
         if(neg(a)) {
           x = (uint16_t) (x - 8);
-          cy = true;  // sec; sbc #8 doesn't borrow
           a = 3;
         }
         zs(0xE0, a);
         x = (uint16_t) (x - 2);
         uint16_t o = track((uint16_t) (6 + x));
         if(o) {
-          tg_push16(x);
-          r->c = cy;
-          call(0x9BFD, 0x926D, o, x);
-          cy = r->c;
-          tg_pull16();
+          track_item(o);
         }
         zs(0xEA, (uint16_t) (z(0xEA) + 1));
         zs(0xE6, (uint16_t) (z(0xE6) - 1));
