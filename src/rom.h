@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 // The supported dumps, all USA, without a copier header. Top Gear is the game this port
-// runs; Top Gear 2 and Top Gear 3000 only run emulated so far (tg_rom_load_any).
+// runs; Top Gear 2 runs its C port, Top Gear 3000 runs emulated only so far (tg_rom_load_any).
 #define TG_ROM_SIZE 0x80000
 #define TG_ROM_SHA256 "ca9889f17f184b3d99a2eaaa82af73e366f03ed00313fdd369e5e023b208e788"
 #define TG_ROM_MAX 0x100000  // the largest of the three

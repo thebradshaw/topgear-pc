@@ -206,7 +206,7 @@ if(TG2_TEST_ROM)
   # The first race with every translated Top Gear 2 routine checked against the original.
   add_test(NAME tg2_first_race COMMAND tg_headless --rom ${TG2_TEST_ROM} --port verify --frames 16000
     --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear2/first_race.txt
-    --expect-wram 663bcda1263bfeaa654c2d476b8fa2baaae6807f507995a74efd90e04387c6e2
+    --expect-wram ffff75b4e055dd06cdc3ad1c55c6319ab9445629a1fd4f88e0a1659f4b8ad301
     --expect-frame b40950a0da02055a8c289e3acccbf8d1ef3b32faa341e339ef8cddae6c97b011)
   # A two-player race, and races on other tracks (the recordings poke the country and race
   # in before the start), each checked the same way: name|frames|wram hash|frame hash.
@@ -219,7 +219,7 @@ if(TG2_TEST_ROM)
       "country07_race02|12000|648326920da23c9d71662c26773ae915bfd2775fd3f78704626c56c93781f0d0|e880b9c40fdce2f5e234fbf0a3beb1e02f67834fa9a21e022fe78da1a396eba7"
       "country0D_race03|12000|c47e38bf104df9267367ac115b73454df206dd7d03dac960673a73d96df7f36c|c85ceb69456d71dbe92c70673eb279b8318c2159d81932f9fa35a95348a81732"
       "country0F_race03|12000|4294708c46a15ea848b8584bc7614dae76fb286511da12172660c5c11faa4995|a08fb728040b4f7c9e058f6299a165e4e1116f19c0c0cd7efcca764c3cee9720"
-      "country0A_race01|12000|4b9402912180c20dd5875b652a5d8b70fd88ef3d29a4fd446994c7f3e1474be6|ca02793076b8845454d3cc4d949bda5bc49fe16d063e310331f86318ed644ba7"
+      "country0A_race01|12000|e668fc558ee9e759a7b18a0b6cf6d466c7030bc1286ea66181b35c8b76c9ec27|ca02793076b8845454d3cc4d949bda5bc49fe16d063e310331f86318ed644ba7"
       "country03_race00|12000|2f2ab5f52a112232465921fba813852869bf00c0d03e356f0100fa49f1188bba|758401c1a885b6be74a674773b8e407a7116efb69616a9d2a5309a374f8a28de"
       "country00_race01|12000|5bd9913bc3ae4478f33d01fe895f81b6dc0b516d577e46fd8868988a63eb05c3|fb8b671a51ababd41681d7db39f9b55080ac67c622bb842b4025d9ef4d716141"
       "country05_race03|12000|60d34aa589f480b35d63ac62883bcfb527d535645d6ffeae69d6a180124bcb84|401c3821f074c404178dfb5f2e3acf677696a3a7406c4af5f677c48d91e4035c"

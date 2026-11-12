@@ -59,6 +59,8 @@ static struct {
   TgInputScript replay;
   bool replaying;
   bool original;  // the game's own code throughout (--original)
+  TgGameId gameId;  // which of the three games the ROM is
+  bool plain;  // no Top Gear 1 extras: --original, or Top Gear 2 / 3000 (not there yet)
   bool smooth;  // enhancement: race logic every frame instead of every third (F6, --smooth)
   bool recordedSmooth;
   bool highFps;  // enhancement: in-between frames at the display's rate (Shift+F6, --high-fps)
@@ -83,11 +85,13 @@ static struct {
   int recordedWide;
 } app;
 
-static const char* defaultRomNames[] = {"Top Gear (USA).sfc", "Top Gear (USA).smc", "topgear.sfc"};
+// Top Gear 1 first; Top Gear 2 and 3000 run too when they are the ROM found (or given).
+static const char* defaultRomNames[] = {"Top Gear (USA).sfc", "Top Gear (USA).smc", "topgear.sfc",
+                                        "Top Gear 2 (USA).sfc", "Top Gear 3000 (USA).sfc"};
 
 static bool findRom(const char* romArg, TgRom* rom, char* message, size_t messageSize) {
   if(romArg) {
-    TgRomStatus status = tg_rom_load(romArg, rom);
+    TgRomStatus status = tg_rom_load_any(romArg, rom);
     if(status == TG_ROM_OK) return true;
     snprintf(message, messageSize, "%s\n\n%s\n\nSHA-256 of your file:\n%s", romArg, tg_rom_status_message(status), rom->sha256);
     return false;
@@ -96,7 +100,7 @@ static bool findRom(const char* romArg, TgRom* rom, char* message, size_t messag
   for(size_t i = 0; i < SDL_arraysize(defaultRomNames); i++) {
     char path[2048];
     snprintf(path, sizeof(path), "%s%s", base ? base : "", defaultRomNames[i]);
-    TgRomStatus status = tg_rom_load(path, rom);
+    TgRomStatus status = tg_rom_load_any(path, rom);
     if(status == TG_ROM_OK) return true;
     if(status != TG_ROM_NOT_FOUND) {
       snprintf(message, messageSize, "%s\n\n%s\n\nSHA-256 of your file:\n%s", path, tg_rom_status_message(status), rom->sha256);
@@ -109,6 +113,30 @@ static bool findRom(const char* romArg, TgRom* rom, char* message, size_t messag
     "or put it next to topgear.exe named \"Top Gear (USA).sfc\",\n"
     "or drag the ROM file onto topgear.exe.\n\n"
     "Expected SHA-256:\n" TG_ROM_SHA256);
+  return false;
+}
+
+// Top Gear 3000's DSP-4 firmware: dsp4.bin next to the ROM given, or next to the program.
+static bool loadDspFirmware(const char* romArg) {
+  char paths[2][2048];
+  int n = 0;
+  if(romArg) {
+    const char* slash = strrchr(romArg, '/');
+    const char* back = strrchr(romArg, '\\');
+    if(back && (!slash || back > slash)) slash = back;
+    int len = slash ? (int) (slash - romArg + 1) : 0;
+    snprintf(paths[n++], sizeof(paths[0]), "%.*sdsp4.bin", len, romArg);
+  }
+  const char* base = SDL_GetBasePath();
+  snprintf(paths[n++], sizeof(paths[0]), "%sdsp4.bin", base ? base : "");
+  for(int i = 0; i < n; i++) {
+    size_t size = 0;
+    void* data = SDL_LoadFile(paths[i], &size);
+    if(data == NULL) continue;
+    bool ok = tg_game_set_dsp_firmware(app.game, data, size);
+    SDL_free(data);
+    if(ok) return true;
+  }
   return false;
 }
 
@@ -302,15 +330,15 @@ static void loadProgress(void) {
 static void updateTitle(void) {
   saveSettings();
   char title[128];
-  snprintf(title, sizeof(title), "Top Gear  |  %s, %s%s%s%s%s", aspectNames[app.aspect], filterNames[app.filter],
+  snprintf(title, sizeof(title), "%s  |  %s, %s%s%s%s%s", tg_games[app.gameId].name, aspectNames[app.aspect], filterNames[app.filter],
            app.integerScale ? ", integer scale" : "",
-           app.smooth && !app.original ? ", smooth motion" : "",
-           app.fullView && !app.original ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
-  if(app.wide && !app.original) SDL_strlcat(title, ", widescreen", sizeof(title));
-  if(app.sideBySide && !app.original) SDL_strlcat(title, ", side by side", sizeof(title));
-  if(app.ghost && !app.original) SDL_strlcat(title, ", ghost car", sizeof(title));
-  if(app.autoSave) SDL_strlcat(title, ", auto-save", sizeof(title));
-  if(app.highFps && !app.original) SDL_strlcat(title, ", high frame rate", sizeof(title));
+           app.smooth && !app.plain ? ", smooth motion" : "",
+           app.fullView && !app.plain ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
+  if(app.wide && !app.plain) SDL_strlcat(title, ", widescreen", sizeof(title));
+  if(app.sideBySide && !app.plain) SDL_strlcat(title, ", side by side", sizeof(title));
+  if(app.ghost && !app.plain) SDL_strlcat(title, ", ghost car", sizeof(title));
+  if(app.autoSave && !app.plain) SDL_strlcat(title, ", auto-save", sizeof(title));
+  if(app.highFps && !app.plain) SDL_strlcat(title, ", high frame rate", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
 
@@ -450,7 +478,7 @@ static void rumble(void) {
 
 // Widescreen: the margin that makes the picture as wide as the window.
 static int wantedMargin(void) {
-  if(!app.wide || app.original) return 0;
+  if(!app.wide || app.plain) return 0;
   int outW, outH;
   if(!SDL_GetCurrentRenderOutputSize(app.renderer, &outW, &outH) || outH <= 0) return 0;
   double pixel = app.aspect == ASPECT_4_3 ? SNES_H * 4.0 / 3.0 / SNES_W : 1.0;
@@ -547,15 +575,17 @@ static void runFrame(int samples) {
   }
   // Smooth motion runs the race logic every frame; the original updates it every third
   // frame (its pace is scaled by the frames elapsed, so the race takes the same time).
-  tg_port_race_frames = app.smooth ? 1 : 3;
-  if(app.fullView != tg_port_full_view) tg_game_set_full_view(app.game, app.fullView);
-  tg_game_set_tall_road(app.game, app.tallRoad);
-  tg_game_set_hud_layout(app.game, app.mapTop, app.speedBottom);
+  tg_port_race_frames = app.smooth && !app.plain ? 1 : 3;
   int margin = app.replaying ? app.replay.wide : wantedMargin();
-  if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
-  if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
-  if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
-  if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
+  if(app.gameId == TG_GAME_TOPGEAR) {
+    if(app.fullView != tg_port_full_view) tg_game_set_full_view(app.game, app.fullView);
+    tg_game_set_tall_road(app.game, app.tallRoad);
+    tg_game_set_hud_layout(app.game, app.mapTop, app.speedBottom);
+    if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
+    if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
+    if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
+    if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
+  }
   if(app.record) {
     if(reset) fprintf(app.record, "%u reset\n", app.frame);
     if(app.smooth != app.recordedSmooth) {
@@ -598,7 +628,7 @@ static void runFrame(int samples) {
     tg_game_unlock(app.game, open);
     app.replay.unlockPending = false;
   }
-  if(app.autoSave && !app.replaying) {
+  if(app.autoSave && !app.replaying && app.gameId == TG_GAME_TOPGEAR) {
     // Countries reached in earlier sessions are opened again (after power-on clears them).
     uint8_t open[3];
     tg_game_progress(app.game, open);
@@ -614,8 +644,8 @@ static void runFrame(int samples) {
   tg_game_run_frame(app.game);
   app.frame++;
   // A new best race is saved straight away (not while replaying someone's recording).
-  if(tg_game_ghosts_changed(app.game) && !app.replaying && app.ghostPath[0]) tg_game_save_ghosts(app.game, app.ghostPath);
-  if(app.autoSave && !app.replaying) {
+  if(app.gameId == TG_GAME_TOPGEAR && tg_game_ghosts_changed(app.game) && !app.replaying && app.ghostPath[0]) tg_game_save_ghosts(app.game, app.ghostPath);
+  if(app.autoSave && !app.replaying && app.gameId == TG_GAME_TOPGEAR) {
     uint8_t open[3];
     tg_game_progress(app.game, open);
     bool more = false;
@@ -984,11 +1014,20 @@ int main(int argc, char** argv) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", "Failed to start the game.", NULL);
     return 1;
   }
+  if(rom.game == TG_GAME_TOPGEAR3000 && !loadDspFirmware(romArg)) {
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear 3000",
+      "Top Gear 3000 needs the DSP-4 chip's firmware too.\n\n"
+      "Put it next to topgear.exe (or next to the ROM) named \"dsp4.bin\" (8192 bytes).", NULL);
+    return 1;
+  }
   // The translated C code runs the races; --original runs the game's own code throughout,
   // with its slowdown and loading pauses (recordings made that way can be checked call by
   // call: tg_headless --port verify).
   app.original = original;
-  tg_game_set_port_mode(app.game, original ? TG_PORT_OFF : TG_PORT_NATIVE);
+  app.gameId = rom.game;
+  app.plain = original || rom.game != TG_GAME_TOPGEAR;
+  // Top Gear 3000 has no C port yet, so it always runs the game's own code.
+  tg_game_set_port_mode(app.game, original || rom.game == TG_GAME_TOPGEAR3000 ? TG_PORT_OFF : TG_PORT_NATIVE);
 
   if(replayPath) {
     if(!tg_input_script_load(replayPath, &app.replay, message, sizeof(message))) {
@@ -1004,7 +1043,7 @@ int main(int argc, char** argv) {
   if(pref) {
     snprintf(app.ghostPath, sizeof(app.ghostPath), "%sghosts.bin", pref);
     SDL_free(pref);
-    tg_game_load_ghosts(app.game, app.ghostPath);
+    if(app.gameId == TG_GAME_TOPGEAR) tg_game_load_ghosts(app.game, app.ghostPath);
   }
 
   loadControls();
@@ -1128,7 +1167,7 @@ int main(int argc, char** argv) {
       continue;
     }
     if(now - next > (Uint64) (FRAME_NS * 8) && now > next) next = now;  // resync after a stall
-    bool highFps = app.highFps && !app.original;
+    bool highFps = app.highFps && !app.plain;
     if(highFps) {
       // A picture every refresh of the display (with vsync), or as fast as they can be drawn.
       // Every frame due runs, so the game keeps its pace when pictures take longer than a

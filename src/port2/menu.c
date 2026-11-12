@@ -1,6 +1,7 @@
 // Top Gear 2: the menus and the screens around them (bank $1F).
 
 #include <stddef.h>
+#include <string.h>
 
 #include "../port/port.h"
 
@@ -783,4 +784,760 @@ void Tg2UnpackToVram(TgRegs* r) {
   r->a = 0x0001;
   r->n = false;
   r->z = false;
+}
+
+// ---- $1F:8503: the menus' starting state ----
+//
+// Copies each player's menu defaults (39 bytes from $9F:A16D and $9F:A192) to $012C and
+// $022C, clears both sprite tables and both palette buffers, and sets each player's
+// screen addresses, scroll and window positions. The 2-player screen ($1CDB = 0) starts the
+// first player's view lower down.
+void Tg2MenuStart(TgRegs* r) {
+  ram16_set(0x0193, 0);
+  ram16_set(0x0293, 0x4000);
+  for(int i = 0; i < 0x27; i++) {
+    g_ram[0x012C + i] = rd8(0x9FA16D + i);
+    g_ram[0x022C + i] = rd8(0x9FA192 + i);
+  }
+  for(uint16_t x = 0; x < 0x200; x += 4) {
+    ram16_set(0x0500 + x, 0xE0E0);
+    ram16_set(0x0920 + x, 0xE0E0);
+    ram16_set(0x0D40 + x, 0xE0E0);
+    ram16_set(0x1160 + x, 0xE0E0);
+    ram16_set(0x0D42 + x, 0x3002);
+    ram16_set(0x1162 + x, 0x3002);
+  }
+  r->a = 0; r->x = 0x1380; r->y = 0x0200;
+  Tg2FillWords(r);
+  r->a = 0; r->x = 0x1580; r->y = 0x0200;
+  Tg2FillWords(r);
+  static const struct { uint16_t adr, val; } kSet[] = {
+    {0x01B7, 0}, {0x01B9, 0x0420}, {0x01AF, 0x0420}, {0x01B3, 0x0500}, {0x01B5, 0x0920},
+    {0x02B7, 0x0840}, {0x02B9, 0x0C60}, {0x02AF, 0x0C60}, {0x02B3, 0x0D40}, {0x02B5, 0x1160},
+    {0x018D, 0}, {0x028D, 0}, {0x01B1, 0}, {0x02B1, 0x7400}, {0x0160, 0}, {0x0260, 0x8000},
+    {0x0162, 0}, {0x0164, 0x0400}, {0x0166, 0x0800}, {0x0168, 0x0C00}, {0x016A, 0x1000},
+    {0x016E, 0}, {0x0262, 0x4000}, {0x0264, 0x4400}, {0x0266, 0x4800}, {0x0268, 0x4C00},
+    {0x026A, 0x5000}, {0x026E, 0x4000}, {0x016C, 0}, {0x026C, 0x0008}, {0x0170, 0x1380},
+    {0x0270, 0x1580}, {0x0199, 0}, {0x019B, 0}, {0x0299, 0x00A0}, {0x029B, 0x00A0},
+    {0x0197, 0}, {0x0195, 0}, {0x0297, 0}, {0x0295, 0}, {0x01A1, 0}, {0x02A1, 0},
+    {0x01A3, 0}, {0x02A3, 0x0029}, {0x01E2, 0},
+  };
+  for(size_t i = 0; i < sizeof(kSet) / sizeof(kSet[0]); i++) ram16_set(kSet[i].adr, kSet[i].val);
+  uint16_t a = ram16(0x1CDB);
+  if(a == 0) {
+    ram16_set(0x01B1, 0x1800);
+    a = 0x0018;
+    ram16_set(0x01E2, a);
+  }
+  r->a = a;
+  r->n = (a & 0x8000) != 0;
+  r->z = false;
+}
+
+// ---- $1F:8190 / $1F:81D4 / $1F:835D: the battery save ----
+//
+// The game keeps its records at $1CD7-$1DF2 and a copy at $7E:FE00, which survives a reset
+// (Top Gear 2 has no battery, so the copy lasts until the power goes off). The copy's first
+// word is the byte sum of $7E:FE04-$7E:FE99 and the second its complement.
+
+// $8190: copies the records to $7E:FE00 and signs them.
+void Tg2SaveRecords(TgRegs* r) {
+  uint16_t sum = 0;
+  bool c = false, v = false;
+  ram16_set(0x0100, 0);
+  for(uint16_t x = 4; x < 0x9A; x++) {
+    uint8_t b = g_ram[0x1CD7 + x];
+    g_ram[0xFE00 + x] = b;
+    unsigned lo = (unsigned) b + g_ram[0x0100];
+    g_ram[0x0100] = (uint8_t) lo;
+    uint8_t hi = g_ram[0x0101];
+    unsigned h = (unsigned) hi + (lo >> 8);
+    v = !(hi & 0x80) && (h & 0x80);
+    c = h > 0xFF;
+    g_ram[0x0101] = (uint8_t) h;
+  }
+  (void) c;
+  for(uint16_t x = 0x9A; x < 0x11C; x++) g_ram[0xFE00 + x] = g_ram[0x1CD7 + x];
+  sum = ram16(0x0100);
+  ram16_set(0xFE00, sum);
+  r->a = (uint16_t) ~sum;
+  ram16_set(0xFE02, r->a);
+  r->x = 0x011C;
+  r->n = (r->a & 0x8000) != 0;
+  r->z = r->a == 0;
+  r->c = true;
+  r->v = v;
+}
+
+// $81D4: copies the records back from $7E:FE00, counts one more use of the copy, and adds
+// the totals at $1D71/$1D73 to $1D19/$1D42.
+void Tg2LoadRecords(TgRegs* r) {
+  ram16_set(0x0100, 0);
+  for(uint16_t x = 4; x < 0x11C; x++) g_ram[0x1CD7 + x] = g_ram[0xFE00 + x];
+  ram16_set(0xFF1C, (uint16_t) (ram16(0xFF1C) + 1));
+  ram16_set(0x1D19, (uint16_t) (ram16(0x1D71) + ram16(0x1D19)));
+  uint16_t a = ram16(0x1D73), b = ram16(0x1D42);
+  uint32_t s = (uint32_t) a + b;
+  uint16_t res = (uint16_t) s;
+  ram16_set(0x1D42, res);
+  r->a = res;
+  r->x = 0x011C;
+  r->n = (res & 0x8000) != 0;
+  r->z = res == 0;
+  r->c = s > 0xFFFF;
+  r->v = (~(a ^ b) & (a ^ res) & 0x8000) != 0;
+}
+
+void Tg2KeepStandings(TgRegs* r);
+
+// $835D: at power on. A good copy at $7E:FE00 (the sums match) is loaded and counted; else
+// records already set up ($1CD7 = $7E65, $1CD9 = $5543) are kept; else the defaults from
+// $9F:83E7 go in (and carry is set). Either of the first two then keeps the best-lap
+// number $1CE1 no higher than $1CE3.
+void Tg2LoadSave(TgRegs* r) {
+  uint16_t sum = 0;
+  for(uint16_t x = 4; x < 0x9A; x++) {
+    uint16_t b = g_ram[0xFE00 + x], s2 = (uint16_t) (sum + b);
+    r->v = (~(b ^ sum) & (b ^ s2) & 0x8000) != 0;
+    sum = s2;
+  }
+  ram16_set(0x0100, sum);
+  r->x = 0x009A;
+  if(sum == ram16(0xFE00) && (uint16_t) ~sum == ram16(0xFE02)) {
+    memcpy(&g_ram[0x1CD7], &g_ram[0xFE00], 0x11C);
+    r->x = 0xFF1C;
+    r->y = 0x1DF3;
+    ram16_set(0x1CD7, 0x7E65);
+    ram16_set(0x1CD9, 0x5543);
+    ram16_set(0xFE00, (uint16_t) (ram16(0xFE00) + 1));
+  } else if(!(ram16(0x1CD7) == 0x7E65 && ram16(0x1CD9) == 0x5543)) {
+    for(int i = 0; i < 0x11C; i++) g_ram[0x1CD7 + i] = rd8(0x9F83E7 + i);
+    Tg2KeepStandings(r);
+    r->y = 0x1DF3;
+    ram16_set(0x1CD7, 0x7E65);
+    ram16_set(0x1CD9, 0x5543);
+    r->a = 0x5543;
+    r->n = false;
+    r->z = false;
+    r->c = true;
+    return;
+  }
+  uint16_t a = ram16(0x1CE3), m = ram16(0x1CE1);
+  uint16_t d = (uint16_t) (a - m);
+  r->n = (d & 0x8000) != 0;
+  r->z = d == 0;
+  if(a < m) ram16_set(0x1CE1, a);
+  r->a = a;
+  r->c = false;
+}
+
+// $8320: starts the menus' music (A: the tune, kept at $01C1) and resets the sound state
+// at $01CF-$01DA.
+void Tg2MenuMusic(TgRegs* r) {
+  ram16_set(0x01C1, r->a);
+  tg_call_jsr(r, 0xF0A3, 0x8326, TG_MX_16);
+  g_ram[0x01D0] = 0xFF;
+  g_ram[0x01D1] = 0xFF;
+  g_ram[0x01D2] = 0x01;
+  g_ram[0x01D3] = 0;
+  g_ram[0x01D5] = 0;
+  g_ram[0x01D7] = 0;
+  g_ram[0x01D8] = 0;
+  g_ram[0x01D9] = 0;
+  g_ram[0x01DA] = 0;
+  g_ram[0x01CF] = 0;
+  r->a = r->a & 0xFF00;
+  r->x &= 0xFF;
+  r->y &= 0xFF;
+  r->n = false;
+  r->z = true;
+}
+
+// ---- $1F:DA09 / $1F:DA3C / $1F:DA69: the two drivers' standings ----
+//
+// $1D03 (9 words) and $1D2C (9 words) hold each player's points per country, $1D19 and
+// $1D42 their totals; $1D45-$1D6F keeps a copy to go back to.
+
+// $DA09: a new season: clears $1DC5-$1DEC, the points from $9F:8413 / $9F:843C, and the
+// totals, race and country.
+void Tg2NewSeason(TgRegs* r) {
+  for(uint16_t x = 0x28; x != 0; x -= 2) ram16_set(0x1DC3 + x, 0);
+  uint16_t a = 0;
+  for(uint16_t x = 0; x < 0x12; x += 2) {
+    ram16_set(0x1D03 + x, rd(0x9F8413 + x));
+    a = rd(0x9F843C + x);
+    ram16_set(0x1D2C + x, a);
+  }
+  ram16_set(0x1D19, 0);
+  ram16_set(0x1D42, 0);
+  ram16_set(0x1CE5, 0);
+  ram16_set(0x1CE1, 0);
+  r->a = a;
+  r->x = 0x12;
+  r->n = false;
+  r->z = true;
+  r->c = true;
+}
+
+// $DA3C: keeps a copy of the standings.
+void Tg2KeepStandings(TgRegs* r) {
+  for(uint16_t x = 0; x < 0x12; x += 2) ram16_set(0x1D45 + x, ram16(0x1D03 + x));
+  ram16_set(0x1D59, ram16(0x1D19));
+  for(uint16_t x = 0; x < 0x12; x += 2) ram16_set(0x1D5B + x, ram16(0x1D2C + x));
+  r->a = ram16(0x1D42);
+  ram16_set(0x1D6F, r->a);
+  r->x = 0x12;
+  r->n = (r->a & 0x8000) != 0;
+  r->z = r->a == 0;
+  r->c = true;
+}
+
+// $DA69: goes back to the copy.
+void Tg2RestoreStandings(TgRegs* r) {
+  for(uint16_t x = 0; x < 0x12; x += 2) ram16_set(0x1D03 + x, ram16(0x1D45 + x));
+  ram16_set(0x1D19, ram16(0x1D59));
+  for(uint16_t x = 0; x < 0x12; x += 2) ram16_set(0x1D2C + x, ram16(0x1D5B + x));
+  r->a = ram16(0x1D6F);
+  ram16_set(0x1D42, r->a);
+  r->x = 0x12;
+  r->n = (r->a & 0x8000) != 0;
+  r->z = r->a == 0;
+  r->c = true;
+}
+
+// ---- $1F:8B4A: the name entry's sprites ----
+//
+// Draws the letter grid's pieces for screen $A5 (sprite list $9E:8225, offset $9C:96E6 plus
+// $B1) into the sprite table from $AF, the "END" key, the name typed so far ($1CF3 + $A3)
+// and, on the frames where it shows, the cursor; then packs the table.
+static uint32_t dbx(const TgRegs* r, uint16_t a) { return (uint32_t) r->db << 16 | a; }
+
+void Tg2NameEntrySprites(TgRegs* r) {
+  uint16_t i = (uint16_t) (dp(r, 0xA5) << 1);
+  uint16_t base = (uint16_t) (rd(0x9C96E6 + i) + dp(r, 0xB1));
+  dp_set(r, 0x00, base);
+  uint16_t x = rd(0x9E8225 + i);
+  uint16_t y = dp(r, 0xAF);
+  for(uint16_t a; (a = rd(0x9E0000 + x)) != 0; x += 4, y += 4) {
+    wr(dbx(r, 0x0502 + y), a);
+    wr8(dbx(r, 0x0500 + y), (uint8_t) (rd8(0x9E0002 + x) + (uint8_t) base));
+    wr8(dbx(r, 0x0501 + y), (uint8_t) (rd8(0x9E0003 + x) + (uint8_t) (base >> 8)));
+    wr(dbx(r, 0x0301 + y), 0);
+  }
+  dp_set(r, 0xAF, y);
+  r->y = 0x8127;
+  r->x = (uint16_t) (dp(r, 0xB1) + 0x0883);
+  r->a = 0x309E;
+  Tg2DrawSmallString(r);
+  y = dp(r, 0xAF);
+  for(uint16_t k = 0; k < 4; k++) wr(dbx(r, 0x0502 + y + k * 4), (uint16_t) (0x31E6 + k));
+  static const uint16_t kStep[4] = {0x48BF, 0x0010, 0x0010, 0x0008};
+  uint32_t a = dp(r, 0xB1), c = 0;
+  for(uint16_t k = 0; k < 4; k++) {
+    a = (a & 0xFFFF) + kStep[k] + c;
+    c = a >> 16;
+    wr(dbx(r, 0x0500 + y + k * 4), (uint16_t) a);
+  }
+  for(uint16_t k = 0; k < 4; k++) wr(dbx(r, 0x0301 + y + k * 4), 0);
+  dp_set(r, 0xAF, (uint16_t) (y + 0x10));
+  r->y = (uint16_t) (dp(r, 0xA3) + 0x1CF3);
+  r->x = (uint16_t) (dp(r, 0xB1) + 0x5890);
+  r->a = 0x3000;
+  Tg2DrawSmallString(r);
+  if(!((rd(dbx(r, 0x0014)) - dp(r, 0xAB)) & 0x0008)) {
+    y = dp(r, 0xAF);
+    wr(dbx(r, 0x0500 + y), (uint16_t) (dp(r, 0x00) + 0x0100));
+    wr(dbx(r, 0x0502 + y), 0xB1E5);
+    wr(dbx(r, 0x0302 + y), 0);
+    y += 4;
+    dp_set(r, 0xAF, y);
+    r->y = y;
+  }
+  Tg2PackSpritesSwap(r);
+}
+
+// ---- The menu screens' button handlers ----
+//
+// The menu script runner ($1F:8650) calls these for each button pressed; carry set on
+// return leaves the screen (A and X then say where to). They play the menu click
+// ($1F:A117) when something changes.
+
+void Tg2SetFadeIn(TgRegs* r);
+
+static void nz16(TgRegs* r, uint16_t v) { r->n = (v & 0x8000) != 0; r->z = v == 0; }
+static void nz8(TgRegs* r, uint8_t v) { r->n = (v & 0x80) != 0; r->z = v == 0; }
+static uint8_t adc8(TgRegs* r, uint8_t a, uint8_t b) {
+  unsigned s = (unsigned) a + b + r->c;
+  uint8_t res = (uint8_t) s;
+  r->c = s > 0xFF;
+  r->v = (~(a ^ b) & (a ^ res) & 0x80) != 0;
+  nz8(r, res);
+  return res;
+}
+
+// $88C0 / $88C7: the cursor up or down a line.
+void Tg2MenuUp(TgRegs* r) {
+  Tg2SetFadeIn(r);
+  uint16_t v = (uint16_t) (dp(r, 0x8D) - 1);
+  dp_set(r, 0x8D, v);
+  nz16(r, v);
+  r->c = false;
+}
+void Tg2MenuDown(TgRegs* r) {
+  Tg2SetFadeIn(r);
+  uint16_t v = (uint16_t) (dp(r, 0x8D) + 1);
+  dp_set(r, 0x8D, v);
+  nz16(r, v);
+  r->c = false;
+}
+
+// $88E0: back out of the screen, unless it's still busy ($9F).
+void Tg2MenuBack(TgRegs* r) {
+  Tg2SetFadeIn(r);
+  r->a = dp(r, 0x9F);
+  if(r->a != 0) {
+    nz16(r, r->a);
+    r->c = false;
+    return;
+  }
+  r->a = 0;
+  r->x = 0x86DA;
+  nz16(r, r->x);
+  r->c = true;
+}
+
+// The name entry's letter grid: $A5 is the key under the cursor, 8 to a row in 5 rows
+// ($00-$27, where $26 is the 2-wide END key and $27 isn't used). $A9 counts down while a
+// direction is held, so a held direction repeats.
+static void name_right(TgRegs* r) {
+  Tg2SetFadeIn(r);
+  uint16_t a = dp(r, 0xA5);
+  uint16_t col = (a + 1) & 7;
+  dp_set(r, 0xA5, col);
+  a = (a & 0xFFF8) | col;
+  cmp16(r, a, 0x27);
+  if(a == 0x27) {
+    a = 0x20;
+    nz16(r, a);
+  }
+  dp_set(r, 0xA5, a);
+  r->a = a;
+  r->c = false;
+}
+static void name_left(TgRegs* r) {
+  Tg2SetFadeIn(r);
+  uint16_t a0 = dp(r, 0xA5), a = a0;
+  if(a == 0x27) a = 0x26;
+  uint16_t col = (uint16_t) (a - 1) & 7;
+  dp_set(r, 0xA5, col);
+  a = (a0 & 0xFFF8) | col;
+  cmp16(r, a, 0x27);
+  if(a == 0x27) {
+    a = 0x26;
+    nz16(r, a);
+  }
+  dp_set(r, 0xA5, a);
+  r->a = a;
+  r->c = false;
+}
+static void name_down(TgRegs* r) {
+  Tg2SetFadeIn(r);
+  r->c = false;
+  uint16_t a = adc16(r, dp(r, 0xA5), 0x0008);
+  cmp16(r, a, 0x28);
+  if(r->c) a = sbc16(r, a, 0x28);
+  dp_set(r, 0xA5, a);
+  r->a = a;
+  r->c = false;
+}
+static void name_up(TgRegs* r) {
+  Tg2SetFadeIn(r);
+  r->c = true;
+  uint16_t a = sbc16(r, dp(r, 0xA5), 0x0008);
+  if(!r->c) a = adc16(r, a, 0x28);
+  dp_set(r, 0xA5, a);
+  r->a = a;
+  r->c = false;
+}
+// $8A1F / $8A26 / $8A2D / $8A34: a direction held, once its repeat delay has run out.
+static void name_held(TgRegs* r, void (*move)(TgRegs*)) {
+  r->a = dp(r, 0xA9);
+  if(r->a != 0) {
+    nz16(r, r->a);
+    r->c = false;
+    return;
+  }
+  move(r);
+}
+void Tg2NameHeldRight(TgRegs* r) { name_held(r, name_right); }
+void Tg2NameHeldLeft(TgRegs* r) { name_held(r, name_left); }
+void Tg2NameHeldUp(TgRegs* r) { name_held(r, name_up); }
+void Tg2NameHeldDown(TgRegs* r) { name_held(r, name_down); }
+// $8A3D: each frame: the repeat delay counts down, then repeats every 10 frames.
+void Tg2NameRepeat(TgRegs* r) {
+  uint16_t v = (uint16_t) (dp(r, 0xA9) - 1);
+  dp_set(r, 0xA9, v);
+  nz16(r, v);
+  if(v & 0x8000) {
+    r->a = 0x000A;
+    dp_set(r, 0xA9, r->a);
+    nz16(r, r->a);
+  }
+  r->c = false;
+}
+// $8A48 / $8A50 / $8A58 / $8A60: a direction pressed: moves at once, then waits 24 frames
+// before repeating.
+static void name_press(TgRegs* r, void (*move)(TgRegs*)) {
+  r->a = 0x0018;
+  dp_set(r, 0xA9, r->a);
+  move(r);
+}
+void Tg2NamePressRight(TgRegs* r) { name_press(r, name_right); }
+void Tg2NamePressLeft(TgRegs* r) { name_press(r, name_left); }
+void Tg2NamePressUp(TgRegs* r) { name_press(r, name_up); }
+void Tg2NamePressDown(TgRegs* r) { name_press(r, name_down); }
+
+// $8AD3: the key pressed. Letters A-Z ($00-$19) and the digits and signs ($1A-$23) add a
+// character (up to 11), $24 a space, $25 deletes one, END ($26) leaves. A name still marked
+// as the default ($1D1B bit 0) is cleared first.
+void Tg2NameKey(TgRegs* r) {
+  uint16_t a3 = dp(r, 0xA3);
+  r->x = (uint16_t) (dp(r, 0xA7) + a3);
+  uint16_t key = dp(r, 0xA5);
+  if(key >= 0x26) {
+    Tg2MenuBack(r);
+    return;
+  }
+  uint16_t flags = rd(dbx(r, 0x1D1B + a3));
+  if(flags & 1) {
+    wr(dbx(r, 0x1D1B + a3), flags & 0xFFFE);
+    for(uint16_t i = 0; i < 12; i += 2) wr(dbx(r, 0x1CF3 + a3 + i), 0);
+    dp_set(r, 0xA7, 0);
+    r->x = a3;
+  }
+  r->a = key;
+  uint8_t k = (uint8_t) key;
+  if(k == 0x25) {
+    r->y = dp(r, 0xA7);
+    nz16(r, r->y);
+    if(r->y != 0) {
+      Tg2SetFadeIn(r);
+      r->x--;
+      wr8(dbx(r, 0x1CF3 + r->x), 0);
+      uint8_t n = (uint8_t) (g_ram[(uint16_t) (r->d + 0xA7)] - 1);
+      dp8_set(r, 0xA7, n);
+      nz8(r, n);
+    }
+  } else {
+    r->y = dp(r, 0xA7);
+    r->c = r->y >= 0x0B;
+    nz16(r, (uint16_t) (r->y - 0x0B));
+    if(r->y != 0x0B) {
+      Tg2SetFadeIn(r);
+      r->c = k >= 0x1A;
+      uint8_t ch;
+      if(k < 0x1A) ch = adc8(r, k, 0x41);
+      else if(k == 0x24) ch = 0x20;
+      else {
+        r->c = k >= 0x24;
+        ch = adc8(r, k, 0x16);
+      }
+      r->a = (uint16_t) ((r->a & 0xFF00) | ch);
+      wr8(dbx(r, 0x1CF3 + r->x), ch);
+      uint8_t n = (uint8_t) (g_ram[(uint16_t) (r->d + 0xA7)] + 1);
+      dp8_set(r, 0xA7, n);
+      nz8(r, n);
+    }
+  }
+  r->c = false;
+}
+
+// $8D6C: the cursor's height for line $8D (table $9F:8D78) into $3A.
+void Tg2MenuCursorY(TgRegs* r) {
+  r->x = (uint16_t) (dp(r, 0x8D) << 1);
+  r->a = rd(0x9F8D78 + r->x);
+  dp_set(r, 0x3A, r->a);
+  nz16(r, r->a);
+  r->c = false;
+}
+
+// $8D7C: leaves the gears choice ($1D01 bit 15 marks it open).
+void Tg2GearsClose(TgRegs* r) {
+  r->x = dp(r, 0xA3);
+  uint16_t v = rd(dbx(r, 0x1D01 + r->x));
+  r->v = (v & 0x4000) != 0;
+  if(v != 0) Tg2SetFadeIn(r);
+  r->a = v & 0x7FFF;
+  wr(dbx(r, 0x1D01 + r->x), r->a);
+  nz16(r, r->a);
+  dp_set(r, 0x8D, 0);
+  r->c = false;
+}
+
+// $8F11 / $8F26: the control type ($1D01, 0-4) one up or down.
+void Tg2ControlNext(TgRegs* r) {
+  r->x = dp(r, 0xA3);
+  uint32_t adr = dbx(r, 0x1D01 + r->x);
+  r->a = rd(adr) & 0x7FFF;
+  cmp16(r, r->a, 4);
+  if(r->a != 4) {
+    Tg2SetFadeIn(r);
+    uint16_t v = (uint16_t) (rd(adr) + 1);
+    wr(adr, v);
+    nz16(r, v);
+  }
+  r->c = false;
+}
+void Tg2ControlPrev(TgRegs* r) {
+  r->x = dp(r, 0xA3);
+  uint32_t adr = dbx(r, 0x1D01 + r->x);
+  r->a = rd(adr) & 0x7FFF;
+  nz16(r, r->a);
+  if(r->a != 0) {
+    Tg2SetFadeIn(r);
+    uint16_t v = (uint16_t) (rd(adr) - 1);
+    wr(adr, v);
+    nz16(r, v);
+  }
+  r->c = false;
+}
+
+// Starts the video queue's transfer of $0380 bytes from $7F:(src) to VRAM (dest).
+static void queue_screen(TgRegs* r, uint16_t src, uint16_t dest) {
+  dp_set(r, 0x7C, src);
+  dp_set(r, 0x7E, 0x007F);
+  dp_set(r, 0x80, dest);
+  r->a = 0x0380;
+  dp_set(r, 0x7A, r->a);
+  r->n = false;
+  r->z = false;
+  r->c = false;
+}
+
+// $8F38: the control type's picture: control type ($1D01) x $380 bytes into the screens
+// unpacked at $60, from $0984 on.
+void Tg2ControlPicture(TgRegs* r) {
+  r->x = dp(r, 0xA3);
+  uint16_t a0 = rd(dbx(r, 0x1D01 + r->x)) & 0x7FFF;
+  dp_set(r, 0x00, a0);
+  r->c = (a0 & 0x8000) != 0;
+  uint16_t a = (uint16_t) (a0 << 1);
+  a = adc16(r, a, a0);
+  r->c = (a & 0x8000) != 0;
+  a = (uint16_t) (a << 1);
+  a = adc16(r, a, a0);
+  a = (uint16_t) (a << 8 | a >> 8);
+  r->c = a & 1;
+  a >>= 1;
+  a = adc16(r, a, 0x0984);
+  a = adc16(r, a, dp(r, 0x60));
+  queue_screen(r, a, dp(r, 0x62));
+}
+
+// $9064: the speed units' picture (km/h when $1CFF is set) into the screens at $66.
+void Tg2UnitsPicture(TgRegs* r) {
+  r->y = 0x0380;
+  r->x = dp(r, 0xA3);
+  if(rd(dbx(r, 0x1CFF + r->x)) != 0) r->y = 0x0700;
+  r->c = false;
+  uint16_t a = adc16(r, r->y, dp(r, 0x60));
+  queue_screen(r, a, dp(r, 0x66));
+}
+
+// $909A: picks km/h and moves down a line.
+void Tg2UnitsKmh(TgRegs* r) {
+  r->x = dp(r, 0xA3);
+  uint32_t adr = dbx(r, 0x1CFF + r->x);
+  if((uint16_t) (rd(adr) - 1) != 0) Tg2SetFadeIn(r);
+  r->a = 1;
+  wr(adr, 1);
+  Tg2MenuDown(r);
+}
+
+// $CB08: the 1P/2P choice ($1CDF) from left or right on the pad ($2A: new presses).
+static bool take_press(TgRegs* r, uint16_t bit) {
+  uint16_t t = dp(r, 0x2A);
+  dp_set(r, 0x2A, t & (uint16_t) ~bit);
+  r->z = (t & bit) == 0;
+  return !r->z;
+}
+void Tg2PlayersPick(TgRegs* r) {
+  r->a = 0x0800;
+  if(take_press(r, 0x0800)) {
+    Tg2SetFadeIn(r);
+    wr(dbx(r, 0x1CDF), 0);
+  }
+  r->a = 0x0400;
+  r->n = false;
+  if(take_press(r, 0x0400)) {
+    Tg2SetFadeIn(r);
+    r->a = 1;
+    wr(dbx(r, 0x1CDF), 1);
+    nz16(r, 1);
+  }
+}
+
+// $CB26: the difficulty ($1CDD, 0-2): keeps the current one's best-lap settings
+// ($1CE1/$1CE3) in its slot ($1CED/$1CE7), moves on a left or right press, and loads the
+// new one's.
+void Tg2DifficultyPick(TgRegs* r) {
+  uint32_t level = dbx(r, 0x1CDD);
+  r->x = (uint16_t) (rd(level) << 1);
+  wr(dbx(r, 0x1CED + r->x), rd(dbx(r, 0x1CE1)));
+  wr(dbx(r, 0x1CE7 + r->x), rd(dbx(r, 0x1CE3)));
+  if(take_press(r, 0x0800)) {
+    Tg2SetFadeIn(r);
+    if(rd(level) != 0) wr(level, (uint16_t) (rd(level) - 1));
+  }
+  if(take_press(r, 0x0400)) {
+    Tg2SetFadeIn(r);
+    if(rd(level) != 2) wr(level, (uint16_t) (rd(level) + 1));
+  }
+  uint16_t a = rd(level);
+  r->c = (a & 0x8000) != 0;
+  r->x = (uint16_t) (a << 1);
+  wr(dbx(r, 0x1CE1), rd(dbx(r, 0x1CED + r->x)));
+  r->a = rd(dbx(r, 0x1CE7 + r->x));
+  wr(dbx(r, 0x1CE3), r->a);
+  nz16(r, r->a);
+}
+
+// $D326: the password screen's two pictures into VRAM.
+void Tg2PasswordPictures(TgRegs* r) {
+  r->a = 0x009E; r->x = 0xEDC0; r->y = 0x6000;
+  Tg2UnpackToVram(r);
+  r->a = 0x0098; r->x = 0x926A; r->y = 0x6A00;
+  Tg2UnpackToVram(r);
+}
+
+// $A4F4: the cursor's height for line $8D (table $9F:A5EB) into $3C.
+void Tg2OptionsCursorY(TgRegs* r) {
+  uint16_t line = dp(r, 0x8D);
+  r->c = (line & 0x8000) != 0;
+  r->x = (uint16_t) (line << 1);
+  r->a = rd(0x9FA5EB + r->x);
+  dp_set(r, 0x3C, r->a);
+  nz16(r, r->a);
+}
+
+// $A4FF / $A519 / $A533 / $A54D: open a sub-screen (script X), unless the screen is busy.
+static void open_screen(TgRegs* r, uint16_t scroll, uint16_t script) {
+  r->a = dp(r, 0x9F);
+  if(r->a != 0) {
+    nz16(r, r->a);
+    r->c = false;
+    return;
+  }
+  Tg2SetFadeIn(r);
+  dp_set(r, 0x8F, scroll);
+  dp_set(r, 0xA1, dp(r, 0x8D));
+  r->x = script;
+  r->a = 0;
+  nz16(r, 0);
+  r->c = true;
+}
+void Tg2OpenScreen1(TgRegs* r) { open_screen(r, 0x4000, 0x874E); }
+void Tg2OpenScreen2(TgRegs* r) { open_screen(r, 0x6000, 0x87A6); }
+void Tg2OpenScreen3(TgRegs* r) { open_screen(r, 0xA000, 0x87C6); }
+void Tg2OpenScreen4(TgRegs* r) { open_screen(r, 0xA000, 0x87F0); }
+
+// $AAF2: copies the shop's 4x4-tile panel at $60 + $05D8 into the map at $0D80.
+void Tg2CopyMapBlock(TgRegs* r);
+void Tg2ShopPanel(TgRegs* r) {
+  r->c = false;
+  r->a = adc16(r, dp(r, 0x60), 0x05D8);
+  dp_set(r, 0x00, r->a);
+  dp_set(r, 0x04, 0x0004);
+  dp_set(r, 0x06, 0x0004);
+  dp_set(r, 0x08, 0);
+  dp_set(r, 0x0A, 0x0038);
+  dp_set(r, 0x0C, 0x7F01);
+  r->a = 0x0D80;
+  dp_set(r, 0x0E, r->a);
+  r->n = false;
+  r->z = false;
+  Tg2CopyMapBlock(r);
+}
+
+// $AB43: a line of shop text as sprites at x = $00 from the sprite table's Y: a dot
+// first, then each character ($9F:X, ending with 0) 4 pixels apart ('4', $34, takes 5).
+void Tg2ShopText(TgRegs* r) {
+  uint8_t ch = rd8(0x9F0000 + r->x);
+  if(ch == 0) {
+    r->a = 0;
+    nz16(r, 0);
+    return;
+  }
+  wr(dbx(r, 0x0502 + r->y), 0x3172);
+  wr(dbx(r, 0x0500 + r->y), dp(r, 0x00));
+  r->c = false;
+  dp_set(r, 0x00, adc16(r, dp(r, 0x00), 0x0006));
+  wr(dbx(r, 0x0301 + r->y), 0);
+  r->y += 4;
+  while((ch = rd8(0x9F0000 + r->x)) != 0) {
+    r->c = false;
+    wr(dbx(r, 0x0502 + r->y), adc16(r, ch, 0x3143));
+    wr(dbx(r, 0x0500 + r->y), dp(r, 0x00));
+    r->c = false;
+    dp_set(r, 0x00, adc16(r, dp(r, 0x00), 0x0004));
+    cmp16(r, ch, 0x34);
+    if(ch == 0x34) dp_set(r, 0x00, (uint16_t) (dp(r, 0x00) + 1));
+    wr(dbx(r, 0x0301 + r->y), 0);
+    r->y += 4;
+    r->x++;
+  }
+  r->a = 0;
+  nz16(r, 0);
+}
+
+// $B6AC: the low digit of $00 as a character ('0' + n, hex), and $00 shifted down a digit.
+void Tg2NextDigit(TgRegs* r) {
+  uint16_t v = dp(r, 0x00);
+  r->c = false;
+  r->a = adc16(r, v & 0x000F, 0x0030);
+  r->c = (v >> 3) & 1;
+  v >>= 4;
+  dp_set(r, 0x00, v);
+  r->n = false;
+  r->z = v == 0;
+}
+
+// $B6BE: a box's frame in the map at $7F:0700 (row width $40 bytes): the top and bottom
+// edges' corners and middle pieces from the tiles at $7F:0F20-$7F:0F32, for a box from
+// $02 to $0A (in pixels) placed at $00.
+void Tg2BoxEdges(TgRegs* r) {
+  r->c = true;
+  uint16_t a = (uint16_t) (sbc16(r, dp(r, 0x0A), 0x000A) & 0x00F8);
+  dp_set(r, 0x04, a);
+  a >>= 2;
+  r->c = false;
+  a = adc16(r, a, dp(r, 0x00));
+  dp_set(r, 0x00, a);
+  uint16_t x = a;
+  r->c = true;
+  a = sbc16(r, dp(r, 0x02), dp(r, 0x04));
+  r->c = false;
+  a = adc16(r, a, dp(r, 0x02));
+  r->c = false;
+  a = (uint16_t) (adc16(r, a, 0x000A) & 0xFFF8);
+  r->c = true;
+  a = (uint16_t) (sbc16(r, a, dp(r, 0x04)) >> 3);
+  r->c = true;
+  uint16_t y = sbc16(r, a, 0x0005);
+  wr(0x7F0700 + x, rd(0x7F0F20));
+  wr(0x7F0740 + x, rd(0x7F0F2A));
+  wr(0x7F0702 + x, rd(0x7F0F22));
+  wr(0x7F0742 + x, rd(0x7F0F2C));
+  for(; y != 0; y--, x += 2) {
+    wr(0x7F0704 + x, rd(0x7F0F24));
+    wr(0x7F0744 + x, rd(0x7F0F2E));
+  }
+  wr(0x7F0704 + x, rd(0x7F0F26));
+  wr(0x7F0744 + x, rd(0x7F0F30));
+  wr(0x7F0706 + x, rd(0x7F0F28));
+  r->a = rd(0x7F0F32);
+  wr(0x7F0746 + x, r->a);
+  nz16(r, r->a);
+  r->x = x;
+  r->y = 0;
 }

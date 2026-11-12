@@ -103,6 +103,47 @@ void Tg2VramDma7F(TgRegs* r);
 void Tg2VramDma(TgRegs* r);
 void Tg2SetFadeIn(TgRegs* r);
 void Tg2FillWords(TgRegs* r);
+void Tg2MenuStart(TgRegs* r);
+void Tg2ShopPanel(TgRegs* r);
+void Tg2ShopText(TgRegs* r);
+void Tg2NextDigit(TgRegs* r);
+void Tg2BoxEdges(TgRegs* r);
+void Tg2PlayersPick(TgRegs* r);
+void Tg2DifficultyPick(TgRegs* r);
+void Tg2PasswordPictures(TgRegs* r);
+void Tg2OptionsCursorY(TgRegs* r);
+void Tg2OpenScreen1(TgRegs* r);
+void Tg2OpenScreen2(TgRegs* r);
+void Tg2OpenScreen3(TgRegs* r);
+void Tg2OpenScreen4(TgRegs* r);
+void Tg2MenuUp(TgRegs* r);
+void Tg2MenuDown(TgRegs* r);
+void Tg2MenuBack(TgRegs* r);
+void Tg2NameHeldRight(TgRegs* r);
+void Tg2NameHeldLeft(TgRegs* r);
+void Tg2NameHeldUp(TgRegs* r);
+void Tg2NameHeldDown(TgRegs* r);
+void Tg2NameRepeat(TgRegs* r);
+void Tg2NamePressRight(TgRegs* r);
+void Tg2NamePressLeft(TgRegs* r);
+void Tg2NamePressUp(TgRegs* r);
+void Tg2NamePressDown(TgRegs* r);
+void Tg2NameKey(TgRegs* r);
+void Tg2MenuCursorY(TgRegs* r);
+void Tg2GearsClose(TgRegs* r);
+void Tg2ControlNext(TgRegs* r);
+void Tg2ControlPrev(TgRegs* r);
+void Tg2ControlPicture(TgRegs* r);
+void Tg2UnitsPicture(TgRegs* r);
+void Tg2UnitsKmh(TgRegs* r);
+void Tg2NameEntrySprites(TgRegs* r);
+void Tg2SaveRecords(TgRegs* r);
+void Tg2LoadRecords(TgRegs* r);
+void Tg2LoadSave(TgRegs* r);
+void Tg2MenuMusic(TgRegs* r);
+void Tg2NewSeason(TgRegs* r);
+void Tg2KeepStandings(TgRegs* r);
+void Tg2RestoreStandings(TgRegs* r);
 
 const TgPortFunc tg2_port_funcs[] = {
   { 0x008A41, "DriveCar1", Tg2DriveCar1, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
@@ -186,6 +227,32 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x0EAFAF, "WindowsRoadRight", Tg2WindowsRoadRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0EB0BF, "WindowsRoadBoth", Tg2WindowsRoadBoth, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x0EB250, "WindowsBand", Tg2WindowsBand, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8190, "SaveRecords", Tg2SaveRecords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F81D4, "LoadRecords", Tg2LoadRecords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8320, "MenuMusic", Tg2MenuMusic, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F835D, "LoadSave", Tg2LoadSave, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8503, "MenuStart", Tg2MenuStart, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F88C0, "MenuUp", Tg2MenuUp, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F88C7, "MenuDown", Tg2MenuDown, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F88E0, "MenuBack", Tg2MenuBack, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A1F, "NameHeldRight", Tg2NameHeldRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A26, "NameHeldLeft", Tg2NameHeldLeft, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A2D, "NameHeldUp", Tg2NameHeldUp, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A34, "NameHeldDown", Tg2NameHeldDown, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A3D, "NameRepeat", Tg2NameRepeat, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A48, "NamePressRight", Tg2NamePressRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A50, "NamePressLeft", Tg2NamePressLeft, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A58, "NamePressUp", Tg2NamePressUp, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8A60, "NamePressDown", Tg2NamePressDown, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8AD3, "NameKey", Tg2NameKey, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8B4A, "NameEntrySprites", Tg2NameEntrySprites, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8D6C, "MenuCursorY", Tg2MenuCursorY, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8D7C, "GearsClose", Tg2GearsClose, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8F11, "ControlNext", Tg2ControlNext, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8F26, "ControlPrev", Tg2ControlPrev, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8F38, "ControlPicture", Tg2ControlPicture, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F9064, "UnitsPicture", Tg2UnitsPicture, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F909A, "UnitsKmh", Tg2UnitsKmh, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9131, "UnpackToVram", Tg2UnpackToVram, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9167, "VramDma", Tg2VramDma, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F97A9, "QueueFadeRow", Tg2QueueFadeRow, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
@@ -199,11 +266,26 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1F9F74, "SetScreenRegs", Tg2SetScreenRegs, TG_CALL_JSR, TG_MX_ANY, TG_MX_16, 0 },
   { 0x1FA117, "SetFadeIn", Tg2SetFadeIn, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FA13D, "FillWords", Tg2FillWords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FA4F4, "OptionsCursorY", Tg2OptionsCursorY, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FA4FF, "OpenScreen1", Tg2OpenScreen1, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FA519, "OpenScreen2", Tg2OpenScreen2, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FA533, "OpenScreen3", Tg2OpenScreen3, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FA54D, "OpenScreen4", Tg2OpenScreen4, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FAAF2, "ShopPanel", Tg2ShopPanel, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FAB43, "ShopText", Tg2ShopText, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FB6AC, "NextDigit", Tg2NextDigit, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FB6BE, "BoxEdges", Tg2BoxEdges, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FB744, "PixelsToTiles", Tg2PixelsToTiles, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FBF14, "Unpack", Tg2Unpack, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FCB08, "PlayersPick", Tg2PlayersPick, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FCB26, "DifficultyPick", Tg2DifficultyPick, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FD326, "PasswordPictures", Tg2PasswordPictures, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FD33F, "MakePassword", Tg2MakePassword, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FD74F, "PasswordCheck", Tg2PasswordCheck, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FD819, "MultiplyLong", Tg2MultiplyLong, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FDA09, "NewSeason", Tg2NewSeason, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FDA3C, "KeepStandings", Tg2KeepStandings, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1FDA69, "RestoreStandings", Tg2RestoreStandings, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1FDBDC, "DrawBigString", Tg2DrawBigString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x1FDD7A, "DrawSmallString", Tg2DrawSmallString, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
 };
