@@ -39,6 +39,7 @@ void Tg2RaceInfoScreen(TgRegs* r);
 static void title(TgRegs* r);
 static void opening(TgRegs* r);
 static bool results(TgRegs* r);
+static void ending(TgRegs* r);
 static void standings(TgRegs* r);
 static void country_password(TgRegs* r);
 
@@ -1847,8 +1848,340 @@ static bool results(TgRegs* r) {
   ws(0x1CE1, (uint16_t) (w(0x1CE1) + 1));
   if(w(0x1CE1) >= w(0x1CE3)) ws(0x1CE3, w(0x1CE1));
   if(w(0x1CE1) != 0x10) return false;
-  call(r, 0xE52E, 0xED74);  // the last: the end
-  return r->c;
+  ending(r);  // the last: the end
+  return true;
+}
+
+// ---- $1F:E52E: the end of the season: the credits, then the level's congratulations ----
+
+void Tg2TextTiles(TgRegs* r);
+
+// $EE00 / $EE99: a picture's sprites (bank A, list at X: big ones, a 0, then small ones;
+// each its tile + Y, x + $00 and y + $02) into the table at $AF. $EE99 draws it mirrored:
+// the tile flipped and x counted from the right.
+static void picture_sprites(TgRegs* r, uint16_t bank, uint16_t x, uint16_t y, bool mirror) {
+  uint32_t b = (uint32_t) (uint8_t) bank << 16;
+  dp_set_d(r, 0x06, y);
+  uint16_t t = dp_d(r, 0xAF);
+  for(int big = 1; big >= 0; big--) {
+    uint16_t a;
+    while((a = tg_read16(b | x)) != 0) {
+      a = (uint16_t) (a + dp_d(r, 0x06));
+      if(mirror) a ^= 0x4000;
+      ws((uint16_t) (t + 0x0502), a);
+      a = tg_read16(b | (uint16_t) (x + 2));
+      if(mirror) a = (uint16_t) ((a ^ 0xFFFF) - (big ? 0x000F : 0x0007));
+      a = (uint16_t) (a + dp_d(r, 0x00));
+      if(a & 0xFF00) a |= 0xFF00;
+      ws((uint16_t) (t + 0x0300), a);
+      dp_set_d(r, 0x04, a & 0x00FF);
+      a = (uint16_t) (tg_read16(b | (uint16_t) (x + 4)) + dp_d(r, 0x02));
+      ws((uint16_t) (t + 0x0500), (uint16_t) ((a << 8) | dp_d(r, 0x04)));
+      ws((uint16_t) (t + 0x0302), (uint16_t) big);
+      x = (uint16_t) (x + 6);
+      t = (uint16_t) (t + 4);
+    }
+    x = (uint16_t) (x + 2);
+  }
+  dp_set_d(r, 0xAF, t);
+}
+
+static void sprites_at(TgRegs* r, uint16_t dx, uint16_t dy, uint16_t list, uint16_t tile, bool mirror) {
+  dp_set_d(r, 0x00, dx);
+  dp_set_d(r, 0x02, dy);
+  picture_sprites(r, 0x009D, list, tile, mirror);
+}
+
+static void pack_sprites(TgRegs* r) {
+  Tg2PackSprites(r);
+}
+
+static void screen_regs(TgRegs* r, uint16_t x) {
+  r->x = x;
+  r->a = 0x009D;
+  Tg2SetScreenRegs(r);
+}
+
+static void unpack_vram(TgRegs* r, uint16_t bank, uint16_t src, uint16_t dest) {
+  r->a = bank;
+  r->x = src;
+  r->y = dest;
+  Tg2UnpackToVram(r);
+}
+
+// A word into a pair of PPU or DMA registers, as STA/STZ do with a 16-bit A.
+static void reg16(uint16_t adr, uint16_t v) {
+  tg_bus_write8(adr, (uint8_t) v);
+  tg_bus_write8((uint16_t) (adr + 1), (uint8_t) (v >> 8));
+}
+
+// The scroll's waits on the NMI hook's line counter ($0118, the low 3 bits).
+static void wait_line_start(void) {
+  while(w(0x0118) & 7) tg_port_wait();
+}
+static void wait_line_past(void) {
+  while(!(w(0x0118) & 7)) tg_port_wait();
+}
+
+// $E934: the credits: lines of text ($98:9362: rows, x, flags (bit 0: centred), the
+// text) drawn in the narrow font into the map rows the NMI hook ($9F:EB62, which moves
+// BG1 up a line each frame) is about to show, each after the rows before it.
+static void credits(TgRegs* r) {
+  reg16(0x420B, 0);
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  r->a = 0x0200;
+  pack_sprites(r);
+  r->x = 0xB2FF;
+  r->a = 0x009D;
+  Tg2SetScreenRegs(r);
+  unpack_vram(r, 0x0098, 0xADE7, 0x1000);
+  unpack_vram(r, 0x0098, 0xB1A2, 0x0800);
+  unpack_7f(r, 0x7F9E, 0xEDC0, 0x0000);
+  reg16(0x4310, 0x2148);
+  reg16(0x4312, 0xFC97);
+  reg16(0x4320, 0x2242);
+  reg16(0x4322, 0xFCAD);
+  tg_bus_write8(0x4314, 0x9C);
+  tg_bus_write8(0x4317, 0x9C);
+  tg_bus_write8(0x4324, 0x9C);
+  tg_bus_write8(0x4327, 0x9C);
+  reg16(0x2116, 0);
+  for(int i = 0; i < 0x400; i++) reg16(0x2118, 0);
+  reg16(0x2116, 0x2000);
+  for(int i = 0; i < 0x20; i++) reg16(0x2118, 0);
+  move_bytes(0x9C, 0xFE94, 0x00, 0x13A0, 0x20);
+  ws(0x1382, 0);
+  ws(0x0022, w(0x0022) | 0x0001);
+  wait_frames(1);
+  tg_bus_write8(0x420C, 0x06);
+  ws(0x0010, 0xEB62);
+  ws(0x0011, 0x9FEB);
+  dp_set_d(r, 0x18, 0xFFFF);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0020);
+  dp_set_d(r, 0x14, 0x03A0);
+  dp_set_d(r, 0x16, 0x0401);
+  dp_set_d(r, 0x12, 0x2010);
+  dp_set_d(r, 0x1A, 0x9362);
+  for(;;) {
+    uint16_t x = dp_d(r, 0x1A);
+    uint16_t rows = tg_read8(0x980000 | x);
+    if(rows == 0) break;
+    dp_set_d(r, 0x1C, rows);
+    dp_set_d(r, 0x1E, tg_read8(0x980000 | (uint16_t) (x + 1)));
+    if(tg_read8(0x980000 | (uint16_t) (x + 2)) & 1) {
+      // Centred: half the text's width (the letters' widths, $9F:DDF5) to the left.
+      uint16_t width = 0;
+      dp_set_d(r, 0x02, 0x0098);
+      uint16_t c = (uint16_t) (x + 3);
+      uint16_t ch;
+      while((ch = tg_read8(0x980000 | c)) != 0) {
+        if(ch == 0x20) {
+          width = (uint16_t) (width + 8);
+        } else {
+          uint16_t v;
+          if(ch == 0x2F) v = 0x00DE;
+          else if(ch == 0x2E) v = 0x00DF;
+          else if(ch < 0x41) v = (uint16_t) (ch + 0x8A);
+          else if(ch < 0x61) v = (uint16_t) (ch - 0x2B + 0x8A);
+          else v = (uint16_t) (ch + 4 - 0x2B + 0x8A);
+          width = (uint16_t) (width + tg_read8(0x9FDDF5 + v));
+        }
+        c++;
+      }
+      dp_set_d(r, 0x00, c);
+      dp_set_d(r, 0x04, (uint16_t) (width >> 1));
+      dp_set_d(r, 0x1E, (uint16_t) (dp_d(r, 0x1E) - (width >> 1)));
+    }
+    dp_set_d(r, 0x0A, dp_d(r, 0x1E) & 7);
+    r->y = (uint16_t) (x + 3);
+    r->a = 0x7F98;
+    r->x = 0x2000;
+    Tg2TextTiles(r);
+    uint16_t tiles = r->y;
+    dp_set_d(r, 0x1A, (uint16_t) (dp_d(r, 0x00) + 1));
+    uint16_t len = (uint16_t) (r->a - 0x2000);
+    dp_set_d(r, 0x00, len);
+    uint16_t next = (uint16_t) ((len >> 1) + dp_d(r, 0x12));
+    // Blank rows above the line, one each time the hook has moved on a row.
+    for(;;) {
+      wait_line_start();
+      dp_set_d(r, 0x1C, (uint16_t) (dp_d(r, 0x1C) - 1));
+      if(dp_d(r, 0x1C) == 0) break;
+      reg16(0x2116, dp_d(r, 0x14));
+      for(int i = 0; i < 0x20; i++) reg16(0x2118, 0);
+      dp_set_d(r, 0x14, (uint16_t) ((dp_d(r, 0x14) + 0x20) & 0x03FF));
+      wait_line_past();
+    }
+    // The line's row: blanks, its tiles' numbers ($16 on), blanks to the end.
+    reg16(0x2116, dp_d(r, 0x14));
+    dp_set_d(r, 0x14, (uint16_t) ((dp_d(r, 0x14) + 0x20) & 0x03FF));
+    uint16_t lead = (uint16_t) (dp_d(r, 0x1E) >> 3);
+    dp_set_d(r, 0x02, (uint16_t) (tiles + lead));
+    for(uint16_t i = 0; i < lead; i++) reg16(0x2118, 0);
+    uint16_t t = dp_d(r, 0x16);
+    for(uint16_t i = 0; i < tiles; i++) reg16(0x2118, t++);
+    dp_set_d(r, 0x16, t);
+    int16_t rest = (int16_t) (0x20 - dp_d(r, 0x02));
+    for(; rest > 0; rest--) reg16(0x2118, 0);
+    vram_dma(r, len, 0x2000, dp_d(r, 0x12));
+    if(next >= 0x5800) {
+      dp_set_d(r, 0x16, 0x0401);
+      next = 0x2010;
+    }
+    dp_set_d(r, 0x12, next);
+    wait_line_past();
+  }
+  ws(0x012E, 0);
+  ws(0x012C, 0xFFE0);
+  while(w(0x012C) != 0) tg_port_wait();
+  ws(0x0010, 0x9274);
+  reg16(0x420B, 0);
+}
+
+// Moves on to the next level once a season is won: the level's country and best are kept
+// ($1CED / $1CE7, per level) and the next level's taken.
+static void next_level(void) {
+  uint16_t x = (uint16_t) (w(0x1CDD) << 1);
+  ws((uint16_t) (0x1CED + x), w(0x1CE1));
+  ws((uint16_t) (0x1CE7 + x), w(0x1CE3));
+  ws(0x1CDD, (uint16_t) (w(0x1CDD) + 1));
+  x = (uint16_t) (w(0x1CDD) << 1);
+  ws(0x1CE1, w((uint16_t) (0x1CED + x)));
+  ws(0x1CE3, w((uint16_t) (0x1CE7 + x)));
+}
+
+// The congratulations' shared set-up: the screen, its pictures and the stars' colours.
+static void congrats_setup(TgRegs* r, uint16_t regs_at) {
+  dp_set_d(r, 0xAF, 0);
+  dp_set_d(r, 0xB9, 0x0200);
+  r->a = 0x0200;
+  pack_sprites(r);
+  screen_regs(r, regs_at);
+  unpack_vram(r, 0x009D, 0xEE8F, 0x1000);
+  unpack_vram(r, 0x009D, 0xB855, 0x2000);
+  unpack_vram(r, 0x009D, 0xEF09, 0x6000);
+  unpack_7f(r, 0x7F9D, 0xE75F, 0x0000);
+}
+
+// The fade in, and after $012C frames the fade out ($A5 counts them down).
+static bool congrats_frame_done(TgRegs* r) {
+  uint16_t a5 = dp_d(r, 0xA5);
+  if(a5 != 0) {
+    dp_set_d(r, 0xA5, --a5);
+    if(a5 == 0) {
+      ws(0x012E, 0);
+      ws(0x012C, 0xFF80);
+    }
+    return false;
+  }
+  return w(0x012C) == 0;
+}
+
+static void bg3_scroll(TgRegs* r, uint8_t vofs_dp, uint8_t hofs_dp) {
+  dp_set_d(r, vofs_dp, (uint16_t) (dp_d(r, vofs_dp) - 0x0200));
+  tg_bus_write8(0x2112, (uint8_t) (dp_d(r, vofs_dp) >> 8));
+  tg_bus_write8(0x2112, 0);
+  tg_bus_write8(0x2111, (uint8_t) (dp_d(r, hofs_dp) >> 8));
+  tg_bus_write8(0x2111, 0);
+}
+
+// $E542: the amateur level's end: the driver and two friends; now try professional.
+static void ending_amateur(TgRegs* r) {
+  congrats_setup(r, 0xB233);
+  vram_dma(r, 0x0F00, 0x0000, 0x0000);
+  vram_dma(r, 0x0700, 0x1642, 0x0800);
+  move_bytes(0x9D, 0xFF56, 0x00, 0x1380, 0x40);
+  move_bytes(0x9D, 0xFE96, 0x00, 0x13C0, 0xC0);
+  move_bytes(0x9D, 0xFF96, 0x00, 0x1480, 0x60);
+  tg_bus_write8(0x2132, 0x2B);
+  tg_bus_write8(0x2132, 0x4C);
+  tg_bus_write8(0x2132, 0x9F);
+  reg16(0x4310, 0x2601);
+  reg16(0x4312, 0xE6DF);
+  tg_bus_write8(0x4314, 0x9F);
+  sprites_at(r, 0x007A, 0x008E, 0xB433, 0x2000, false);
+  sprites_at(r, 0x0063, 0x008D, 0xB769, 0x1228, true);
+  sprites_at(r, 0x0095, 0x008D, 0xB769, 0x1228, false);
+  pack_sprites(r);
+  ws(0x0022, w(0x0022) | 0x0003);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  dp_set_d(r, 0x00, 0xFF00);
+  dp_set_d(r, 0x02, 0);
+  dp_set_d(r, 0xA5, 0x012C);
+  do {
+    wait_frames(1);
+    tg_bus_write8(0x420C, 0x02);
+    bg3_scroll(r, 0x00, 0x02);
+  } while(!congrats_frame_done(r));
+  ws(0x1CE1, 0);
+  next_level();
+}
+
+// $E6EF: the professional and championship levels' end: the driver at the track, the
+// crowd's frames cycling ($9F:EDE1); at professional two friends join in, sliding in
+// from the sides ($9F:ED75/ED95/EDB5 by $1E); now try championship, or the new champion.
+static void ending_higher(TgRegs* r) {
+  bool pro = w(0x1CDD) == 1;
+  congrats_setup(r, 0xB277);
+  vram_dma(r, 0x0800, 0x0000, 0x0000);
+  vram_dma(r, 0x0700, pro ? 0x0F00 : 0x2100, 0x0400);
+  vram_dma(r, 0x0700, 0x1600, 0x0800);
+  move_bytes(0x9D, 0xFF56, 0x00, 0x1380, 0x40);
+  move_bytes(0x9C, 0xF935, 0x00, 0x13C0, 0xC0);
+  move_bytes(0x9D, 0xFF96, 0x00, 0x1480, 0x60);
+  reg16(0x4310, 0x2C00);
+  reg16(0x4312, 0xEDE9);
+  tg_bus_write8(0x4314, 0x9F);
+  reg16(0x4320, 0x2103);
+  reg16(0x4322, 0xEDF0);
+  tg_bus_write8(0x4324, 0x9F);
+  sprites_at(r, 0x007A, 0x0097, 0xB433, 0x1000, false);
+  pack_sprites(r);
+  ws(0x0022, w(0x0022) | 0x0001);
+  ws(0x0130, 0);
+  ws(0x012E, 0x0F00);
+  ws(0x012C, 0x0080);
+  dp_set_d(r, 0x26, 0xFF00);
+  dp_set_d(r, 0x24, 0);
+  dp_set_d(r, 0x22, 0);
+  dp_set_d(r, 0x20, 0);
+  dp_set_d(r, 0x1E, 0);
+  dp_set_d(r, 0xA5, 0x012C);
+  do {
+    wait_frames(1);
+    tg_bus_write8(0x420C, 0x06);
+    dp_set_d(r, 0x22, (uint16_t) (dp_d(r, 0x22) + 0x0080));
+    uint16_t x = (uint16_t) ((dp_d(r, 0x22) >> 8) & 0x0006);
+    vram_dma(r, 0x0100, rom9f((uint16_t) (0xEDE1 + x)), 0x0520);
+    bg3_scroll(r, 0x26, 0x24);
+    dp_set_d(r, 0x20, (uint16_t) (dp_d(r, 0x20) + 0x0048));
+    x = (uint16_t) ((dp_d(r, 0x20) >> 8) & 0x0002);
+    sprites_at(r, rom9f((uint16_t) (0xEDD5 + x)), rom9f((uint16_t) (0xEDD9 + x)), rom9f((uint16_t) (0xEDDD + x)), 0x2000, false);
+    if(!pro) {
+      if(dp_d(r, 0x1E) < 0x1E00) dp_set_d(r, 0x1E, (uint16_t) (dp_d(r, 0x1E) + 0x0030));
+      x = (uint16_t) ((dp_d(r, 0x1E) >> 8) & 0x001E);
+      sprites_at(r, rom9f((uint16_t) (0xED75 + x)), rom9f((uint16_t) (0xED95 + x)), rom9f((uint16_t) (0xEDB5 + x)), 0x1228, true);
+      sprites_at(r, (uint16_t) (0x0100 - rom9f((uint16_t) (0xED75 + x))), rom9f((uint16_t) (0xED95 + x)), rom9f((uint16_t) (0xEDB5 + x)), 0x1228, false);
+    }
+    pack_sprites(r);
+    ws(0x0022, w(0x0022) | 0x0002);
+  } while(!congrats_frame_done(r));
+  ws(0x1CE1, 0);
+  if(pro) next_level();
+}
+
+static void ending(TgRegs* r) {
+  g_ram[0x01D2] = 1;
+  credits(r);
+  if(w(0x1CDD) == 0) ending_amateur(r);
+  else ending_higher(r);
+  reg16(0x420B, 0);
+  r->c = true;
 }
 
 // ---- $1F:DED5: the season's standings after a race ----

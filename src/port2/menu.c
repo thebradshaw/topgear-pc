@@ -1651,6 +1651,8 @@ static void text_tiles(TgRegs* r) {
   r->z = r->db == 0;
 }
 
+void Tg2TextTiles(TgRegs* r) { text_tiles(r); }
+
 void Tg2VramDma(TgRegs* r);
 
 // ---- $1F:E385: a narrow-font string (bank A, at Y) to VRAM ----

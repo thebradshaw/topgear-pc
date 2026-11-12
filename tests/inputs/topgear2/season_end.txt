@@ -1,0 +1,37 @@
+# Top Gear 2: season_standings with the season's last country poked in (and the championship
+# level): the credits, then the new champion's congratulations. Pokes are timed for --port verify.
+300 1 DOWN
+320 1 -
+400 1 DOWN
+420 1 -
+500 1 START
+520 1 -
+700 1 START
+720 1 -
+1100 1 START
+1120 1 -
+1300 1 START
+1320 1 -
+1500 1 X
+14300 poke FE9E 00
+14300 poke FEC4 12
+14300 poke FE0E 03
+14300 poke FE0A 0F
+14300 poke FE06 02
+14800 1 START
+14810 1 -
+15200 1 START
+15210 1 -
+15600 1 START
+15610 1 -
+16000 1 START
+16010 1 -
+16400 1 START
+16410 1 -
+16800 1 START
+16810 1 -
+17200 1 START
+17210 1 -
+17600 1 START
+17610 1 -
+18000 1 START
