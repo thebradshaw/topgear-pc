@@ -26,10 +26,16 @@ void Tg2PackSpritesSwap(TgRegs* r);
 void Tg2NameEntrySprites(TgRegs* r);
 void Tg2MenuCursorY(TgRegs* r);
 void Tg2UnitsPicture(TgRegs* r);
+void Tg2ShopPanel(TgRegs* r);
+void Tg2ShopText(TgRegs* r);
+void Tg2PackSpritesKeep(TgRegs* r);
+void Tg2SetFadeIn(TgRegs* r);
+void Tg2ShopDraw(TgRegs* r);
 
 static uint16_t w(uint16_t adr) { return ram16(adr); }
 static void ws(uint16_t adr, uint16_t v) { ram16_set(adr, v); }
 
+static void wr16_9f(uint16_t adr, uint16_t v) { tg_bus_write16(0x9F0000 | adr, v); }
 static uint16_t dp_d(const TgRegs* r, uint8_t o) { return ram16((uint16_t) (r->d + o)); }
 static void dp_set_d(const TgRegs* r, uint8_t o, uint16_t v) { ram16_set((uint16_t) (r->d + o), v); }
 
@@ -58,8 +64,11 @@ static void handler(TgRegs* r, uint16_t entry, uint16_t offset, uint16_t ret) {
   r->a = r->x = entry;
   uint16_t target = rom((uint16_t) (entry + offset));
   const TgPortFunc* f = tg_port_find(0x1F0000 | target);
-  if(f != NULL && f->call == TG_CALL_JSR) f->fn(r);
-  else {
+  if(f != NULL && f->call == TG_CALL_JSR) {
+    f->fn(r);
+    if(!tg_port_take_declined()) return;
+  }
+  {
     uint16_t d = r->d;
     tg_call_jsr(r, target, ret, TG_MX_16);
     r->d = d;
@@ -543,3 +552,200 @@ void Tg2OptionsFadeOut(TgRegs* r) {
   dp_set_d(r, 0x3C, r->a);
   flags_nz16(r, r->a);
 }
+
+// $A7A1: the shop: the panel's frame, the four item boxes, the item's name, its picture
+// (sent by the $7A queue), the level sprites, the price list and the money (as a
+// number, $1D19 x 1000, without leading zeros); then swaps the sprite tables ($BB/$BD)
+// and waits for the NMI to take them. The paint shop (item 9) isn't in C yet: declined.
+static uint16_t rom9f(uint16_t adr) { return tg_read16(0x9F0000 | adr); }
+static uint32_t db9f(uint16_t adr) { return 0x9F0000 | adr; }
+
+void Tg2ShopDraw(TgRegs* r) {
+  uint16_t item = dp_d(r, 0xA5);
+  if(item == 0x0009) {
+    tg_port_decline();
+    return;
+  }
+  uint16_t b1 = dp_d(r, 0xB1);
+  dp_set_d(r, 0x00, (uint16_t) (dp_d(r, 0x60) + 0x0380));
+  dp_set_d(r, 0x02, (uint16_t) (dp_d(r, 0x60) + 0x000E));
+  dp_set_d(r, 0x04, 0x0019);
+  dp_set_d(r, 0x06, 0x000C);
+  dp_set_d(r, 0x08, 0);
+  dp_set_d(r, 0x0A, 0x000E);
+  dp_set_d(r, 0x0C, 0x7F01);
+  r->a = 0x0D80;
+  dp_set_d(r, 0x0E, r->a);
+  Tg2CopyMapBlock(r);
+  static const uint16_t kBoxes[4] = {0x006C, 0x0076, 0x01EC, 0x01F6};
+  for(int i = 0; i < 4; i++) {
+    dp_set_d(r, 0x02, (uint16_t) (dp_d(r, 0x60) + kBoxes[i]));
+    Tg2ShopPanel(r);
+  }
+  uint16_t i2 = (uint16_t) (item << 1);
+  r->y = rom9f((uint16_t) (0xAE90 + i2));
+  r->x = (uint16_t) ((b1 & 0xFF00) + 0x0870);
+  r->a = 0x309F;
+  Tg2DrawSmallString(r);
+  dp_set_d(r, 0x7C, (uint16_t) (dp_d(r, 0x60) + 0x0780 + rom9f((uint16_t) (0xAF17 + i2))));
+  dp_set_d(r, 0x7E, 0x007F);
+  uint16_t bd = dp_d(r, 0xBD);
+  dp_set_d(r, 0x80, (uint16_t) (rom9f((uint16_t) (0xAF2B + bd)) + dp_d(r, 0x62)));
+  dp_set_d(r, 0x7A, 0x0800);
+  // The level marker and the four level boxes.
+  uint16_t y = dp_d(r, 0xAF);
+  uint16_t base = rom9f((uint16_t) (0xAC31 + i2));
+  dp_set_d(r, 0x00, base);
+  uint16_t level = (uint16_t) (tg_read16(db9f((uint16_t) (0x1D03 + i2 + dp_d(r, 0xA3)))) << 2);
+  r->c = false;
+  uint16_t a = adc16(r, level, rom9f((uint16_t) (0xAF2F + bd)));
+  r->c = false;
+  a = adc16(r, a, base);
+  wr16_9f(y + 0x0502, a);
+  r->c = false;
+  wr16_9f(y + 0x0500, adc16(r, 0x2060, b1));
+  wr16_9f(y + 0x0301, 0x0100);
+  r->c = false;
+  a = adc16(r, rom9f((uint16_t) (0xAF2F + bd)), base);
+  wr16_9f(y + 0x0506, a);
+  r->c = false;
+  a = adc16(r, a, 4);
+  wr16_9f(y + 0x050A, a);
+  a = adc16(r, a, 4);
+  wr16_9f(y + 0x050E, a);
+  a = adc16(r, a, 4);
+  wr16_9f(y + 0x0512, a);
+  r->c = false;
+  a = adc16(r, 0x08B0, b1);
+  wr16_9f(y + 0x0504, a);
+  a = adc16(r, a, 0x0028);
+  wr16_9f(y + 0x0508, a);
+  a = adc16(r, 0x38B0, b1);
+  wr16_9f(y + 0x050C, a);
+  a = adc16(r, a, 0x0028);
+  wr16_9f(y + 0x0510, a);
+  for(uint16_t k = 0; k < 4; k++) wr16_9f(y + 0x0305 + k * 4, 0x0100);
+  r->c = false;
+  y = adc16(r, y, 0x0014);
+  dp_set_d(r, 0xAF, y);
+  // The item's own sprites.
+  uint16_t sel = (uint16_t) (dp_d(r, 0xA7) << 1);
+  r->c = false;
+  dp_set_d(r, 0x00, adc16(r, rom9f((uint16_t) (0xAF33 + sel)), b1));
+  uint16_t x = rom9f((uint16_t) (0xAF3F + sel));
+  y = dp_d(r, 0xAF);
+  while((a = rom9f((uint16_t) (0xAF4B + x))) != 0) {
+    wr16_9f(y + 0x0502, a);
+    r->c = false;
+    wr16_9f(y + 0x0500, adc16(r, rom9f((uint16_t) (0xAFAF + x)), dp_d(r, 0x00)));
+    wr16_9f(y + 0x0301, 0);
+    x += 2;
+    y += 4;
+  }
+  dp_set_d(r, 0xAF, y);
+  // The price list.
+  x = rom9f((uint16_t) (0xB0FB + i2));
+  r->y = y;
+  while((a = rom9f(x)) != 0) {
+    r->c = false;
+    dp_set_d(r, 0x00, adc16(r, a, b1));
+    r->x = rom9f((uint16_t) (x + 2));
+    Tg2ShopText(r);
+    x += 4;
+  }
+  dp_set_d(r, 0xAF, r->y);
+  wait1(r);
+  r->c = false;  // $A627
+  // The money: $1D19 x 1000 in 24 bits (x 1024 plus x -24 on the multiplier).
+  uint16_t money = tg_read16(db9f((uint16_t) (0x1D19 + dp_d(r, 0xA3))));
+  uint16_t d = r->d;
+  ram16_set((uint16_t) (d + 1), (uint16_t) (money << 2));
+  tg_bus_write8(0x211B, (uint8_t) money);
+  tg_bus_write8(0x211B, (uint8_t) (money >> 8));
+  tg_bus_write8(0x211C, 0xE8);
+  g_ram[d] = tg_bus_read8(0x2134);
+  g_ram[(uint16_t) (d + 3)] = 0;
+  uint16_t mid = (uint16_t) (tg_bus_read8(0x2135) | tg_bus_read8(0x2136) << 8);
+  ram16_set((uint16_t) (d + 1), (uint16_t) (mid + ram16((uint16_t) (d + 1))));
+  uint32_t n = g_ram[d] | g_ram[(uint16_t) (d + 1)] << 8 | (uint32_t) g_ram[(uint16_t) (d + 2)] << 16;
+  int k;
+  for(k = 0; k < 6; k++) {
+    uint32_t p = tg_bus_read8(0x9FAAE0 + k) | tg_bus_read8(0x9FAAE6 + k) << 8 | (uint32_t) tg_bus_read8(0x9FAAEC + k) << 16;
+    uint8_t digit = 0;
+    while(n >= p) {
+      n -= p;
+      digit++;
+    }
+    g_ram[(uint16_t) (d + 3 + k)] = (uint8_t) (digit + 0x30);
+  }
+  g_ram[d] = (uint8_t) n;
+  g_ram[(uint16_t) (d + 1)] = (uint8_t) (n >> 8);
+  g_ram[(uint16_t) (d + 2)] = (uint8_t) (n >> 16);
+  g_ram[(uint16_t) (d + 3 + 6)] = (uint8_t) (n + 0x30);
+  g_ram[(uint16_t) (d + 4 + 6)] = 0;
+  uint16_t lead = 0;
+  while(lead < 6 && g_ram[(uint16_t) (d + 3 + lead)] == 0x30) lead++;
+  dp_set_d(r, 0x00, lead);
+  r->x = (uint16_t) (d + 3 + lead);
+  r->c = false;
+  dp_set_d(r, 0x00, adc16(r, 0x5878, b1));
+  r->y = dp_d(r, 0xAF);
+  Tg2ShopText(r);
+  dp_set_d(r, 0xAF, r->y);
+  while(dp_d(r, 0x7A) != 0) tg_port_wait();
+  dp_set_d(r, 0x7C, dp_d(r, 0x60));
+  dp_set_d(r, 0x7E, 0x007F);
+  dp_set_d(r, 0x80, dp_d(r, 0x62));
+  r->a = 0x0380;
+  Tg2PackSpritesKeep(r);
+  dp_set_d(r, 0x93, dp_d(r, 0x93) | 0x0008);
+  uint16_t bb = dp_d(r, 0xBB);
+  r->x = dp_d(r, 0xBD);
+  dp_set_d(r, 0xBB, r->x);
+  dp_set_d(r, 0xBD, bb);
+  r->a = 0x0008;
+  for(;;) {
+    uint16_t m = dp_d(r, 0x93);
+    r->n = (m & 0x8000) != 0;
+    r->v = (m & 0x4000) != 0;
+    r->z = (m & 0x0008) == 0;
+    if(r->z) break;
+    tg_port_wait();
+  }
+}
+
+// $A7A1 from C: the original when the C version declines (the paint shop).
+static void shop_draw(TgRegs* r, uint16_t ret) {
+  Tg2ShopDraw(r);
+  if(tg_port_take_declined()) {
+    uint16_t d = r->d;
+    tg_call_jsr(r, 0xA7A1, ret, TG_MX_16);
+    r->d = d;
+    r->db = 0x9F;
+  }
+}
+
+// $ACC7 / $ACEF / $AD60: the cursor moves between the shop's item levels (tables
+// $9F:ADAF, $9F:ADBB, $9F:ADD3 give the level to go to from each; in $AD60's a negative
+// one moves on to the next item instead, skipping item 5). Not yet for the paint shop.
+static void shop_move(TgRegs* r, uint16_t table, uint16_t ret, bool next_item) {
+  if(dp_d(r, 0xA5) == 0x0009) {
+    tg_port_decline();
+    return;
+  }
+  Tg2SetFadeIn(r);
+  uint16_t a = rom9f((uint16_t) (table + (dp_d(r, 0xA7) << 1)));
+  r->x = (uint16_t) (dp_d(r, 0xA7) << 1);
+  if(next_item && (a & 0x8000)) {
+    dp_set_d(r, 0xA5, (uint16_t) (dp_d(r, 0xA5) + 1));
+    if(dp_d(r, 0xA5) == 0x0005) dp_set_d(r, 0xA5, 0x0006);
+    dp_set_d(r, 0xA7, 0);
+  } else {
+    dp_set_d(r, 0xA7, a);
+  }
+  shop_draw(r, ret);
+  r->c = false;
+}
+void Tg2ShopLeft(TgRegs* r) { shop_move(r, 0xADAF, 0xACDE, false); }
+void Tg2ShopRight(TgRegs* r) { shop_move(r, 0xADBB, 0xAD06, false); }
+void Tg2ShopDown(TgRegs* r) { shop_move(r, 0xADD3, 0xAD8F, true); }
