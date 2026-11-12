@@ -15,6 +15,8 @@ void Tg2BuildRoad(TgRegs* r);
 void Tg2BuildRoad2P(TgRegs* r);
 void Tg2RaceVblank1P(TgRegs* r);
 void Tg2RaceLoop1P(TgRegs* r);
+void Tg2RaceOptions(TgRegs* r);
+void Tg2RacePlayers(TgRegs* r);
 void Tg2SendPalette(TgRegs* r);
 void Tg2SendSprites(TgRegs* r);
 void Tg2RunQueue(TgRegs* r);
@@ -63,6 +65,8 @@ void Tg2FillWords(TgRegs* r);
 const TgPortFunc tg2_port_funcs[] = {
   { 0x008A41, "DriveCar1", Tg2DriveCar1, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00A2A5, "DriveCar2", Tg2DriveCar2, TG_CALL_JSL, TG_MX_ANY, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00CD09, "RaceOptions", Tg2RaceOptions, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x00CD5E, "RacePlayers", Tg2RacePlayers, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x00D726, "Cars", Tg2Cars, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x01826D, "RaceLoop1P", Tg2RaceLoop1P, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x018522, "RaceLoop2P", Tg2RaceLoop2P, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
