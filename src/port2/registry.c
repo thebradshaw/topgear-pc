@@ -104,6 +104,16 @@ void Tg2VramDma(TgRegs* r);
 void Tg2SetFadeIn(TgRegs* r);
 void Tg2FillWords(TgRegs* r);
 void Tg2MenuStart(TgRegs* r);
+void Tg2NameEntryScreen(TgRegs* r);
+void Tg2NameEntryFadeOut(TgRegs* r);
+void Tg2GearsScreen(TgRegs* r);
+void Tg2GearsFadeOut(TgRegs* r);
+void Tg2ControlScreen(TgRegs* r);
+void Tg2ControlFadeOut(TgRegs* r);
+void Tg2UnitsScreen(TgRegs* r);
+void Tg2UnitsFadeOut(TgRegs* r);
+void Tg2UnpackSend2(TgRegs* r);
+void Tg2UnpackSend(TgRegs* r);
 void Tg2MenuPowerOn(TgRegs* r);
 void Tg2MenuAfterRace(TgRegs* r);
 void Tg2ShopPanel(TgRegs* r);
@@ -239,6 +249,7 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1F88C0, "MenuUp", Tg2MenuUp, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F88C7, "MenuDown", Tg2MenuDown, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F88E0, "MenuBack", Tg2MenuBack, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8920, "NameEntryScreen", Tg2NameEntryScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1F8A1F, "NameHeldRight", Tg2NameHeldRight, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8A26, "NameHeldLeft", Tg2NameHeldLeft, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8A2D, "NameHeldUp", Tg2NameHeldUp, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
@@ -250,13 +261,22 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1F8A60, "NamePressDown", Tg2NamePressDown, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8AD3, "NameKey", Tg2NameKey, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8B4A, "NameEntrySprites", Tg2NameEntrySprites, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8C26, "NameEntryFadeOut", Tg2NameEntryFadeOut, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1F8C75, "GearsScreen", Tg2GearsScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1F8D6C, "MenuCursorY", Tg2MenuCursorY, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8D7C, "GearsClose", Tg2GearsClose, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8DB0, "GearsFadeOut", Tg2GearsFadeOut, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1F8E11, "ControlScreen", Tg2ControlScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1F8F11, "ControlNext", Tg2ControlNext, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8F26, "ControlPrev", Tg2ControlPrev, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8F38, "ControlPicture", Tg2ControlPicture, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8F61, "ControlFadeOut", Tg2ControlFadeOut, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1F8FAD, "UnitsScreen", Tg2UnitsScreen, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1F9064, "UnitsPicture", Tg2UnitsPicture, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F909A, "UnitsKmh", Tg2UnitsKmh, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F90AE, "UnitsFadeOut", Tg2UnitsFadeOut, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1F90E9, "UnpackSend2", Tg2UnpackSend2, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1F910D, "UnpackSend", Tg2UnpackSend, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1F9131, "UnpackToVram", Tg2UnpackToVram, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F9167, "VramDma", Tg2VramDma, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F97A9, "QueueFadeRow", Tg2QueueFadeRow, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
