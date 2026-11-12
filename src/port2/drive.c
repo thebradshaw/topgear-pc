@@ -35,6 +35,7 @@ static const uint16_t kAbs2[][2] = {
 };
 
 static bool g_p2;
+uint32_t tg2_rumble_bump[2], tg2_rumble_nitro[2];
 static uint8_t g_dp[256];
 static TgRegs* g_r;
 
@@ -252,6 +253,7 @@ static void wall_item(uint16_t item) {
 // or a crash by how hard and how often.
 static void hit(void) {
   TgRegs* r = g_r;
+  tg2_rumble_bump[g_p2]++;
   if(w(0x0610) >= 0x0200) {
     r->c = true;
     r->y = g_y;
@@ -794,6 +796,7 @@ static void run(TgRegs* r) {
       wbs(0x01A6, (uint8_t) (wb(0x01A6) - 1));
       zs(0xBC, z(0xC4));
       zs(0x2C, 0x0230);
+      tg2_rumble_nitro[g_p2]++;
       ws(0x01A6, (uint16_t) (w(0x01A6) | 0x8000));
       ws(0x0376, (uint16_t) (w(0x0376) & ~0x300C));
       ws(0x0374, (uint16_t) (w(0x0374) | 0x000C));

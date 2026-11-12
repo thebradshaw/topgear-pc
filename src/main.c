@@ -457,17 +457,31 @@ static void stopRecording(void) {
 
 // Controller rumble in races: a knock when a car bumps something ($1EF5/$1EF6 bit 7) and
 // a long light rumble when its nitro fires ($1E6C/$1E6E bit 15). Pad 1 drives the first
-// car, pad 2 the second.
+// car, pad 2 the second. Top Gear 2 counts them in its C port; Top Gear 3000 has none yet.
 static void rumble(void) {
   static uint32_t lastIrqs;
   static uint8_t lastBump[2], lastNitro[2];
   bool inRace = tg_port_race_irqs != lastIrqs;
   lastIrqs = tg_port_race_irqs;
   const uint8_t* ram = tg_game_wram(app.game);
+  bool tg2 = app.gameId == TG_GAME_TOPGEAR2;
+  static uint32_t lastBumps[2], lastNitros[2];
   for(int p = 0; p < 2; p++) {
-    uint8_t bump = inRace ? ram[0x1EF5 + p] & 0x80 : 0;
-    uint8_t nitro = inRace ? ram[0x1E6D + 2 * p] & 0x80 : 0;
-    if(app.rumble && app.pads[p] && ram[0x1FF6] == 0) {  // not in the attract demo
+    uint8_t bump, nitro;
+    bool demo;
+    if(tg2) {
+      // Top Gear 2's C port counts each player's knocks and nitro bursts; $FF1A: the demo.
+      bump = tg2_rumble_bump[p] != lastBumps[p];
+      nitro = tg2_rumble_nitro[p] != lastNitros[p];
+      lastBumps[p] = tg2_rumble_bump[p];
+      lastNitros[p] = tg2_rumble_nitro[p];
+      demo = (ram[0xFF1A] | ram[0xFF1B]) != 0;
+    } else {
+      bump = inRace ? ram[0x1EF5 + p] & 0x80 : 0;
+      nitro = inRace ? ram[0x1E6D + 2 * p] & 0x80 : 0;
+      demo = ram[0x1FF6] != 0;
+    }
+    if(app.rumble && app.pads[p] && !demo && app.gameId != TG_GAME_TOPGEAR3000) {  // not in the attract demo
       if(bump && !lastBump[p]) SDL_RumbleGamepad(app.pads[p], 0xC000, 0xFFFF, 200);
       else if(nitro && !lastNitro[p]) SDL_RumbleGamepad(app.pads[p], 0x3000, 0x8000, 800);
     }

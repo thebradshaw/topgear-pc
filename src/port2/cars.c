@@ -236,6 +236,7 @@ static void player_hits(TgRegs* r, const Player* p, uint16_t x, uint16_t y, uint
   uint16_t d = closing(p, f(y, 0x1F));
   ws(0x06DE, d);
   if(!neg((uint16_t) (d - 0x0200))) {
+    tg2_rumble_bump[p == &kP2]++;
     tg_push16(x);
     tg_push16(y);
     r->a = 0x001E;

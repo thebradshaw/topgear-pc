@@ -182,6 +182,8 @@ static inline uint16_t tg_port_smooth_step(int16_t* carry, uint16_t step) {
 
 // Counts the race's top-of-frame interrupts (RaceIrqTop): changes every frame of a race.
 extern uint32_t tg_port_race_irqs;
+// Top Gear 2: counts of each player's knocks and nitro bursts, for controller rumble.
+extern uint32_t tg2_rumble_bump[2], tg2_rumble_nitro[2];
 // Full-screen 1-player view and widescreen (sprites.c, LakeSnes ppu_full.c), enhancements:
 // when either is on, the sprite builder records each OAM entry's ground line in
 // tg_port_obj_grounds (widescreen: and keeps sprites out to the wider edges), and
