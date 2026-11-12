@@ -121,6 +121,9 @@ typedef struct TgResumePoint {
   bool idle;
 } TgResumePoint;
 const TgResumePoint* tg_port_resume_point(void);
+// Where tg_port_wait and calls from a fiber note their resume point (each fiber has its
+// own, so two can wait at once: the menus' two players' threads). NULL: the default.
+void tg_port_use_resume_point(TgResumePoint* rp);
 
 // The translated routines of the game being run, in address order: Top Gear's
 // (registry.c) unless tg_port_select_game picked another.

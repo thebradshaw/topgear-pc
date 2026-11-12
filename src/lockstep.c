@@ -76,10 +76,16 @@ struct TgLockstep {
   uint32_t stateInts, afterInts;
   // A routine that waits for interrupts (TG_WAITS), running as a fiber. While it waits,
   // the machine runs on (see TgResumePoint) and the fiber carries on once it gets back.
-  TgFiber* fiber;
-  const TgPortFunc* fiberFunc;
-  TgRegs fiberRegs;
-  bool fiberWaiting;
+  // Up to two at once (the menus run one per player's thread), each known by where the
+  // machine has to be for it to carry on.
+  struct FiberSlot {
+    TgFiber* fiber;
+    const TgPortFunc* func;
+    TgRegs regs;
+    bool waiting;
+    TgResumePoint rp;
+  } fibers[2];
+  struct FiberSlot* curFiber;
 };
 
 static int apuReplay(void* ctx, uint32_t adr);
@@ -126,7 +132,8 @@ void tg_lockstep_destroy(TgLockstep* ls) {
   free(ls->after);
   free(ls->pixels);
   free(ls->details);
-  if(ls->fiber) tg_fiber_destroy(ls->fiber);
+  for(int i = 0; i < 2; i++)
+    if(ls->fibers[i].fiber) tg_fiber_destroy(ls->fibers[i].fiber);
   free(ls);
 }
 
@@ -385,34 +392,43 @@ static void returnFromC(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu, const TgR
 }
 
 static void fiberMain(void* arg) {
-  TgLockstep* ls = arg;
-  ls->fiberFunc->fn(&ls->fiberRegs);
+  struct FiberSlot* slot = arg;
+  slot->func->fn(&slot->regs);
 }
 
 // Runs the waiting routine until it waits again or returns. False if it declined the
 // call (before waiting), leaving the machine as it was.
-static bool resumeFiber(TgLockstep* ls, Cpu* cpu) {
+static bool resumeFiber(TgLockstep* ls, struct FiberSlot* slot, Cpu* cpu) {
   ls->inC = true;
-  bool waiting = tg_fiber_resume(ls->fiber);
+  struct FiberSlot* outer = ls->curFiber;
+  ls->curFiber = slot;
+  tg_port_use_resume_point(&slot->rp);
+  bool waiting = tg_fiber_resume(slot->fiber);
+  tg_port_use_resume_point(NULL);
+  ls->curFiber = outer;
   ls->inC = false;
   if(waiting) {
-    ls->fiberWaiting = true;
-    if(tg_port_resume_point()->idle) cpu->waiting = true;
+    slot->waiting = true;
+    if(slot->rp.idle) cpu->waiting = true;
     return true;
   }
-  tg_fiber_destroy(ls->fiber);
-  ls->fiber = NULL;
-  ls->fiberWaiting = false;
+  tg_fiber_destroy(slot->fiber);
+  slot->fiber = NULL;
+  slot->waiting = false;
   if(tg_port_take_declined()) return false;
-  returnFromC(ls, ls->fiberFunc, cpu, &ls->fiberRegs);
+  returnFromC(ls, slot->func, cpu, &slot->regs);
   return true;
 }
 
 static bool startFiber(TgLockstep* ls, const TgPortFunc* f, Cpu* cpu) {
-  ls->fiberFunc = f;
-  ls->fiberRegs = (TgRegs) { cpu->a, cpu->x, cpu->y, cpu->dp, cpu->db, cpu->n, cpu->v, cpu->z, cpu->c };
-  ls->fiber = tg_fiber_create(fiberMain, ls, 1 << 20);
-  return resumeFiber(ls, cpu);
+  struct FiberSlot* slot = NULL;
+  for(int i = 0; i < 2 && slot == NULL; i++)
+    if(ls->fibers[i].fiber == NULL) slot = &ls->fibers[i];
+  if(slot == NULL) return false;
+  slot->func = f;
+  slot->regs = (TgRegs) { cpu->a, cpu->x, cpu->y, cpu->dp, cpu->db, cpu->n, cpu->v, cpu->z, cpu->c };
+  slot->fiber = tg_fiber_create(fiberMain, slot, 1 << 20);
+  return resumeFiber(ls, slot, cpu);
 }
 
 // The stack below SP is free space: the original's pushes and pulls leave bytes there
@@ -537,11 +553,14 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
     if(cpu->x == ls->junkX) cpu->x = ls->realX & mask;
     if(cpu->y == ls->junkY) cpu->y = ls->realY & mask;
   }
-  const TgResumePoint* rp = tg_port_resume_point();
-  if(ls->fiberWaiting && cpu->pc == rp->pc && cpu->k == rp->k && cpu->sp == rp->sp) {
-    // An interrupt, or original code it called, returned to the waiting routine.
-    ls->fiberWaiting = false;
-    return resumeFiber(ls, cpu);
+  for(int i = 0; i < 2; i++) {
+    struct FiberSlot* slot = &ls->fibers[i];
+    const TgResumePoint* rp = &slot->rp;
+    if(slot->waiting && cpu->pc == rp->pc && cpu->k == rp->k && cpu->sp == rp->sp) {
+      // An interrupt, or original code it called, returned to the waiting routine.
+      slot->waiting = false;
+      return resumeFiber(ls, slot, cpu);
+    }
   }
   uint16_t lo = cpu->pc;
   if(!(ls->entryBits[lo >> 3] & (1 << (lo & 7)))) return false;
@@ -579,8 +598,9 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
     return false;
   }
   if(f->flags & TG_WAITS) {
-    // Only one routine can wait at a time, and the per-call check can't follow one.
-    if(ls->mode == TG_PORT_NATIVE && !emulate && ls->fiber == NULL && startFiber(ls, f, cpu)) return true;
+    // Two routines can wait at a time (startFiber declines a third), and the per-call
+    // check can't follow one.
+    if(ls->mode == TG_PORT_NATIVE && !emulate && startFiber(ls, f, cpu)) return true;
     st->declined++;
     ls->skipOnce = adr;
     return false;

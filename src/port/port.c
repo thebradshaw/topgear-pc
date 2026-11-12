@@ -76,13 +76,15 @@ uint16_t tg_port_take_min_sp(void) {
 
 bool tg_port_in_emulated_call(void) { return g_emulatedDepth > 0; }
 
-static TgResumePoint g_resume;
+static TgResumePoint g_resumeDefault;
+static TgResumePoint* g_resumeAt = &g_resumeDefault;
 
-const TgResumePoint* tg_port_resume_point(void) { return &g_resume; }
+const TgResumePoint* tg_port_resume_point(void) { return g_resumeAt; }
+void tg_port_use_resume_point(TgResumePoint* rp) { g_resumeAt = rp ? rp : &g_resumeDefault; }
 
 void tg_port_wait(void) {
   Cpu* cpu = g_snes->cpu;
-  g_resume = (TgResumePoint) { cpu->pc, cpu->sp, cpu->k, true };
+  *g_resumeAt = (TgResumePoint) { cpu->pc, cpu->sp, cpu->k, true };
   tg_fiber_yield();
 }
 
@@ -132,7 +134,7 @@ static void run_emulated(TgRegs* r, uint32_t target, uint16_t stop, uint8_t mx, 
   cpu->pc = (uint16_t) target;
   if(tg_fiber_active()) {
     // From a routine that waits: the machine runs the call itself.
-    g_resume = (TgResumePoint) { stop, sp, k, false };
+    *g_resumeAt = (TgResumePoint) { stop, sp, k, false };
     tg_fiber_yield();
   } else {
     run_until(cpu, (uint16_t) target, stop, k, sp);

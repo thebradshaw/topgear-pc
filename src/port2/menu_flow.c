@@ -2061,3 +2061,22 @@ void Tg2ShopScreen(TgRegs* r) {
   flags_nz16(r, r->a);
   r->c = false;
 }
+
+// ---- $1F:8269 / $1F:82F5: the first player's thread in the two-thread menus ----
+//
+// Started by the RTI to the frame built at $1F71 (D = $0100, the first player's page): it
+// runs the script, then goes on as the original (which waits for its page's $93 bit 14,
+// then for the end of the menus, or never carries on).
+void Tg2P1Menus(TgRegs* r) {
+  r->db = 0x9F;
+  ws(dp_d(r, 0x70), 0);
+  run_script(r, 0x86CC);
+  tg_port_leave(0x9F8277);
+}
+
+void Tg2P1ToRace(TgRegs* r) {
+  r->db = 0x9F;
+  wait1(r);
+  run_script(r, 0x881A);
+  tg_port_leave(0x9F8301);
+}

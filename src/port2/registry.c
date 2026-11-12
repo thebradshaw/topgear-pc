@@ -108,6 +108,8 @@ void Tg2MenuStart(TgRegs* r);
 void Tg2OptionsFromTitle(TgRegs* r);
 void Tg2OptionsScreen(TgRegs* r);
 void Tg2RaceInfoScreen(TgRegs* r);
+void Tg2P1Menus(TgRegs* r);
+void Tg2P1ToRace(TgRegs* r);
 void Tg2ShopLeave(TgRegs* r);
 void Tg2ShopScreen(TgRegs* r);
 void Tg2NoAction(TgRegs* r);
@@ -258,6 +260,8 @@ const TgPortFunc tg2_port_funcs[] = {
   { 0x1F80B7, "MenuAfterRace", Tg2MenuAfterRace, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x1F8190, "SaveRecords", Tg2SaveRecords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F81D4, "LoadRecords", Tg2LoadRecords, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x1F8269, "P1Menus", Tg2P1Menus, TG_CALL_NONE, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
+  { 0x1F82F5, "P1ToRace", Tg2P1ToRace, TG_CALL_NONE, TG_MX_16, TG_MX_16, 0, 0, TG_WAITS },
   { 0x1F8320, "MenuMusic", Tg2MenuMusic, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F835D, "LoadSave", Tg2LoadSave, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x1F8503, "MenuStart", Tg2MenuStart, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
