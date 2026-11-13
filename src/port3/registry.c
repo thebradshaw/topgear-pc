@@ -37,6 +37,7 @@ void Tg3CarStats(TgRegs* r);
 void Tg3SceneryLoopTop(TgRegs* r);
 void Tg3SceneryLoopBottom(TgRegs* r);
 void Tg3RoadHdmaTables2p(TgRegs* r);
+void Tg3MergeSplitsBottom(TgRegs* r);
 void Tg3CameraFollowBottom(TgRegs* r);
 void Tg3SpriteFinishBottom(TgRegs* r);
 void Tg3RoadWindowsTop(TgRegs* r);
@@ -87,6 +88,7 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x03F7F9, "TrackPosition", Tg3TrackPosition, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x059147, "TileScroll", Tg3TileScroll, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x05B1FF, "MergeSplits", Tg3MergeSplits, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x05B2B7, "MergeSplitsBottom", Tg3MergeSplitsBottom, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x05B3D7, "BuildRoadCar", Tg3BuildRoadCar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x05B828, "BuildRoad", Tg3BuildRoad, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x05BC20, "RoadHdmaTables", Tg3RoadHdmaTables, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
