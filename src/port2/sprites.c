@@ -25,6 +25,9 @@ static uint8_t g_mark[0x2000], g_stamp = 1;
 static int16_t g_ground;
 bool tg2_sprite_road;  // set by the road objects' pass (objpass.c) while it draws
 static bool g_road, g_mark_on;
+static uint16_t g_ident;
+static int16_t g_ax;
+uint16_t tg2_sprite_ident;
 static uint8_t g_flags;
 
 // The record's bank (the original's data bank while drawing).
@@ -51,6 +54,9 @@ static void oam(uint16_t x, uint16_t px, uint16_t py, uint16_t tile, bool big) {
     g_mark[x & 0x1FFF] = g_stamp;
     tg_port_obj_grounds[x & 0x1FFF] = g_ground;
     tg_port_obj_flags[x & 0x1FFF] = g_flags;
+    tg_port_obj_idents[x & 0x1FFF] = g_ident;
+    tg_port_obj_ax[x & 0x1FFF] = g_ax;
+    tg_port_obj_ay[x & 0x1FFF] = g_ground;
   }
   ram16_set(x, px);
   ram16_set((uint16_t) (x + 0x200), big ? (uint16_t) (px | 0x0200) : (uint16_t) (px & 0xFDFF));
@@ -203,7 +209,9 @@ void Tg2DrawSprite(TgRegs* r) {
   // The screen row the object stands on: $0E is its height above the view's bottom line ($2E).
   g_ground = (int16_t) (z(0x2E) + 1 - z(0x0E));
   g_flags = (uint8_t) (((int16_t) z(0x0C) < 128 ? PPU_OBJ_LEFT_FLAG : 0) | (tg2_sprite_ghost ? PPU_OBJ_GHOST_FLAG : 0));
-  g_mark_on = g_road || (tg_port_ghost && tg2_sprite_road);
+  g_mark_on = g_road || ((tg_port_ghost || tg_port_interp) && tg2_sprite_road);
+  g_ident = tg_port_interp ? tg2_sprite_ident : 0;
+  g_ax = (int16_t) z(0x0C);
   draw_records(y, split);
   if(widen) {
     zs(0x34, left0);
@@ -309,13 +317,14 @@ void Tg2FinishOam(TgRegs* r) {
   r->c = false;
   r->n = (r->db & 0x80) != 0;
   r->z = r->db == 0;
-  if(tg_port_wide_margin || tg_port_ghost) {
+  if(tg_port_wide_margin || tg_port_ghost || tg_port_interp) {
     // The entries no object drew this frame (the HUD's, wherever their buffer) are not
     // the road's.
     for(uint16_t a = 0; a < 0x2000; a++) {
       if(g_mark[a] != g_stamp) {
         tg_port_obj_grounds[a] = TG_NO_GROUND;
         tg_port_obj_flags[a] = 0;
+        tg_port_obj_idents[a] = 0;
       }
     }
     if(++g_stamp == 0) g_stamp = 1;

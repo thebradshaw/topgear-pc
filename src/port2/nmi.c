@@ -708,7 +708,7 @@ static void mode_setup(TgRegs* r, const ModeDma* d, size_t n) {
 
 void Tg2RaceVblank1P(TgRegs* r) {
   // Widescreen: this frame is a race frame, which the PPU redraws wider (PPU_RACE_FRAME).
-  if(tg_port_wide_margin) tg_port_race_frame = 1;
+  if(tg_port_wide_margin || tg_port_interp) tg_port_race_frame = 1;
   uint32_t db = (uint32_t) r->db << 16;
   uint16_t mode = w(0x0100);
   bool changed = mode != w(0x00F2);
@@ -935,7 +935,7 @@ static void stripes(uint32_t db, uint16_t at, uint16_t q_a, uint16_t q_b) {
 // $01:B345: the same for two players, with a raster IRQ between the views ($BD44).
 void Tg2RaceVblank2P(TgRegs* r) {
   // widescreen: see Tg2RaceVblank1P; side by side: each view full height in half the width
-  if(tg_port_wide_margin) tg_port_race_frame = (uint8_t) (1 | (tg_port_side_by_side && !neg(w(0x0100)) ? 4 : 0));
+  if(tg_port_wide_margin || tg_port_interp) tg_port_race_frame = (uint8_t) (1 | (tg_port_side_by_side && tg_port_wide_margin && !neg(w(0x0100)) ? 4 : 0));
   uint32_t db = (uint32_t) r->db << 16;
   uint16_t mode = w(0x0100);
   bool changed = mode != w(0x00F2);

@@ -676,6 +676,33 @@ static void blendView(PpuFullView* f, int first, int last, float t) {
   }
 }
 
+// Top Gear 2 (no road depths recorded): every background row's scroll goes between the
+// two frames. A road row's art row (vScroll + row) moves smoothly down the screen as the
+// camera drives on, so at a fixed screen row it moves a short way between frames; where it
+// jumps (a hill, the next segment's art) the nearer frame's row is kept as it is.
+static void blendLerp(PpuFullView* f, int first, int last, float t) {
+  for(int y = first; y <= last; y++) {
+    Ppu* b = blendRow(f, y);
+    const Ppu* c = rowOf(f->cur, y);
+    const Ppu* p = rowOf(f->prev, y);
+    if(c->mode != p->mode) continue;
+    for(int l = 1; l < 4; l++) {
+      const BgLayer* pl = &p->bgLayer[l];
+      const BgLayer* cl = &c->bgLayer[l];
+      int dv = wrap10(cl->vScroll - pl->vScroll);
+      int w = cl->tilemapWider ? 512 : 256;
+      int dh = (cl->hScroll - pl->hScroll) & (w - 1);
+      if(dh >= w / 2) dh -= w;
+      if(dv < -16 || dv > 16 || dh < -48 || dh > 48) {
+        if(t < 0.5f) b->bgLayer[l] = *pl;
+        continue;
+      }
+      b->bgLayer[l].vScroll = (uint16_t) ((pl->vScroll + (int) floorf(dv * t + 0.5f)) & 0x3ff);
+      b->bgLayer[l].hScroll = (uint16_t) ((pl->hScroll + (int) floorf(dh * t + 0.5f)) & 0x3ff);
+    }
+  }
+}
+
 // Moves each object back toward where it was in the last frame: (1 - t) of the way.
 static void blendObjects(PpuFullView* f, float t, int16_t dx[128], int16_t dy[128]) {
   const Ppu* c = rowOf(f->cur, 0);
@@ -717,8 +744,12 @@ bool ppu_interpCompose(Ppu* ppu, float t) {
   if(t < 0) t = 0;
   if(t > 1) t = 1;
   memcpy(f->blend, f->cur, SCREEN_LINES * stateSize());
-  blendView(f, VIEW_TOP, VIEW_LINES - 1, t);
-  blendView(f, VIEW_STEP + VIEW_TOP, VIEW_STEP + VIEW_LINES - 1, t);
+  if(ppu->lineDepths == NULL) {
+    blendLerp(f, 0, SCREEN_LINES - 1, t);
+  } else {
+    blendView(f, VIEW_TOP, VIEW_LINES - 1, t);
+    blendView(f, VIEW_STEP + VIEW_TOP, VIEW_STEP + VIEW_LINES - 1, t);
+  }
   int16_t dx[128], dy[128];
   blendObjects(f, t, dx, dy);
   for(int y = 0; y < SCREEN_LINES; y++) moveObjects(blendRow(f, y), dx, dy);

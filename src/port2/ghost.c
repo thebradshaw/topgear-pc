@@ -19,6 +19,7 @@
 
 bool tg2_sprite_ghost;  // the object pass is drawing the ghost (sprites.c)
 int tg2_ghost_entry = -1;  // its offset in this view's visible-car list, or -1
+uint16_t tg2_view_car_rec[0x20];
 
 static TgGhostSample g_race[TG_GHOST_SAMPLES];
 static int g_count;
@@ -134,12 +135,17 @@ void tg2_ghost_show(void) {
     if(w((uint16_t) (0xC340 + y)) == 0xFFFF) mine = y;
   if(mine == 0xFFFF) return;
   uint16_t end = y;
-  for(y = mine; y + 8 <= end; y = (uint16_t) (y + 8))
+  for(y = mine; y + 8 <= end; y = (uint16_t) (y + 8)) {
     for(int k = 0; k < 8; k += 2) ws((uint16_t) (0xC340 + y + k), w((uint16_t) (0xC348 + y + k)));
+    if((y >> 3) + 1 < 0x20) tg2_view_car_rec[y >> 3] = tg2_view_car_rec[(y >> 3) + 1];
+  }
   end = (uint16_t) (end - 8);
   for(y = 0; y < end && w((uint16_t) (0xC346 + y)) <= key; y = (uint16_t) (y + 8)) {}
-  for(uint16_t i = (uint16_t) (end + 8); i > y; i = (uint16_t) (i - 8))
+  for(uint16_t i = (uint16_t) (end + 8); i > y; i = (uint16_t) (i - 8)) {
     for(int k = 0; k < 8; k += 2) ws((uint16_t) (0xC340 + i + k), w((uint16_t) (0xC338 + i + k)));
+    if((i >> 3) < 0x20) tg2_view_car_rec[i >> 3] = tg2_view_car_rec[(i >> 3) - 1];
+  }
+  if((y >> 3) < 0x20) tg2_view_car_rec[y >> 3] = TG2_GHOST_REC;
   ws((uint16_t) (0xC340 + y), w((uint16_t) (0xC412 + c)));
   ws((uint16_t) (0xC342 + y), (uint16_t) side);
   ws((uint16_t) (0xC344 + y), (uint16_t) height);

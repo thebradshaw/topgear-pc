@@ -737,7 +737,9 @@ static bool roadside(TgRegs* r, uint16_t d, bool first) {
     bool c = (rd(0x2134) & 0x80) != 0;
     zs(0x0C, (uint16_t) (z(0xF2) + rd16(0x2135) + c));
     zs(0x0E, z(0xF4));
+    tg2_sprite_ident = (uint16_t) (0x4000 | ((z(0x48) + 6) & 0x3FFF));
     draw(r);
+    tg2_sprite_ident = 0;
     return false;
   }
   if(a & 0x4000) {
@@ -746,7 +748,9 @@ static bool roadside(TgRegs* r, uint16_t d, bool first) {
   }
   uint16_t y = a & 0x3FFF;
   if(g_ram[0x6400 + y] & 0x80) return false;
+  tg2_sprite_ident = (uint16_t) (0x2000 | (y & 0x1FFF));
   place_object(r, y, d);
+  tg2_sprite_ident = 0;
   return false;
 }
 
@@ -816,8 +820,10 @@ static void strip_cars(TgRegs* r, bool first) {
     zs(0x46, (uint16_t) (y + 8));
     if(!neg(w((uint16_t) (0xC340 + y)))) {
       tg2_sprite_ghost = (int) y == tg2_ghost_entry;
+      tg2_sprite_ident = (uint16_t) (0x8000 | (y < 0x100 ? tg2_view_car_rec[y >> 3] : 0x7FFF));
       draw_car(r, y, first);
       tg2_sprite_ghost = false;
+      tg2_sprite_ident = 0;
     }
     zs(0x42, (uint16_t) (z(0x42) - 1));
   }

@@ -227,6 +227,13 @@ extern bool tg2_password_changed;
 extern bool tg2_raced;  // a season race has run since power-on (race.c)
 void tg2_ghost_show(void);
 extern bool tg2_sprite_ghost;
+// Top Gear 2 high frame rate: the object being drawn (0: none), for matching it between
+// frames: 0x8000 + its car record for a car, 0x4000 + road data slot or 0x2000 + object
+// record for a roadside object. tg2_view_car_rec: the car record of each visible-car list
+// entry (by entry / 8; TG2_GHOST_REC for the ghost).
+extern uint16_t tg2_sprite_ident;
+extern uint16_t tg2_view_car_rec[0x20];
+#define TG2_GHOST_REC 0x7F00
 extern int tg2_ghost_entry;
 
 // High frame rate (an enhancement): in-between frames are drawn from the last two race

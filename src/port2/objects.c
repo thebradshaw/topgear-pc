@@ -215,6 +215,7 @@ static void add_visible_car(uint16_t i) {
     ws((uint16_t) (0xC344 + x), w((uint16_t) (0xC416 + c)));
   }
   ws((uint16_t) (0xC346 + x), (uint16_t) ((z(0xF7) >> 2) & 0x3FFE));
+  if(x < 0x100) tg2_view_car_rec[x >> 3] = c;
   zs(0x46, (uint16_t) (x + 8));
 }
 

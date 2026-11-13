@@ -15,6 +15,7 @@ struct TgGame {
   TgCoverage* coverage;
   FILE* trace;
   TgLockstep* lockstep;
+  bool tg2;  // Top Gear 2
 };
 
 TgGame* tg_game_create(const TgRom* rom) {
@@ -25,7 +26,8 @@ TgGame* tg_game_create(const TgRom* rom) {
   memcpy(game->rom, rom->data, rom->size);
   tg_rom_size = (uint32_t) rom->size;
   tg_port_select_game(rom->game);
-  game->snes->ppu->hudStay = rom->game == TG_GAME_TOPGEAR2;
+  game->tg2 = rom->game == TG_GAME_TOPGEAR2;
+  game->snes->ppu->hudStay = game->tg2;
   if(!snes_loadRom(game->snes, rom->data, (int) rom->size)) {
     tg_game_destroy(game);
     return NULL;
@@ -165,7 +167,7 @@ void tg_game_set_interp(TgGame* game, bool on) {
   ppu->objIdents = on ? tg_port_obj_idents : NULL;
   ppu->objAnchorXs = tg_port_obj_ax;
   ppu->objAnchorYs = tg_port_obj_ay;
-  ppu->lineDepths = on ? tg_port_line_depth : NULL;
+  ppu->lineDepths = on && !game->tg2 ? tg_port_line_depth : NULL;  // Top Gear 2: blended by scroll
   ppu->lineCams = tg_port_line_cam;
   updateRedraw(game);
 }
