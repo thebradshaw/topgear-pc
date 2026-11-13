@@ -39,7 +39,7 @@ The C races drop the original's slowdown and loading pauses: a race updates ever
 
 ## Playing
 
-Open `topgear-launcher.exe`, choose your ROM, set the options and press Start. The launcher works with a mouse, the keyboard or a gamepad (D-pad to choose, A to change, Start to play), remembers the ROM, and keeps the options in the same `settings.txt` as the game, so the options menu (Tab) in the game still changes them.
+Open `topgear-launcher.exe`, choose your ROM, set the options and press Start. The launcher has a page for each game (Top Gear, Top Gear 2 and Top Gear 3000, which also needs the 8 KB DSP-4 chip firmware, `dsp4.bin`). Any of those files chosen or dropped on the window is recognised and goes to its game's page, and files sitting next to the launcher are found on their own. It works with a mouse, the keyboard or a gamepad (D-pad to choose, A to change, L/R to switch games, Start to play), remembers the files, and keeps the options in the same `settings.txt` as the game, so the options menu (Tab) in the game still changes them. Each page shows only the options that game supports.
 
 You can also skip the launcher: put `Top Gear (USA).sfc` next to `topgear.exe`, or drag the ROM onto `topgear.exe`.
 

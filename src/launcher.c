@@ -1,8 +1,13 @@
-// Launcher: choose your Top Gear ROM, set the optional enhancements, then start the game.
+// Launcher: choose a game, import its files, set the optional enhancements, then start it.
+//
+// Each game (Top Gear, Top Gear 2, Top Gear 3000) has its own page: the files it needs
+// (your own cartridge dumps, plus the DSP-4 chip's firmware for Top Gear 3000), whether
+// they are ready, and the options that game supports. Any file chosen or dropped on the
+// window is recognised and goes to the page of the game it belongs to.
 //
 // Works with a mouse, the keyboard or a gamepad. The options are the ones topgear.exe keeps
 // in settings.txt (in the settings folder), so the game starts with them and its own
-// options menu (Tab) still changes them. The chosen ROM is remembered in launcher.txt there.
+// options menu (Tab) still changes them. The chosen files are remembered in launcher.txt.
 
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +18,7 @@
 #include "launcher_start.h"
 #include "launcher_logo.h"
 #include "rom.h"
+#include "sha256.h"
 
 #define VIEW_W 1280
 #define VIEW_H 720
@@ -23,6 +29,13 @@
 #else
 #define GAME_EXE "topgear"
 #endif
+
+// Top Gear 3000's DSP-4 chip firmware (8 KB, the usual dsp4.bin / dsp4.rom dump).
+#define DSP4_SIZE 8192
+#define DSP4_SHA256 "752d03b2d74441e430b7f713001fa241f8bbcfc1a0d890ed4143f174dbe031da"
+
+#define NGAMES TG_GAME_COUNT
+static const char* const kTabNames[NGAMES] = {"TOP GEAR", "TOP GEAR 2", "TOP GEAR 3000"};
 
 // --- Options -------------------------------------------------------------------------
 
@@ -59,7 +72,7 @@ static const Option kOptions[O_COUNT] = {
   {NULL, "Colours", "tv_colour", OPT_CHOICE, {"Exact", "As on a TV"}, 2,
    "Exact SNES colours, or the deeper, richer colours a CRT TV showed.", "Tab menu"},
   {"Widescreen", "Widescreen", "wide", OPT_BOOL, {"Off", "On"}, 2,
-   "Races fill a wide screen: the road and scenery carry on past the original edges and the HUD moves out to the sides.", "F10"},
+   "Races fill a wide screen: the road and scenery carry on past the original edges.", "F10"},
   {NULL, "2P side by side", "side_by_side", OPT_BOOL, {"Off", "On"}, 2,
    "With widescreen on, the two players' views sit side by side, each the full height of the screen.", "F12"},
   {"Full-screen view", "1P full view", "full_view", OPT_FULLVIEW, {"Off", "On", "Tall road"}, 3,
@@ -75,13 +88,13 @@ static const Option kOptions[O_COUNT] = {
   {"Extras", "Ghost car", "ghost", OPT_BOOL, {"Off", "On"}, 2,
    "Race against a see-through replay of your best race on each course.", "F1"},
   {NULL, "Auto-save", "auto_save", OPT_BOOL, {"Off", "On"}, 2,
-   "Remember the countries you reach, so you don't need passwords.", "Shift+F1"},
+   "Remember how far you got, so you don't need passwords.", "Shift+F1"},
   {NULL, "Rumble", "rumble", OPT_BOOL, {"Off", "On"}, 2,
    "Gamepad rumble when your car hits something and when nitro fires.", "F8"},
 };
 
-// Focus order: the ROM button, every option, then Play.
-enum { F_ROM = 0, F_OPTION0 = 1, F_PLAY = 1 + O_COUNT, F_COUNT };
+// Focus order: the game tabs, the file buttons, every option, then Play.
+enum { F_TAB = 0, F_ROM, F_DSP, F_OPTION0, F_PLAY = F_OPTION0 + O_COUNT, F_COUNT };
 
 static struct {
   SDL_Window* window;
@@ -91,9 +104,11 @@ static struct {
   char settingsPath[2400];
   char launcherPath[2400];
   char extra[4096];  // settings.txt lines the launcher doesn't know, kept as they were
-  char romPath[2048];
-  bool romOk;
-  char romStatus[160];
+  int game;  // the page shown
+  char romPath[NGAMES][2048];
+  bool romOk[NGAMES];
+  char dspPath[2048];
+  bool dspOk;
   int focus;
   int hover;  // option row under the mouse, or -1
   bool dialogOpen;
@@ -101,6 +116,7 @@ static struct {
   char picked[2048];  // set by the file dialog's callback
   bool pickedReady;
   char message[256];  // a passing note at the bottom
+  bool messageGood;
   Uint64 messageUntil;
   float scroll;
   Uint64 heldSince;
@@ -109,6 +125,30 @@ static struct {
   SDL_Texture* logo;  // logo.bmp next to the launcher, when there is one
   SDL_Texture* playWord;  // "PLAY", drawn in the logo's style
 } L;
+
+static void note(bool good, const char* s) {
+  snprintf(L.message, sizeof(L.message), "%s", s);
+  L.messageGood = good;
+  L.messageUntil = SDL_GetTicks() + 6000;
+}
+
+static bool gameReady(int g) {
+  return L.romOk[g] && (g != TG_GAME_TOPGEAR3000 || L.dspOk);
+}
+
+// Which options each game supports: all of them in Top Gear; Top Gear 2 has no full-screen
+// view yet; Top Gear 3000 runs emulated, so only the display options apply.
+static bool optionShown(int i) {
+  if(L.game == TG_GAME_TOPGEAR2) return i != O_FULLVIEW && i != O_MAP && i != O_SPEED;
+  if(L.game == TG_GAME_TOPGEAR3000) return i <= O_COLOUR;
+  return true;
+}
+
+static bool focusable(int f) {
+  if(f == F_DSP) return L.game == TG_GAME_TOPGEAR3000;
+  if(f >= F_OPTION0 && f < F_PLAY) return optionShown(f - F_OPTION0);
+  return true;
+}
 
 // --- Settings ------------------------------------------------------------------------
 
@@ -153,14 +193,19 @@ static void saveSettings(void) {
   fclose(f);
 }
 
+// launcher.txt: the page shown last, and each game's files.
+static const char* const kRomKeys[NGAMES] = {"rom", "rom2", "rom3"};
+
 static void saveLauncher(void) {
   FILE* f = L.launcherPath[0] ? fopen(L.launcherPath, "w") : NULL;
   if(f == NULL) return;
-  fprintf(f, "rom %s\n", L.romPath);
+  fprintf(f, "game %d\n", L.game);
+  for(int g = 0; g < NGAMES; g++) if(L.romOk[g]) fprintf(f, "%s %s\n", kRomKeys[g], L.romPath[g]);
+  if(L.dspOk) fprintf(f, "dsp4 %s\n", L.dspPath);
   fclose(f);
 }
 
-// --- ROM -----------------------------------------------------------------------------
+// --- Files ---------------------------------------------------------------------------
 
 static const char* baseName(const char* path) {
   const char* b = path;
@@ -168,51 +213,127 @@ static const char* baseName(const char* path) {
   return b;
 }
 
-static bool checkRom(const char* path, bool remember) {
+typedef enum { FILE_ROM, FILE_DSP, FILE_BAD_DSP, FILE_BAD_ROM, FILE_UNREADABLE } FileKind;
+
+// Recognises a file: one of the three ROMs (game set), the DSP-4 firmware, or neither.
+static FileKind identify(const char* path, int* game) {
   TgRom rom;
-  TgRomStatus status = tg_rom_load(path, &rom);
+  TgRomStatus status = tg_rom_load_any(path, &rom);
   if(status == TG_ROM_OK) {
+    *game = rom.game;
     tg_rom_free(&rom);
-    snprintf(L.romPath, sizeof(L.romPath), "%s", path);
-    L.romOk = true;
-    snprintf(L.romStatus, sizeof(L.romStatus), "Verified: Top Gear (USA)");
-    if(remember) saveLauncher();
-    return true;
-  }
-  if(remember) {
-    // Keep showing a good ROM if one was already chosen; say what was wrong with this one.
-    const char* why = status == TG_ROM_WRONG_HASH ? "That file isn't an unmodified Top Gear (USA) ROM."
-                    : status == TG_ROM_WRONG_SIZE ? "That file is the wrong size for Top Gear (USA)."
-                    : "That file couldn't be read.";
-    snprintf(L.message, sizeof(L.message), "%s", why);
-    L.messageUntil = SDL_GetTicks() + 6000;
-    if(!L.romOk) {
-      snprintf(L.romPath, sizeof(L.romPath), "%s", path);
-      snprintf(L.romStatus, sizeof(L.romStatus), "%s", why);
-    }
+    return FILE_ROM;
   }
   tg_rom_free(&rom);
-  return false;
+  if(status == TG_ROM_NOT_FOUND || status == TG_ROM_READ_ERROR) return FILE_UNREADABLE;
+  size_t size = 0;
+  Uint8* data = SDL_LoadFile(path, &size);
+  if(data == NULL) return FILE_UNREADABLE;
+  FileKind kind = FILE_BAD_ROM;
+  if(size == DSP4_SIZE) {
+    Uint8 digest[32];
+    char hex[65];
+    tg_sha256(data, size, digest);
+    for(int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
+    kind = strcmp(hex, DSP4_SHA256) == 0 ? FILE_DSP : FILE_BAD_DSP;
+  }
+  SDL_free(data);
+  return kind;
 }
 
-static void findRom(void) {
+// The next thing to do on the shown page: a missing file, else Play.
+static int nextStep(void) {
+  if(!L.romOk[L.game]) return F_ROM;
+  if(L.game == TG_GAME_TOPGEAR3000 && !L.dspOk) return F_DSP;
+  return F_PLAY;
+}
+
+// A file chosen or dropped: it goes to the game it belongs to, whichever page is shown.
+static void importFile(const char* path) {
+  int g = 0;
+  FileKind kind = identify(path, &g);
+  char msg[256];
+  if(kind == FILE_ROM) {
+    snprintf(L.romPath[g], sizeof(L.romPath[g]), "%s", path);
+    L.romOk[g] = true;
+    if(g == TG_GAME_TOPGEAR3000 && !L.dspOk) snprintf(msg, sizeof(msg), "%s ROM added. It needs the DSP-4 firmware too.", tg_games[g].name);
+    else snprintf(msg, sizeof(msg), "%s ROM added: ready to play.", tg_games[g].name);
+    L.game = g;
+    note(true, msg);
+  } else if(kind == FILE_DSP) {
+    snprintf(L.dspPath, sizeof(L.dspPath), "%s", path);
+    L.dspOk = true;
+    L.game = TG_GAME_TOPGEAR3000;
+    note(true, L.romOk[L.game] ? "DSP-4 firmware added: Top Gear 3000 is ready." : "DSP-4 firmware added. Now the Top Gear 3000 ROM.");
+  } else {
+    note(false, kind == FILE_UNREADABLE ? "That file couldn't be read."
+              : kind == FILE_BAD_DSP ? "That 8 KB file isn't the DSP-4 firmware Top Gear 3000 needs."
+              : "That isn't an unmodified Top Gear, Top Gear 2 or Top Gear 3000 (USA) file.");
+    return;
+  }
+  saveLauncher();
+  L.focus = nextStep();
+}
+
+// Quietly picks up a file if it is one the launcher still needs (when starting).
+static void consider(const char* path) {
+  int g = 0;
+  FileKind kind = identify(path, &g);
+  if(kind == FILE_ROM && !L.romOk[g]) {
+    snprintf(L.romPath[g], sizeof(L.romPath[g]), "%s", path);
+    L.romOk[g] = true;
+  } else if(kind == FILE_DSP && !L.dspOk) {
+    snprintf(L.dspPath, sizeof(L.dspPath), "%s", path);
+    L.dspOk = true;
+  }
+}
+
+static bool allFound(void) {
+  for(int g = 0; g < NGAMES; g++) if(!L.romOk[g]) return false;
+  return L.dspOk;
+}
+
+// The remembered files, then any ROMs or firmware sitting next to the launcher.
+static void findFiles(void) {
+  L.game = TG_GAME_TOPGEAR;
   char* text = L.launcherPath[0] ? SDL_LoadFile(L.launcherPath, NULL) : NULL;
   if(text) {
-    char* nl = strpbrk(text, "\r\n");
-    if(nl) *nl = 0;
-    bool found = strncmp(text, "rom ", 4) == 0 && text[4] && checkRom(text + 4, false);
+    for(char* line = text; line && *line; ) {
+      char* next = strpbrk(line, "\r\n");
+      if(next) { *next++ = 0; while(*next == '\r' || *next == '\n') next++; }
+      char* space = strchr(line, ' ');
+      if(space && space[1]) {
+        *space = 0;
+        const char* value = space + 1;
+        if(strcmp(line, "game") == 0) {
+          int g = SDL_atoi(value);
+          if(g >= 0 && g < NGAMES) L.game = g;
+        } else if(strcmp(line, "dsp4") == 0 || strcmp(line, "rom") == 0 || strcmp(line, "rom2") == 0 || strcmp(line, "rom3") == 0) {
+          consider(value);
+        }
+      }
+      line = next;
+    }
     SDL_free(text);
-    if(found) return;
   }
-  static const char* names[] = {"Top Gear (USA).sfc", "Top Gear (USA).smc", "topgear.sfc"};
   const char* base = SDL_GetBasePath();
-  for(size_t i = 0; i < SDL_arraysize(names); i++) {
-    char path[2048];
-    snprintf(path, sizeof(path), "%s%s", base ? base : "", names[i]);
-    if(checkRom(path, false)) return;
+  if(base && !allFound()) {
+    int count = 0;
+    char** names = SDL_GlobDirectory(base, "*", SDL_GLOB_CASEINSENSITIVE, &count);
+    for(int i = 0; names && i < count && !allFound(); i++) {
+      char path[2400];
+      snprintf(path, sizeof(path), "%s%s", base, names[i]);
+      SDL_PathInfo info;
+      if(!SDL_GetPathInfo(path, &info) || info.type != SDL_PATHTYPE_FILE) continue;
+      if(info.size != DSP4_SIZE && (info.size < 0x80000 || info.size > 0x100200)) continue;
+      consider(path);
+    }
+    SDL_free(names);
   }
-  L.romPath[0] = 0;
-  snprintf(L.romStatus, sizeof(L.romStatus), "Choose your Top Gear (USA) ROM to play.");
+  if(!L.romOk[L.game]) {
+    // Show a game that is ready, if any is.
+    for(int g = 0; g < NGAMES; g++) if(gameReady(g)) { L.game = g; break; }
+  }
 }
 
 static void SDLCALL onPicked(void* user, const char* const* files, int filter) {
@@ -227,27 +348,33 @@ static void SDLCALL onPicked(void* user, const char* const* files, int filter) {
   SDL_UnlockMutex(L.lock);
 }
 
-static void chooseRom(void) {
+static void chooseFile(bool dsp) {
   if(L.dialogOpen) return;
-  static const SDL_DialogFileFilter filters[] = {{"SNES ROM", "sfc;smc"}, {"All files", "*"}};
+  static const SDL_DialogFileFilter romFilters[] = {{"SNES ROM", "sfc;smc"}, {"All files", "*"}};
+  static const SDL_DialogFileFilter dspFilters[] = {{"DSP-4 firmware", "bin;rom"}, {"All files", "*"}};
+  const char* start = dsp ? (L.dspOk ? L.dspPath : NULL) : (L.romOk[L.game] ? L.romPath[L.game] : NULL);
   L.dialogOpen = true;
-  SDL_ShowOpenFileDialog(onPicked, NULL, L.window, filters, 2, L.romOk ? L.romPath : NULL, false);
+  SDL_ShowOpenFileDialog(onPicked, NULL, L.window, dsp ? dspFilters : romFilters, 2, start, false);
 }
 
 // --- Launching -----------------------------------------------------------------------
 
 static bool launch(void) {
-  if(!L.romOk) {
-    snprintf(L.message, sizeof(L.message), "Choose your Top Gear (USA) ROM first.");
-    L.messageUntil = SDL_GetTicks() + 4000;
-    L.focus = F_ROM;
+  if(!gameReady(L.game)) {
+    note(false, !L.romOk[L.game] ? "Choose this game's ROM first." : "Choose the DSP-4 firmware first.");
+    L.focus = nextStep();
     return false;
   }
   saveSettings();
+  saveLauncher();
   char exe[2400];
   const char* base = SDL_GetBasePath();
   snprintf(exe, sizeof(exe), "%s%s", base ? base : "", GAME_EXE);
-  const char* args[] = {exe, L.romPath, NULL};
+  const char* args[5] = {exe, L.romPath[L.game], NULL, NULL, NULL};
+  if(L.game == TG_GAME_TOPGEAR3000) {
+    args[2] = "--dsp";
+    args[3] = L.dspPath;
+  }
   // No standard input or output: the launcher is a windowed program and has none to pass
   // on (on Windows, asking to inherit them makes starting the game fail).
   SDL_PropertiesID props = SDL_CreateProperties();
@@ -259,8 +386,9 @@ static bool launch(void) {
   SDL_Process* p = SDL_CreateProcessWithProperties(props);
   SDL_DestroyProperties(props);
   if(p == NULL) {
-    snprintf(L.message, sizeof(L.message), "Couldn't start %s (%s).", GAME_EXE, SDL_GetError());
-    L.messageUntil = SDL_GetTicks() + 6000;
+    char msg[256];
+    snprintf(msg, sizeof(msg), "Couldn't start %s (%s).", GAME_EXE, SDL_GetError());
+    note(false, msg);
     return false;
   }
   SDL_DestroyProcess(p);  // the game keeps running on its own
@@ -285,14 +413,27 @@ static void change(int i, int dir) {
   saveSettings();
 }
 
+static void setGame(int g) {
+  g = (g + NGAMES) % NGAMES;
+  if(g == L.game) return;
+  L.game = g;
+  L.scroll = 0;
+  L.hover = -1;
+  if(!focusable(L.focus)) L.focus = F_TAB;
+  saveLauncher();
+}
+
 static void activate(int dir) {
-  if(L.focus == F_ROM) chooseRom();
+  if(L.focus == F_TAB) setGame(L.game + dir);
+  else if(L.focus == F_ROM) chooseFile(false);
+  else if(L.focus == F_DSP) chooseFile(true);
   else if(L.focus == F_PLAY) { if(launch()) { SDL_Event q = {.type = SDL_EVENT_QUIT}; SDL_PushEvent(&q); } }
   else change(L.focus - F_OPTION0, dir);
 }
 
 static void moveFocus(int dir) {
-  L.focus = (L.focus + dir + F_COUNT) % F_COUNT;
+  do L.focus = (L.focus + dir + F_COUNT) % F_COUNT;
+  while(!focusable(L.focus));
 }
 
 // --- Drawing -------------------------------------------------------------------------
@@ -353,24 +494,52 @@ static float wrapped(float x, float y, float w, float scale, Rgb c, const char* 
   return y - y0;
 }
 
-// Rows of the option list: a heading row before each group.
+// Rows of the option list: a heading row before each group that has a shown option.
+static bool groupHeading(int i) {
+  if(!optionShown(i)) return false;
+  for(int k = i; k >= 0; k--) {
+    if(k < i && optionShown(k)) return false;
+    if(kOptions[k].group) return true;
+  }
+  return false;
+}
+
 static float optionY(int i) {
   float y = 0;
   for(int k = 0; k <= i; k++) {
-    if(kOptions[k].group) y += 34;
+    if(!optionShown(k)) continue;
+    if(groupHeading(k)) y += 34;
     if(k < i) y += 28;
   }
   return y;
 }
 
+static const char* groupOf(int i) {
+  for(int k = i; k >= 0; k--) if(kOptions[k].group) return kOptions[k].group;
+  return "";
+}
+
+#define TABS_Y 100.0f
+#define TABS_H 34.0f
 #define LIST_X 530.0f
-#define LIST_Y 100.0f
+#define LIST_Y 172.0f
 #define LIST_W 710.0f
-#define LIST_H 592.0f
+#define LIST_H 500.0f
 #define LEFT_X 40.0f
 #define LEFT_W 440.0f
-#define ROMBTN_Y 236.0f
+#define CARD_Y 150.0f
 #define PLAY_Y 592.0f
+
+static float tabX(int g) { return LEFT_X + g * ((VIEW_W - 2 * LEFT_X + 12) / NGAMES); }
+static float tabW(void) { return (VIEW_W - 2 * LEFT_X + 12) / NGAMES - 12; }
+static float cardH(void) { return L.game == TG_GAME_TOPGEAR3000 ? 236.0f : 172.0f; }
+// The file buttons: one across the card, or ROM and DSP-4 side by side for Top Gear 3000.
+static SDL_FRect fileButton(int f) {
+  float y = CARD_Y + cardH() - 46;
+  if(L.game != TG_GAME_TOPGEAR3000) return (SDL_FRect) {LEFT_X + 20, y, LEFT_W - 40, 32};
+  float w = (LEFT_W - 50) / 2;
+  return (SDL_FRect) {LEFT_X + 20 + (f == F_DSP ? w + 10 : 0), y, w, 32};
+}
 
 // The logo (assets/logo.bmp, built into the launcher; magenta is see-through). A logo.bmp
 // next to the launcher replaces it.
@@ -415,6 +584,26 @@ static void drawRoad(Uint64 t) {
   }
 }
 
+static void fitName(char* out, size_t size, const char* path, int chars) {
+  const char* shown = path[0] ? baseName(path) : "None chosen";
+  if((int) strlen(shown) > chars) snprintf(out, size, "%.*s~", chars - 1, shown);
+  else snprintf(out, size, "%s", shown);
+}
+
+static void button(SDL_FRect r, bool focused, const char* label) {
+  panel(r.x, r.y, r.w, r.h, focused ? kAccent : kPanelHi, 255);
+  text(r.x + (r.w - textWidth(label, 2)) / 2, r.y + 8, 2, kText, label);
+}
+
+// One file's lines on the card: what it is, its name, and whether it's ready.
+static void fileLines(float y, const char* what, const char* path, bool ok, const char* okText, const char* missing) {
+  text(LEFT_X + 20, y, 2, kDim, what);
+  char name[40];
+  fitName(name, sizeof(name), ok ? path : "", 24);
+  text(LEFT_X + 20, y + 24, 2, ok ? kText : kFaint, name);
+  text(LEFT_X + 20, y + 48, 2, ok ? kGood : kBad, ok ? okText : missing);
+}
+
 static void draw(void) {
   Uint64 t = SDL_GetTicks();
   color(kBg, 255);
@@ -432,55 +621,79 @@ static void draw(void) {
   drawRoad(t);
   fill(0, 86, VIEW_W, 2, kAccent, 255);
 
-  // ROM card
-  panel(LEFT_X, 110, LEFT_W, 172, kPanel, 255);
-  text(LEFT_X + 20, 126, 2, kDim, "GAME ROM");
-  char name[40];
-  const char* shown = L.romPath[0] ? baseName(L.romPath) : "None chosen";
-  if(strlen(shown) > 19) snprintf(name, sizeof(name), "%.18s~", shown);
-  else snprintf(name, sizeof(name), "%s", shown);
-  text(LEFT_X + 20, 152, 2, kText, name);
-  wrapped(LEFT_X + 20, 180, LEFT_W - 40, 2, L.romOk ? kGood : kBad, L.romStatus);
-  {
-    bool f = L.focus == F_ROM;
-    panel(LEFT_X + 20, ROMBTN_Y, LEFT_W - 40, 32, f ? kAccent : kPanelHi, 255);
-    const char* label = L.dialogOpen ? "Choosing..." : L.romOk ? "Change ROM" : "Choose ROM";
-    text(LEFT_X + 20 + (LEFT_W - 40 - textWidth(label, 2)) / 2, ROMBTN_Y + 8, 2, kText, label);
+  // The games, one tab each, with a light that shows which are ready to play.
+  for(int g = 0; g < NGAMES; g++) {
+    float x = tabX(g), w = tabW();
+    bool shown = g == L.game, f = shown && L.focus == F_TAB;
+    panel(x, TABS_Y, w, TABS_H, f ? kAccent : shown ? kPanelHi : kPanel, 255);
+    if(shown && !f) fill(x + 3, TABS_Y + TABS_H - 3, w - 6, 3, kAccent, 255);
+    text(x + 16, TABS_Y + 9, 2, shown ? kText : kDim, kTabNames[g]);
+    const char* state = gameReady(g) ? "READY" : "SET UP";
+    text(x + w - 16 - textWidth(state, 1.5f), TABS_Y + 12, 1.5f, gameReady(g) ? kGood : f ? kText : kFaint, state);
   }
 
-  // Help for the focused option
-  panel(LEFT_X, 300, LEFT_W, 272, kPanel, 255);
+  // The files this game needs
+  float cy = CARD_Y, ch = cardH();
+  panel(LEFT_X, cy, LEFT_W, ch, kPanel, 255);
+  fileLines(cy + 14, "GAME ROM", L.romPath[L.game], L.romOk[L.game], "Verified: USA cartridge", "Needed: your own dump");
+  if(L.game == TG_GAME_TOPGEAR3000) {
+    fileLines(cy + 98, "DSP-4 FIRMWARE", L.dspPath, L.dspOk, "Verified: DSP-4 program", "Needed: 8 KB chip dump");
+    button(fileButton(F_ROM), L.focus == F_ROM, L.dialogOpen && L.focus == F_ROM ? "Choosing..." : "ROM file");
+    button(fileButton(F_DSP), L.focus == F_DSP, L.dialogOpen && L.focus == F_DSP ? "Choosing..." : "DSP-4 file");
+  } else {
+    button(fileButton(F_ROM), L.focus == F_ROM, L.dialogOpen ? "Choosing..." : L.romOk[L.game] ? "Change ROM" : "Choose ROM");
+  }
+
+  // Help for the focused item
+  float hy = cy + ch + 16, hh = PLAY_Y - 16 - hy;
+  panel(LEFT_X, hy, LEFT_W, hh, kPanel, 255);
+  float tx = LEFT_X + 20, ty = hy + 18, bw = LEFT_W - 40;
   if(L.focus >= F_OPTION0 && L.focus < F_PLAY) {
     const Option* o = &kOptions[L.focus - F_OPTION0];
-    text(LEFT_X + 20, 318, 2, kAccent2, o->label);
-    float h = wrapped(LEFT_X + 20, 352, LEFT_W - 40, 2, kText, o->help);
+    text(tx, ty, 2, kAccent2, o->label);
+    float h = wrapped(tx, ty + 34, bw, 2, kText, o->help);
     char hk[64];
     snprintf(hk, sizeof(hk), "In game: %s", o->hotkey);
-    text(LEFT_X + 20, 352 + h + 10, 2, kDim, hk);
+    text(tx, ty + 34 + h + 10, 2, kDim, hk);
+  } else if(L.focus == F_TAB) {
+    text(tx, ty, 2, kAccent2, "Choose a game");
+    for(int g = 0; g < NGAMES; g++) {
+      char line[80];
+      snprintf(line, sizeof(line), "%-14s %s", tg_games[g].name, gameReady(g) ? "ready" : "not set up");
+      text(tx, ty + 34 + g * 24, 2, gameReady(g) ? kGood : kDim, line);
+    }
+    wrapped(tx, ty + 34 + NGAMES * 24 + 12, bw, 2, kText, "Left and right switch games.");
   } else if(L.focus == F_ROM) {
-    text(LEFT_X + 20, 318, 2, kAccent2, "Your ROM");
-    wrapped(LEFT_X + 20, 352, LEFT_W - 40, 2, kText,
-      "The game runs from your own unmodified Top Gear (USA) cartridge dump (.sfc or .smc). You can also drop the file on this window.");
-  } else {
-    text(LEFT_X + 20, 318, 2, kAccent2, "Ready");
-    wrapped(LEFT_X + 20, 352, LEFT_W - 40, 2, kText,
+    text(tx, ty, 2, kAccent2, "Step 1: the ROM");
+    wrapped(tx, ty + 34, bw, 2, kText,
+      "Your own unmodified dump of the USA cartridge (.sfc or .smc). You can also drop any game's files on this window.");
+  } else if(L.focus == F_DSP) {
+    text(tx, ty, 2, kAccent2, "Step 2: DSP-4 firmware");
+    wrapped(tx, ty + 34, bw, 2, kText,
+      "The cartridge's DSP-4 chip has its own program. Its 8192-byte dump is usually named dsp4.bin.");
+  } else if(gameReady(L.game)) {
+    text(tx, ty, 2, kAccent2, "Ready");
+    wrapped(tx, ty + 34, bw, 2, kText,
       "Starts the game with these options. Tab (or the gamepad's guide button) opens the options menu while you play.");
+  } else {
+    text(tx, ty, 2, kAccent2, "Not ready yet");
+    wrapped(tx, ty + 34, bw, 2, kText, !L.romOk[L.game] ? "Choose this game's ROM first." : "Choose the DSP-4 firmware first.");
   }
 
   // Play: a dark button with a thin orange edge, the word in the logo's style
   {
-    bool f = L.focus == F_PLAY;
+    bool f = L.focus == F_PLAY, ready = gameReady(L.game);
     float pulse = f ? 0.5f + 0.5f * SDL_sinf((float) t / 260.0f) : 0;
     panel(LEFT_X, PLAY_Y, LEFT_W, 80, f ? kPanelHi : kPanel, 255);
-    Rgb edge = !L.romOk ? kFaint : f ? (Rgb) {255, (Uint8) (120 + 76 * pulse), 64} : kAccent;
+    Rgb edge = !ready ? kFaint : f ? (Rgb) {255, (Uint8) (120 + 76 * pulse), 64} : kAccent;
     color(edge, 255);
     for(int k = 0; k < (f ? 3 : 2); k++) {
       SDL_FRect r = {LEFT_X + k, PLAY_Y + k, LEFT_W - 2 * k, 80 - 2.0f * k};
       SDL_RenderRect(L.renderer, &r);
     }
     if(L.playWord) {
-      // Greyed out until there is a ROM to play.
-      Uint8 v = L.romOk ? 255 : 110;
+      // Greyed out until the game has what it needs.
+      Uint8 v = ready ? 255 : 110;
       SDL_SetTextureColorMod(L.playWord, v, v, v);
       SDL_FRect r = {LEFT_X + (LEFT_W - START_ART_W) / 2, PLAY_Y + (80 - START_ART_H) / 2.0f + 1, START_ART_W, START_ART_H};
       SDL_RenderTexture(L.renderer, L.playWord, NULL, &r);
@@ -488,7 +701,9 @@ static void draw(void) {
   }
 
   // Options list (scrolls to keep the focused row in view)
-  float total = optionY(O_COUNT - 1) + 30;
+  int last = O_COUNT - 1;
+  while(last > 0 && !optionShown(last)) last--;
+  float total = optionY(last) + 30;
   float want = L.scroll;
   if(L.focus >= F_OPTION0 && L.focus < F_PLAY) {
     float fy = optionY(L.focus - F_OPTION0);
@@ -499,12 +714,14 @@ static void draw(void) {
   if(want < 0) want = 0;
   L.scroll += (want - L.scroll) * 0.25f;
   for(int i = 0; i < O_COUNT; i++) {
+    if(!optionShown(i)) continue;
     const Option* o = &kOptions[i];
     float y = LIST_Y + optionY(i) - L.scroll;
     if(y < LIST_Y - 2 || y + 26 > LIST_Y + LIST_H) continue;  // only whole rows
-    if(o->group && y - 24 >= LIST_Y - 30) {
-      text(LIST_X, y - 24, 2, kAccent, o->group);
-      fill(LIST_X + textWidth(o->group, 2) + 10, y - 19, LIST_W - textWidth(o->group, 2) - 10, 1, kFaint, 255);
+    if(groupHeading(i) && y - 24 >= LIST_Y - 30) {
+      const char* g = groupOf(i);
+      text(LIST_X, y - 24, 2, kAccent, g);
+      fill(LIST_X + textWidth(g, 2) + 10, y - 19, LIST_W - textWidth(g, 2) - 10, 1, kFaint, 255);
     }
     bool f = L.focus == F_OPTION0 + i, on = optionEnabled(i);
     if(f) panel(LIST_X - 4, y - 2, LIST_W + 8, 28, kPanelHi, 255);
@@ -522,24 +739,40 @@ static void draw(void) {
       text(LIST_X + LIST_W - 16, y + 4, 2, kAccent2, ">");
     }
   }
+  if(L.game == TG_GAME_TOPGEAR3000) {
+    float y = LIST_Y + total + 10 - L.scroll;
+    wrapped(LIST_X, y, LIST_W, 2, kDim,
+      "Top Gear 3000 runs on the console's own code for now, so only the display options apply to it.");
+  }
 
   // Footer: controls, or a passing note
   if(L.message[0] && t < L.messageUntil) {
-    text(LEFT_X, VIEW_H - 24, 2, kBad, L.message);
+    text(LEFT_X, VIEW_H - 24, 2, L.messageGood ? kGood : kBad, L.message);
   } else {
     bool pad = L.pads[0] || L.pads[1] || L.pads[2] || L.pads[3];
-    text(LEFT_X, VIEW_H - 24, 2, kFaint, pad ? "D-pad: choose   A: change   Start: play   B: quit"
-                                              : "Arrows: choose   Enter: change   Space: start   Esc: quit");
+    text(LEFT_X, VIEW_H - 24, 2, kFaint, pad ? "D-pad: choose   A: change   L/R: game   Start: play   B: quit"
+                                              : "Arrows: choose   Enter: change   PgUp/PgDn: game   Space: play   Esc: quit");
   }
 }
 
 // --- Input ---------------------------------------------------------------------------
 
-static int hitTest(float x, float y) {
-  if(x >= LEFT_X + 20 && x < LEFT_X + LEFT_W - 20 && y >= ROMBTN_Y && y < ROMBTN_Y + 32) return F_ROM;
+static bool inside(SDL_FRect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
+
+// What is under the mouse: a focus target; *tab gets the game of a tab.
+static int hitTest(float x, float y, int* tab) {
+  for(int g = 0; g < NGAMES; g++) {
+    if(inside((SDL_FRect) {tabX(g), TABS_Y, tabW(), TABS_H}, x, y)) {
+      if(tab) *tab = g;
+      return F_TAB;
+    }
+  }
+  if(inside(fileButton(F_ROM), x, y)) return F_ROM;
+  if(L.game == TG_GAME_TOPGEAR3000 && inside(fileButton(F_DSP), x, y)) return F_DSP;
   if(x >= LEFT_X && x < LEFT_X + LEFT_W && y >= PLAY_Y && y < PLAY_Y + 80) return F_PLAY;
   if(x >= LIST_X - 4 && x < LIST_X + LIST_W + 4 && y >= LIST_Y - 4 && y < LIST_Y + LIST_H + 4) {
     for(int i = 0; i < O_COUNT; i++) {
+      if(!optionShown(i)) continue;
       float ry = LIST_Y + optionY(i) - L.scroll;
       if(y >= ry - 2 && y < ry + 26) return F_OPTION0 + i;
     }
@@ -574,6 +807,9 @@ static int padDirection(void) {
 static void direction(int dir) {
   if(dir == 1) moveFocus(-1);
   else if(dir == 2) moveFocus(1);
+  else if(L.focus == F_TAB) setGame(L.game + (dir == 3 ? -1 : 1));
+  else if(L.focus == F_DSP && dir == 3) L.focus = F_ROM;
+  else if(L.focus == F_ROM && dir == 4 && focusable(F_DSP)) L.focus = F_DSP;
   else if(L.focus >= F_OPTION0 && L.focus < F_PLAY) change(L.focus - F_OPTION0, dir == 3 ? -1 : 1);
 }
 
@@ -607,8 +843,8 @@ int main(int argc, char** argv) {
     SDL_free(pref);
   }
   loadSettings();
-  findRom();
-  L.focus = L.romOk ? F_PLAY : F_ROM;
+  findFiles();
+  L.focus = nextStep();
 
   if(!SDL_CreateWindowAndRenderer("Top Gear", VIEW_W, VIEW_H, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &L.window, &L.renderer)) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", SDL_GetError(), NULL);
@@ -621,9 +857,12 @@ int main(int argc, char** argv) {
   L.playWord = startTexture();
 
   // For checking the layout without a display: SDL_VIDEO_DRIVER=offscreen
-  // TG_LAUNCHER_SHOT=out.bmp [TG_LAUNCHER_FOCUS=n] saves a picture and quits.
+  // TG_LAUNCHER_SHOT=out.bmp [TG_LAUNCHER_FOCUS=n] [TG_LAUNCHER_GAME=g] [TG_LAUNCHER_IMPORT=file]
+  // saves a picture and quits.
   const char* shot = SDL_getenv("TG_LAUNCHER_SHOT");
+  if(SDL_getenv("TG_LAUNCHER_GAME")) L.game = SDL_atoi(SDL_getenv("TG_LAUNCHER_GAME")) % NGAMES;
   if(SDL_getenv("TG_LAUNCHER_FOCUS")) L.focus = SDL_atoi(SDL_getenv("TG_LAUNCHER_FOCUS"));
+  if(SDL_getenv("TG_LAUNCHER_IMPORT")) importFile(SDL_getenv("TG_LAUNCHER_IMPORT"));  // as if dropped
   int frames = 0;
   bool running = true;
   while(running) {
@@ -640,9 +879,9 @@ int main(int argc, char** argv) {
             case SDL_GAMEPAD_BUTTON_SOUTH: activate(1); break;
             case SDL_GAMEPAD_BUTTON_START: L.focus = F_PLAY; activate(1); break;
             case SDL_GAMEPAD_BUTTON_EAST: running = false; break;
-            case SDL_GAMEPAD_BUTTON_WEST: chooseRom(); break;
-            case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: L.focus = F_ROM; break;
-            case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: L.focus = F_PLAY; break;
+            case SDL_GAMEPAD_BUTTON_WEST: L.focus = nextStep() == F_DSP ? F_DSP : F_ROM; activate(1); break;
+            case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: setGame(L.game - 1); break;
+            case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: setGame(L.game + 1); break;
           }
           break;
         case SDL_EVENT_KEY_DOWN:
@@ -652,6 +891,9 @@ int main(int argc, char** argv) {
             case SDLK_DOWN: case SDLK_TAB: moveFocus(1); break;
             case SDLK_LEFT: direction(3); break;
             case SDLK_RIGHT: direction(4); break;
+            case SDLK_PAGEUP: setGame(L.game - 1); break;
+            case SDLK_PAGEDOWN: setGame(L.game + 1); break;
+            case SDLK_1: case SDLK_2: case SDLK_3: setGame((int) (e.key.key - SDLK_1)); break;
             case SDLK_RETURN: case SDLK_KP_ENTER: activate(1); break;
             case SDLK_SPACE: L.focus = F_PLAY; activate(1); break;
             case SDLK_ESCAPE: running = false; break;
@@ -665,15 +907,19 @@ int main(int argc, char** argv) {
           bool moved = seen && (SDL_fabsf(e.motion.x - lastX) + SDL_fabsf(e.motion.y - lastY)) > 2;
           if(!seen || moved) { seen = true; lastX = e.motion.x; lastY = e.motion.y; }
           if(!moved) break;
-          int h = hitTest(e.motion.x, e.motion.y);
+          int h = hitTest(e.motion.x, e.motion.y, NULL);
           L.hover = h >= F_OPTION0 && h < F_PLAY ? h - F_OPTION0 : -1;
-          if(h >= 0) L.focus = h;
+          if(h >= 0 && h != F_TAB) L.focus = h;
           break;
         }
         case SDL_EVENT_MOUSE_BUTTON_DOWN: {
           if(L.dialogOpen) break;
-          int h = hitTest(e.button.x, e.button.y);
-          if(h >= 0) {
+          int tab = -1;
+          int h = hitTest(e.button.x, e.button.y, &tab);
+          if(h == F_TAB) {
+            setGame(tab);
+            L.focus = F_TAB;
+          } else if(h >= 0) {
             L.focus = h;
             activate(e.button.button == SDL_BUTTON_RIGHT ? -1 : 1);
           }
@@ -683,7 +929,7 @@ int main(int argc, char** argv) {
           L.scroll -= e.wheel.y * 30;
           break;
         case SDL_EVENT_DROP_FILE:
-          if(e.drop.data) checkRom(e.drop.data, true);
+          if(e.drop.data) importFile(e.drop.data);
           break;
       }
     }
@@ -693,7 +939,7 @@ int main(int argc, char** argv) {
       char path[2048];
       snprintf(path, sizeof(path), "%s", L.picked);
       SDL_UnlockMutex(L.lock);
-      if(checkRom(path, true)) L.focus = F_PLAY;
+      importFile(path);
     } else {
       SDL_UnlockMutex(L.lock);
     }
