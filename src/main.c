@@ -62,6 +62,7 @@ static struct {
   TgGameId gameId;  // which of the three games the ROM is
   bool plain;  // no Top Gear 1 extras: --original, or Top Gear 2 / 3000 (not there yet)
   bool smoothOk;  // smooth motion: the C port runs the race
+  bool highFpsOk;  // high frame rate: Top Gear only (Chris dropped it for 2 and 3000: VSync and smooth motion are enough)
   bool extrasOk;  // auto-save, side by side (TG1, TG2 so far)
   bool ghostOk;  // the ghost car: the C ports
   bool wideOk;  // widescreen works: the C ports (not with --original)
@@ -367,7 +368,7 @@ static void updateTitle(void) {
   if(app.sideBySide && app.extrasOk) SDL_strlcat(title, ", side by side", sizeof(title));
   if(app.ghost && app.ghostOk) SDL_strlcat(title, ", ghost car", sizeof(title));
   if(app.autoSave && app.extrasOk) SDL_strlcat(title, ", auto-save", sizeof(title));
-  if(app.highFps && app.smoothOk) SDL_strlcat(title, ", high frame rate", sizeof(title));
+  if(app.highFps && app.highFpsOk) SDL_strlcat(title, ", high frame rate", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
 
@@ -630,7 +631,6 @@ static void runFrame(int samples) {
     if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
   } else if(app.wideOk) {
     if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
-    if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
     if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
   }
   if(app.gameId == TG_GAME_TOPGEAR2 && app.wideOk) {
@@ -844,7 +844,7 @@ static void menuItemText(int i, char* out, size_t size) {
     case MI_SPEEDPOS: snprintf(out, size, "  Speed and time   %s", app.speedBottom ? "bottom" : "top"); break;
     case MI_SIDE: snprintf(out, size, "2P side by side    %s", onOff(app.sideBySide)); break;
     case MI_SMOOTH: snprintf(out, size, "Smooth motion      %s", onOff(app.smooth)); break;
-    case MI_HIGHFPS: snprintf(out, size, "High frame rate    %s", onOff(app.highFps)); break;
+    case MI_HIGHFPS: snprintf(out, size, "High frame rate    %s", app.highFpsOk ? onOff(app.highFps) : "Top Gear only"); break;
     case MI_VSYNC: snprintf(out, size, "VSync              %s", onOff(app.vsync)); break;
     case MI_GHOST: snprintf(out, size, "Ghost car          %s", onOff(app.ghost)); break;
     case MI_AUTOSAVE: snprintf(out, size, "Auto-save          %s", onOff(app.autoSave)); break;
@@ -886,7 +886,7 @@ static void menuActivate(int dir) {
     case MI_SPEEDPOS: app.speedBottom = !app.speedBottom; saveSettings(); break;
     case MI_SIDE: if(!locked) { app.sideBySide = !app.sideBySide; updateTitle(); } break;
     case MI_SMOOTH: if(!locked) setSmooth(!app.smooth); break;
-    case MI_HIGHFPS: setHighFps(!app.highFps); break;
+    case MI_HIGHFPS: if(app.highFpsOk) setHighFps(!app.highFps); break;
     case MI_VSYNC: app.vsync = !app.vsync; saveSettings(); break;
     case MI_GHOST: if(!locked) { app.ghost = !app.ghost; updateTitle(); } break;
     case MI_AUTOSAVE: app.autoSave = !app.autoSave; updateTitle(); break;
@@ -1087,6 +1087,7 @@ int main(int argc, char** argv) {
   app.plain = original || rom.game != TG_GAME_TOPGEAR;
   app.wideOk = !original;
   app.smoothOk = app.wideOk;
+  app.highFpsOk = app.smoothOk && rom.game == TG_GAME_TOPGEAR;
   // Top Gear 3000 has no auto-save (its cartridge keeps the game) or side by side yet.
   app.extrasOk = app.wideOk && rom.game != TG_GAME_TOPGEAR3000;
   app.ghostOk = app.wideOk;
@@ -1168,7 +1169,7 @@ int main(int argc, char** argv) {
             if(e.key.key == SDLK_F3) { app.integerScale = !app.integerScale; updateTitle(); break; }
             if(e.key.key == SDLK_F4) { app.filter = (app.filter + 1) % FILTER_COUNT; updateTitle(); break; }
             if(e.key.key == SDLK_F5) { app.resetRequested = true; break; }
-            if(e.key.key == SDLK_F6 && (e.key.mod & SDL_KMOD_SHIFT)) {
+            if(e.key.key == SDLK_F6 && (e.key.mod & SDL_KMOD_SHIFT) && app.highFpsOk) {
               // In-between frames need the race to move every frame: smooth motion comes on too.
               app.highFps = !app.highFps;
               if(app.highFps && !app.replaying) app.smooth = true;
@@ -1232,7 +1233,7 @@ int main(int argc, char** argv) {
       continue;
     }
     if(now - next > (Uint64) (FRAME_NS * 8) && now > next) next = now;  // resync after a stall
-    bool highFps = app.highFps && app.smoothOk;
+    bool highFps = app.highFps && app.highFpsOk;
     if(highFps) {
       // A picture every refresh of the display (with vsync), or as fast as they can be drawn.
       // Every frame due runs, so the game keeps its pace when pictures take longer than a

@@ -136,12 +136,12 @@ static bool gameReady(int g) {
   return L.romOk[g] && (g != TG_GAME_TOPGEAR3000 || L.dspOk);
 }
 
-// Which options each game supports: all of them in Top Gear; Top Gear 2 has no full-screen
-// view yet; Top Gear 3000 has the display options, widescreen, smooth motion, high frame
-// rate, the ghost car and rumble so far.
+// Which options each game supports: all of them in Top Gear. Top Gear 2 has no full-screen
+// view and Top Gear 3000 only the display options, widescreen, smooth motion, the ghost car
+// and rumble; high frame rate is Top Gear's only (Chris: smooth motion and VSync are enough).
 static bool optionShown(int i) {
-  if(L.game == TG_GAME_TOPGEAR2) return i != O_FULLVIEW && i != O_MAP && i != O_SPEED;
-  if(L.game == TG_GAME_TOPGEAR3000) return i <= O_COLOUR || i == O_WIDE || i == O_SMOOTH || i == O_HIGHFPS || i == O_GHOST || i == O_RUMBLE;
+  if(L.game == TG_GAME_TOPGEAR2) return i != O_FULLVIEW && i != O_MAP && i != O_SPEED && i != O_HIGHFPS;
+  if(L.game == TG_GAME_TOPGEAR3000) return i <= O_COLOUR || i == O_WIDE || i == O_SMOOTH || i == O_GHOST || i == O_RUMBLE;
   return true;
 }
 

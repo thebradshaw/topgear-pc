@@ -551,7 +551,7 @@ static void rev_engine(void) {
   ws(0x050A, (w(0x0028) & z(0x80)) ? 0xFFFF : 0);
 }
 
-// Rolls the car up to the start line (bit $10 of $34): an eighth of the gap each frame.
+// Rolls the car up to the start line (bit $10 of $34): an eighth of the gap each update.
 static void roll_to_line(void) {
   uint32_t line = ((uint32_t) w(0xC41A) << 16 | w(0xC418)) - 0x2800;
   zs(0xE2, (uint16_t) line);
@@ -568,6 +568,14 @@ static void roll_to_line(void) {
     hi >>= 1;
     c = de & 1;
     de = (uint16_t) (de >> 1 | out << 15);
+  }
+  if(tg_port_race_frames == 1) {
+    // Smooth motion updates three times as often: a third of the step each time, so the
+    // cars take the original's time to roll up to the line.
+    uint32_t step = ((uint32_t) hi << 16 | de) / 3;
+    de = (uint16_t) step;
+    hi = (uint16_t) (step >> 16);
+    c = false;
   }
   zs(0xDE, de);
   zs(0xE0, hi);
