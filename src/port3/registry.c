@@ -29,6 +29,7 @@ void Tg3SpriteFinish(TgRegs* r);
 void Tg3TileScroll(TgRegs* r);
 void Tg3Countdown(TgRegs* r);
 void Tg3PlayerRecord(TgRegs* r);
+void Tg3RoadPieces(TgRegs* r);
 
 const TgPortFunc tg3_port_funcs[] = {
   { 0x018487, "DrawBar", Tg3DrawBar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
@@ -50,6 +51,7 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x02DEA8, "SendShapeRom", Tg3SendShapeRom, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DFAD, "RoadAhead", Tg3RoadAhead, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x02EC36, "RoadEdges", Tg3RoadEdges, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x02F2B3, "RoadPieces", Tg3RoadPieces, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x03E2D7, "PlayerSetup", Tg3PlayerSetup, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x03EAC6, "PlayerEngine", Tg3PlayerEngine, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x03F7F9, "TrackPosition", Tg3TrackPosition, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
