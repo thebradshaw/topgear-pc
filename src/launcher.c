@@ -17,6 +17,8 @@
 
 #include "launcher_start.h"
 #include "launcher_logo.h"
+#include "launcher_logo2.h"
+#include "launcher_logo3.h"
 #include "rom.h"
 #include "sha256.h"
 
@@ -122,7 +124,7 @@ static struct {
   Uint64 heldSince;
   int heldDir;
   Uint64 nextRepeat;
-  SDL_Texture* logo;  // logo.bmp next to the launcher, when there is one
+  SDL_Texture* logo[TG_GAME_COUNT];  // each game's logo (built in, or a logo.bmp / logo2.bmp / logo3.bmp next to the launcher)
   SDL_Texture* playWord;  // "PLAY", drawn in the logo's style
 } L;
 
@@ -542,19 +544,27 @@ static SDL_FRect fileButton(int f) {
   return (SDL_FRect) {LEFT_X + 20 + (f == F_DSP ? w + 10 : 0), y, w, 32};
 }
 
-// The logo (assets/logo.bmp, built into the launcher; magenta is see-through). A logo.bmp
-// next to the launcher replaces it.
+// The logos (assets/logo.bmp, logo2.bmp and logo3.bmp, built into the launcher; magenta is
+// see-through), one for each game: the header shows the selected game's. A file of the same
+// name next to the launcher replaces one.
 static void loadLogo(void) {
-  char path[2400];
+  static const struct { const char* name; const unsigned char* data; size_t size; } kLogos[TG_GAME_COUNT] = {
+    { "logo.bmp", kLogoBmp, sizeof(kLogoBmp) },
+    { "logo2.bmp", kLogo2Bmp, sizeof(kLogo2Bmp) },
+    { "logo3.bmp", kLogo3Bmp, sizeof(kLogo3Bmp) },
+  };
   const char* base = SDL_GetBasePath();
-  snprintf(path, sizeof(path), "%slogo.bmp", base ? base : "");
-  SDL_Surface* s = SDL_LoadBMP(path);
-  if(s == NULL) s = SDL_LoadBMP_IO(SDL_IOFromConstMem(kLogoBmp, sizeof(kLogoBmp)), true);
-  if(s == NULL) return;
-  SDL_SetSurfaceColorKey(s, true, SDL_MapSurfaceRGB(s, 255, 0, 255));
-  L.logo = SDL_CreateTextureFromSurface(L.renderer, s);
-  SDL_DestroySurface(s);
-  if(L.logo) SDL_SetTextureScaleMode(L.logo, SDL_SCALEMODE_LINEAR);
+  for(int g = 0; g < TG_GAME_COUNT; g++) {
+    char path[2400];
+    snprintf(path, sizeof(path), "%s%s", base ? base : "", kLogos[g].name);
+    SDL_Surface* s = SDL_LoadBMP(path);
+    if(s == NULL) s = SDL_LoadBMP_IO(SDL_IOFromConstMem(kLogos[g].data, kLogos[g].size), true);
+    if(s == NULL) continue;
+    SDL_SetSurfaceColorKey(s, true, SDL_MapSurfaceRGB(s, 255, 0, 255));
+    L.logo[g] = SDL_CreateTextureFromSurface(L.renderer, s);
+    SDL_DestroySurface(s);
+    if(L.logo[g]) SDL_SetTextureScaleMode(L.logo[g], SDL_SCALEMODE_LINEAR);
+  }
 }
 
 // The Start button's word, drawn in the spirit of the Top Gear logo (launcher_start.h).
@@ -611,11 +621,15 @@ static void draw(void) {
   SDL_RenderClear(L.renderer);
   // Header
   for(int y = 0; y < 86; y++) fill(0, (float) y, VIEW_W, 1, (Rgb) {(Uint8) (20 + y / 4), (Uint8) (22 + y / 6), (Uint8) (36 + y / 3)}, 255);
-  if(L.logo) {
+  SDL_Texture* logo = L.logo[L.game] ? L.logo[L.game] : L.logo[TG_GAME_TOPGEAR];
+  if(logo) {
+    // At most 78 high and 440 wide (the sequels' logos are long), centred in the header.
     float lw, lh;
-    SDL_GetTextureSize(L.logo, &lw, &lh);
-    SDL_FRect r = {LEFT_X - 8, 5, 78 * lw / lh, 78};
-    SDL_RenderTexture(L.renderer, L.logo, NULL, &r);
+    SDL_GetTextureSize(logo, &lw, &lh);
+    float h = 78, w = h * lw / lh;
+    if(w > LEFT_W) { w = LEFT_W; h = w * lh / lw; }
+    SDL_FRect r = {LEFT_X - 8, 5 + (78 - h) / 2, w, h};
+    SDL_RenderTexture(L.renderer, logo, NULL, &r);
   } else {
     text(LEFT_X, 22, 5, kAccent, "TOP GEAR");
   }
@@ -740,12 +754,6 @@ static void draw(void) {
       text(LIST_X + LIST_W - 16, y + 4, 2, kAccent2, ">");
     }
   }
-  if(L.game == TG_GAME_TOPGEAR3000) {
-    float y = LIST_Y + total + 10 - L.scroll;
-    wrapped(LIST_X, y, LIST_W, 2, kDim,
-      "Top Gear 3000 runs on the console's own code for now, so only the display options apply to it.");
-  }
-
   // Footer: controls, or a passing note
   if(L.message[0] && t < L.messageUntil) {
     text(LEFT_X, VIEW_H - 24, 2, L.messageGood ? kGood : kBad, L.message);

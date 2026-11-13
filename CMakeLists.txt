@@ -146,7 +146,7 @@ if(TG_BUILD_FRONTEND)
   target_include_directories(topgear-launcher PRIVATE src)
   target_link_libraries(topgear-launcher PRIVATE SDL3::SDL3)
   # The launcher's icon (assets/launcher-icon.ico, made by tools/gen_launcher_icon.py from the
-  # box art) and its logo (assets/logo.bmp, built in).
+  # box art) and its logos (assets/logo.bmp, logo2.bmp and logo3.bmp, built in).
   set(TG_LAUNCHER_ICON "${CMAKE_SOURCE_DIR}/assets/launcher-icon.ico" CACHE FILEPATH "Icon (.ico) for topgear-launcher.exe")
   if(WIN32 AND EXISTS "${TG_LAUNCHER_ICON}")
     file(WRITE ${CMAKE_BINARY_DIR}/launcher_icon.rc "1 ICON \"${TG_LAUNCHER_ICON}\"\n")
@@ -157,6 +157,13 @@ if(TG_BUILD_FRONTEND)
     COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_SOURCE_DIR}/assets/logo.bmp -DOUT=${CMAKE_BINARY_DIR}/gen/launcher_logo.h
       -DNAME=kLogoBmp -P ${CMAKE_SOURCE_DIR}/cmake/bin2h.cmake
     DEPENDS ${CMAKE_SOURCE_DIR}/assets/logo.bmp ${CMAKE_SOURCE_DIR}/cmake/bin2h.cmake)
+  foreach(n 2 3)  # Top Gear 2's and 3000's logos (from their title screens)
+    add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/gen/launcher_logo${n}.h
+      COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_SOURCE_DIR}/assets/logo${n}.bmp -DOUT=${CMAKE_BINARY_DIR}/gen/launcher_logo${n}.h
+        -DNAME=kLogo${n}Bmp -P ${CMAKE_SOURCE_DIR}/cmake/bin2h.cmake
+      DEPENDS ${CMAKE_SOURCE_DIR}/assets/logo${n}.bmp ${CMAKE_SOURCE_DIR}/cmake/bin2h.cmake)
+    target_sources(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/gen/launcher_logo${n}.h)
+  endforeach()
   target_sources(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/gen/launcher_logo.h)
   target_include_directories(topgear-launcher PRIVATE ${CMAKE_BINARY_DIR}/gen)
   if(MINGW)
