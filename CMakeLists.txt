@@ -45,6 +45,7 @@ add_library(tgcore STATIC
   src/port3/road_edges.c
   src/port3/camera_follow.c
   src/port3/sprite_finish.c
+  src/port3/tile_scroll.c
   src/port3/objects.c
   src/port3/road.c
   src/port3/windows.c
