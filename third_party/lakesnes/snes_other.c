@@ -151,7 +151,7 @@ void snes_setPixels(Snes* snes, uint8_t* pixelData) {
 void snes_setSamples(Snes* snes, int16_t* sampleData, int samplesPerFrame) {
   // size is 2 (int16) * 2 (stereo) * samplesPerFrame
   // sets samples in the sampleData
-  dsp_getSamples(snes->apu->dsp, sampleData, samplesPerFrame);
+  dsp_getSamples((snes->apuMusic && snes->musicSynced ? snes->apuMusic : snes->apu)->dsp, sampleData, samplesPerFrame);
 }
 
 int snes_saveBattery(Snes* snes, uint8_t* data) {

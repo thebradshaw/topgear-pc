@@ -35,6 +35,8 @@ Snes* snes_init(void) {
   snes->inHdma = false;
   snes->cpu = cpu_init(snes, snes_cpuRead, snes_cpuWrite, snes_cpuIdle);
   snes->apu = apu_init(snes);
+  snes->apuMusic = NULL;
+  snes->musicSynced = false;
   snes->dma = dma_init(snes);
   snes->ppu = ppu_init(snes);
   snes->cart = cart_init(snes);
@@ -47,6 +49,7 @@ Snes* snes_init(void) {
 void snes_free(Snes* snes) {
   cpu_free(snes->cpu);
   apu_free(snes->apu);
+  if(snes->apuMusic) apu_free(snes->apuMusic);
   dma_free(snes->dma);
   ppu_free(snes->ppu);
   cart_free(snes->cart);
@@ -58,6 +61,7 @@ void snes_free(Snes* snes) {
 void snes_reset(Snes* snes, bool hard) {
   cpu_reset(snes->cpu, hard);
   apu_reset(snes->apu);
+  snes->musicSynced = false;
   dma_reset(snes->dma);
   ppu_reset(snes->ppu);
   input_reset(snes->input1);
@@ -112,6 +116,7 @@ void snes_handleState(Snes* snes, StateHandler* sh) {
   dma_handleState(snes->dma, sh);
   ppu_handleState(snes->ppu, sh);
   apu_handleState(snes->apu, sh);
+  if(!sh->saving) snes->musicSynced = false;
   input_handleState(snes->input1, sh);
   input_handleState(snes->input2, sh);
   cart_handleState(snes->cart, sh);
@@ -233,8 +238,98 @@ static void snes_runCycle(Snes* snes) {
   }
 }
 
+// Top Gear 2's sound driver (in the sound chip's RAM from boot): its main loop at $088E
+// receives a command from the CPU ($094E, four handshakes over the ports), acts on it
+// ($0899) and steps the music ($10AA). Each command can start up to two sound effects,
+// from $58 and $5C, and an effect takes a voice from the music, which drops out until
+// that voice's next note. The music-only copy has those two effect starts patched out
+// and is handed each command as the real chip finished receiving it, its own receive
+// skipped (it can't share the real chip's handshakes and keep in step); an upload of new
+// sounds or music ($09BD) is followed by copying the real chip afresh.
+static const uint8_t kMusicCommandBytes[15] = {
+  0x52, 0x54, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5C, 0x5D, 0x5E, 0x5F, 0x60, 0x61, 0x62, 0x63
+};
+
+static bool snes_musicDriver(const uint8_t* ram) {
+  static const uint8_t kLoop[] = { 0x3F, 0x4E, 0x09, 0x3F, 0x99, 0x08, 0x3F, 0xAA, 0x10, 0x2F, 0xF5 };
+  static const uint8_t kEffect[] = { 0xF0, 0x0C, 0xFA }; // after MOV A,$58 / MOV A,$5C
+  return memcmp(&ram[0x088E], kLoop, sizeof(kLoop)) == 0 && ram[0x094E] == 0x8F && ram[0x09BC] == 0x6F &&
+    ram[0x09BD] == 0x8F && ram[0x08C5] == 0x58 && ram[0x08D5] == 0x5C &&
+    memcmp(&ram[0x08C6], kEffect, 3) == 0 && memcmp(&ram[0x08D6], kEffect, 3) == 0;
+}
+
+void snes_setMusicKeep(Snes* snes, bool on) {
+  if(on && !snes->apuMusic) {
+    snes->apuMusic = apu_init(snes);
+    snes->apuMusic->dsp->blend = snes->apu->dsp;
+    snes->musicSynced = false;
+  } else if(!on && snes->apuMusic) {
+    apu_free(snes->apuMusic);
+    snes->apuMusic = NULL;
+    snes->musicSynced = false;
+  }
+}
+
+static void snes_musicCopy(Snes* snes) {
+  Apu* music = snes->apuMusic;
+  apu_copy(music, snes->apu);
+  music->ram[0x08C4] = 0xE8; // MOV A,$58 -> MOV A,#0
+  music->ram[0x08C5] = 0x00;
+  music->ram[0x08D4] = 0xE8; // MOV A,$5C -> MOV A,#0
+  music->ram[0x08D5] = 0x00;
+  snes->musicSynced = true;
+  snes->musicQueueCount = 0;
+}
+
+// Runs the music copy up to the real chip's cycle.
+static void snes_runMusic(Snes* snes) {
+  Apu* apu = snes->apu;
+  Apu* music = snes->apuMusic;
+  while((int32_t) (music->cycles - apu->cycles) < 0) {
+    if(music->spc->pc == 0x094E) {
+      if(snes->musicQueueCount == 0) {
+        apu_spcIdle(music, true); // waiting for the real chip to receive the next command
+        continue;
+      }
+      const uint8_t* c = snes->musicQueue[snes->musicQueueHead];
+      for(int i = 0; i < 15; i++) music->ram[kMusicCommandBytes[i]] = c[i];
+      snes->musicQueueHead = (snes->musicQueueHead + 1) & 7;
+      snes->musicQueueCount--;
+      music->spc->pc = 0x09BC; // its RET
+    }
+    spc_runOpcode(music->spc);
+  }
+}
+
 static void snes_catchupApu(Snes* snes) {
   int catchupCycles = (int) snes->apuCatchupCycles;
+  if(snes->apuMusic) {
+    // The two chips in step, an instruction at a time, the music one never ahead.
+    Apu* apu = snes->apu;
+    int ranCycles = 0;
+    while(ranCycles < catchupCycles) {
+      uint16_t pc = apu->spc->pc;
+      if(pc == 0x0891 && snes_musicDriver(apu->ram)) {
+        // A command just received.
+        if(!snes->musicSynced || snes->musicQueueCount == 8) {
+          snes_musicCopy(snes);
+        } else {
+          uint8_t* c = snes->musicQueue[(snes->musicQueueHead + snes->musicQueueCount++) & 7];
+          for(int i = 0; i < 15; i++) c[i] = apu->ram[kMusicCommandBytes[i]];
+        }
+      } else if(pc == 0x09BD && snes->musicSynced) {
+        // An upload (it silences everything): the real chip is heard until it's copied again.
+        snes->musicSynced = false;
+      }
+      uint32_t start = apu->cycles;
+      spc_runOpcode(apu->spc);
+      ranCycles += (int) (apu->cycles - start);
+      if(snes->musicSynced) snes_runMusic(snes);
+      else snes->apuMusic->cycles = apu->cycles;
+    }
+    snes->apuCatchupCycles -= (double) ranCycles;
+    return;
+  }
   int ranCycles = apu_runCycles(snes->apu, catchupCycles);
   snes->apuCatchupCycles -= (double) ranCycles;
 }

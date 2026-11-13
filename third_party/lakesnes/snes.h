@@ -18,6 +18,11 @@ typedef struct Snes Snes;
 struct Snes {
   Cpu* cpu;
   Apu* apu;
+  // Top Gear port: a music-only copy of the sound chip (or NULL), see snes_setMusicKeep
+  Apu* apuMusic;
+  bool musicSynced; // apuMusic is a running copy (else the real chip is heard)
+  uint8_t musicQueue[8][16]; // commands the real chip has received and the copy not yet
+  int musicQueueHead, musicQueueCount;
   Ppu* ppu;
   Dma* dma;
   Cart* cart;
@@ -100,6 +105,9 @@ bool snes_loadRom(Snes* snes, const uint8_t* data, int length);
 void snes_setButtonState(Snes* snes, int player, int button, bool pressed);
 void snes_setPixelFormat(Snes* snes, int pixelFormat);
 void snes_setPixels(Snes* snes, uint8_t* pixelData);
+// Top Gear port: runs a second, music-only copy of the sound chip beside the real one,
+// fed the same commands, and plays it with the real chip's sound effects mixed in.
+void snes_setMusicKeep(Snes* snes, bool on);
 void snes_setSamples(Snes* snes, int16_t* sampleData, int samplesPerFrame);
 // Firmware for a LoROM DSP chip (8192 bytes); false if not valid. Call after snes_loadRom.
 bool snes_setDspFirmware(Snes* snes, const uint8_t* data, int size);

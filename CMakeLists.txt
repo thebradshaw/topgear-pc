@@ -286,6 +286,12 @@ if(TG2_TEST_ROM)
     add_test(NAME tg2_${name} COMMAND tg_headless --rom ${TG2_TEST_ROM} --port verify --frames ${frames}
       --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear2/${name}.txt --expect-wram ${wram} --expect-frame ${frame})
   endforeach()
+  # Keeping the music whole only changes the sound: the same race, the same pictures.
+  add_test(NAME tg2_keep_music COMMAND tg_headless --rom ${TG2_TEST_ROM} --port verify --frames 12000
+    --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear2/country00_race01.txt
+    --expect-wram 5bd9913bc3ae4478f33d01fe895f81b6dc0b516d577e46fd8868988a63eb05c3
+    --expect-frame fb8b671a51ababd41681d7db39f9b55080ac67c622bb842b4025d9ef4d716141)
+  set_tests_properties(tg2_keep_music PROPERTIES ENVIRONMENT TG_MUSIC_KEEP=1)
 endif()
 set(TG3_TEST_ROM "" CACHE FILEPATH "Your Top Gear 3000 (USA) ROM, for its tests")
 set(TG3_TEST_DSP "" CACHE FILEPATH "The DSP-4 firmware (dsp4.bin, 8192 bytes), for Top Gear 3000's tests")

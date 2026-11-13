@@ -53,6 +53,24 @@ void apu_reset(Apu* apu) {
   }
 }
 
+// Makes dst a copy of src as it is now (the Top Gear port's music-only chip).
+void apu_copy(Apu* dst, const Apu* src) {
+  memcpy(dst->ram, src->ram, sizeof(dst->ram));
+  dst->romReadable = src->romReadable;
+  dst->dspAdr = src->dspAdr;
+  dst->cycles = src->cycles;
+  memcpy(dst->inPorts, src->inPorts, sizeof(dst->inPorts));
+  memcpy(dst->outPorts, src->outPorts, sizeof(dst->outPorts));
+  memcpy(dst->timer, src->timer, sizeof(dst->timer));
+  Spc keep = *dst->spc;
+  *dst->spc = *src->spc;
+  dst->spc->mem = keep.mem;
+  dst->spc->read = keep.read;
+  dst->spc->write = keep.write;
+  dst->spc->idle = keep.idle;
+  dsp_copy(dst->dsp, src->dsp);
+}
+
 void apu_handleState(Apu* apu, StateHandler* sh) {
   sh_handleBools(sh, &apu->romReadable, NULL);
   sh_handleBytes(sh,

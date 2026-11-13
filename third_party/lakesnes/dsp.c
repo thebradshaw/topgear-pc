@@ -60,6 +60,7 @@ static int clamp16(int val);
 static int clip16(int val);
 static bool dsp_checkCounter(Dsp* dsp, int rate);
 static void dsp_cycleChannel(Dsp* dsp, int ch);
+static void dsp_mixBlend(Dsp* dsp);
 static void dsp_handleEcho(Dsp* dsp);
 static void dsp_handleGain(Dsp* dsp, int ch);
 static void dsp_decodeBrr(Dsp* dsp, int ch);
@@ -67,8 +68,9 @@ static int16_t dsp_getSample(Dsp* dsp, int ch);
 static void dsp_handleNoise(Dsp* dsp);
 
 Dsp* dsp_init(Apu* apu) {
-  Dsp* dsp = malloc(sizeof(Dsp));
+  Dsp* dsp = calloc(1, sizeof(Dsp));
   dsp->apu = apu;
+  dsp->sampleCount = 0x10000;  // so a voice never keyed is long ago
   return dsp;
 }
 
@@ -190,6 +192,7 @@ void dsp_cycle(Dsp* dsp) {
   for(int i = 0; i < 8; i++) {
     dsp_cycleChannel(dsp, i);
   }
+  if(dsp->blend) dsp_mixBlend(dsp);
   dsp_handleEcho(dsp); // also applies master volume
   dsp->counter = dsp->counter == 0 ? 30720 : dsp->counter - 1;
   dsp_handleNoise(dsp);
@@ -202,6 +205,49 @@ void dsp_cycle(Dsp* dsp) {
   // put final sample in the samplebuffer
   dsp->sampleBuffer[(dsp->sampleOffset & 0x3ff) * 2] = dsp->sampleOutL;
   dsp->sampleBuffer[(dsp->sampleOffset++ & 0x3ff) * 2 + 1] = dsp->sampleOutR;
+  dsp->sampleCount++;
+}
+
+// How far apart (in samples) the two chips may key the same note and still count as one.
+#define BLEND_WINDOW 96
+
+// The music-only chip: adds the full chip's effect voices. A voice the full chip keys on
+// within BLEND_WINDOW samples of this chip keying it is the same music note (or an engine);
+// one keyed only there is a sound effect, and plays on top until that voice is next keyed
+// together with this chip again.
+static void dsp_mixBlend(Dsp* dsp) {
+  Dsp* b = dsp->blend;
+  for(int ch = 0; ch < 8; ch++) {
+    if(b->konAt[ch] != dsp->blendKon[ch]) {
+      int32_t apart = (int32_t) (b->konAt[ch] - dsp->konAt[ch]);
+      if(apart < 0) apart = -apart;
+      if(apart <= BLEND_WINDOW) {
+        dsp->blendVoice[ch] = false;
+        dsp->blendKon[ch] = b->konAt[ch];
+      } else if((int32_t) (dsp->sampleCount - b->konAt[ch]) > BLEND_WINDOW) {
+        dsp->blendVoice[ch] = true;
+        dsp->blendKon[ch] = b->konAt[ch];
+      }
+    }
+    if(!dsp->blendVoice[ch]) continue;
+    const DspChannel* c = &b->channel[ch];
+    dsp->sampleOutL = clamp16(dsp->sampleOutL + ((c->sampleOut * c->volumeL) >> 7));
+    dsp->sampleOutR = clamp16(dsp->sampleOutR + ((c->sampleOut * c->volumeR) >> 7));
+    if(c->echoEnable) {
+      dsp->echoOutL = clamp16(dsp->echoOutL + ((c->sampleOut * c->volumeL) >> 7));
+      dsp->echoOutR = clamp16(dsp->echoOutR + ((c->sampleOut * c->volumeR) >> 7));
+    }
+  }
+}
+
+void dsp_copy(Dsp* dst, const Dsp* src) {
+  Apu* apu = dst->apu;
+  Dsp* blend = dst->blend;
+  memcpy(dst, src, sizeof(Dsp));
+  dst->apu = apu;
+  dst->blend = blend;
+  if(blend) memcpy(dst->blendKon, blend->konAt, sizeof(dst->blendKon));
+  memset(dst->blendVoice, 0, sizeof(dst->blendVoice));
 }
 
 static int clamp16(int val) {
@@ -519,6 +565,7 @@ void dsp_write(Dsp* dsp, uint8_t adr, uint8_t val) {
     case 0x4c: {
       for(int i = 0; i < 8; i++) {
         dsp->channel[i].keyOn = val & (1 << i);
+        if(val & (1 << i)) dsp->konAt[i] = dsp->sampleCount;
       }
       break;
     }

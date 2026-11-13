@@ -36,6 +36,7 @@ struct Apu {
 Apu* apu_init(Snes* snes);
 void apu_free(Apu* apu);
 void apu_reset(Apu* apu);
+void apu_copy(Apu* dst, const Apu* src);
 void apu_handleState(Apu* apu, StateHandler* sh);
 int apu_runCycles(Apu* apu, int wantedCycles);
 uint8_t apu_read(Apu* apu, uint16_t adr);

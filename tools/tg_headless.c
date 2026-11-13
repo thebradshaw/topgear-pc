@@ -187,6 +187,8 @@ int main(int argc, char** argv) {
     tg_game_set_coverage(game, coverage);
   }
   tg_game_set_port_mode(game, portMode);
+  if(getenv("TG_MUSIC_KEEP")) tg_game_set_music_keep(game, true);  // the music-under-effects option
+  FILE* wav = getenv("TG_AUDIO") ? fopen(getenv("TG_AUDIO"), "wb") : NULL;  // raw 16-bit stereo, 534 samples a frame
   int raceFrames = tg_port_race_frames;
   uint8_t* pixels = calloc(TG_FB_WIDTH * TG_FB_HEIGHT, 4);
   FILE* hashes = frameHashes ? fopen(frameHashes, "w") : NULL;
@@ -241,6 +243,7 @@ int main(int argc, char** argv) {
       if(t) necdsp_trace = frame == atol(t);
     }
     tg_game_run_frame(game);
+    if(wav) { int16_t a[534 * 2]; tg_game_get_samples(game, a, 534); fwrite(a, 2, 534 * 2, wav); }
     if(watchWord >= 0 && (getenv("TG_WATCH_ALL") || frame % 60 == 0)) {
       const uint8_t* w = tg_game_wram(game);
       printf("frame %ld word %04lX = %04X\n", frame, watchWord, w[watchWord & 0x1FFFF] | w[(watchWord + 1) & 0x1FFFF] << 8);
@@ -282,10 +285,15 @@ int main(int argc, char** argv) {
     }
   }
   if(hashes) fclose(hashes);
+  if(wav) fclose(wav);
   tg_game_get_pixels(game, pixels);
   if(screenshot) writePpm(screenshot, pixels);
   if(getenv("TG_PPU_DUMP")) tg_game_dump_lines(game, stdout);
   if(dumpPpu) tg_game_dump_ppu(game, dumpPpu);
+  if(getenv("TG_ARAM_DUMP")) {  // the sound chip's RAM at the end
+    FILE* f = fopen(getenv("TG_ARAM_DUMP"), "wb");
+    if(f) { fwrite(tg_game_aram(game), 1, 0x10000, f); fclose(f); }
+  }
   if(dumpWram) {
     FILE* f = fopen(dumpWram, "wb");
     if(f == NULL || fwrite(tg_game_wram(game), 1, 0x20000, f) != 0x20000) fprintf(stderr, "cannot write %s\n", dumpWram);

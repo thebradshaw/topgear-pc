@@ -1,4 +1,5 @@
 #include "game.h"
+#include "apu.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,6 +60,12 @@ void tg_game_reset(TgGame* game, bool hard) {
 
 void tg_game_set_input(TgGame* game, int player, uint16_t buttons) {
   for(int i = 0; i < 12; i++) snes_setButtonState(game->snes, player, i, (buttons >> i) & 1);
+}
+
+bool tg_game_set_music_keep(TgGame* game, bool on) {
+  if(!game->tg2) on = false;
+  snes_setMusicKeep(game->snes, on);
+  return on;
 }
 
 void tg_game_run_frame(TgGame* game) {
@@ -300,6 +307,10 @@ void tg_game_set_trace(TgGame* game, void* file) {
 
 const uint8_t* tg_game_wram(const TgGame* game) {
   return game->snes->ram;
+}
+
+const uint8_t* tg_game_aram(const TgGame* game) {
+  return game->snes->apu->ram;
 }
 
 uint32_t tg_game_frame_count(const TgGame* game) {

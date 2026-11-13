@@ -100,6 +100,10 @@ void tg_game_dump_ppu(TgGame* game, const char* path);
 int tg_game_port_report(TgGame* game, FILE* f);
 
 const uint8_t* tg_game_wram(const TgGame* game);  // 128 KiB
+// Top Gear 2 only: keeps the music playing under the sound effects (a second, music-only
+// copy of the sound chip). Returns whether it is on.
+bool tg_game_set_music_keep(TgGame* game, bool on);
+const uint8_t* tg_game_aram(const TgGame* game);  // the sound chip's 64 KiB
 uint32_t tg_game_frame_count(const TgGame* game);
 
 #endif

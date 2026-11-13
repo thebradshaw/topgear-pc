@@ -57,7 +57,7 @@ typedef struct {
 enum {
   O_FULLSCREEN, O_VSYNC, O_ASPECT, O_FILTER, O_INTEGER, O_COLOUR,
   O_WIDE, O_SIDE, O_FULLVIEW, O_MAP, O_SPEED,
-  O_SMOOTH, O_HIGHFPS, O_GHOST, O_AUTOSAVE, O_RUMBLE, O_COUNT
+  O_SMOOTH, O_HIGHFPS, O_GHOST, O_AUTOSAVE, O_RUMBLE, O_MUSIC, O_COUNT
 };
 
 static const Option kOptions[O_COUNT] = {
@@ -93,6 +93,8 @@ static const Option kOptions[O_COUNT] = {
    "Remember how far you got, so you don't need passwords.", "Shift+F1"},
   {NULL, "Rumble", "rumble", OPT_BOOL, {"Off", "On"}, 2,
    "Gamepad rumble when your car hits something and when nitro fires.", "F8"},
+  {NULL, "Keep music whole", "keep_music", OPT_BOOL, {"Off", "On"}, 2,
+   "In the original, sound effects take over parts of the music and leave gaps in it. This keeps every part of the music playing under them.", "Tab menu"},
 };
 
 // Focus order: the game tabs, the file buttons, every option, then Play.
@@ -140,8 +142,10 @@ static bool gameReady(int g) {
 
 // Which options each game supports: all of them in Top Gear. Top Gear 2 has no full-screen
 // view and Top Gear 3000 only the display options, widescreen, smooth motion, the ghost car
-// and rumble; high frame rate is Top Gear's only (Chris: smooth motion and VSync are enough).
+// and rumble; high frame rate is Top Gear's only (Chris: smooth motion and VSync are enough),
+// and keeping the music whole is Top Gear 2's.
 static bool optionShown(int i) {
+  if(i == O_MUSIC) return L.game == TG_GAME_TOPGEAR2;
   if(L.game == TG_GAME_TOPGEAR2) return i != O_FULLVIEW && i != O_MAP && i != O_SPEED && i != O_HIGHFPS;
   if(L.game == TG_GAME_TOPGEAR3000) return i <= O_COLOUR || i == O_WIDE || i == O_SMOOTH || i == O_GHOST || i == O_RUMBLE;
   return true;

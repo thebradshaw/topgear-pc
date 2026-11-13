@@ -83,6 +83,13 @@ struct Dsp {
   // sample ring buffer (1024 samples, *2 for stereo)
   int16_t sampleBuffer[0x400 * 2];
   uint16_t sampleOffset; // current offset in samplebuffer
+  // Top Gear port: a second, music-only sound chip (see snes_setMusicKeep). In it, blend
+  // is the full chip; the voices that chip keys on its own (sound effects) are mixed in.
+  uint32_t sampleCount;
+  uint32_t konAt[8]; // the sample each voice was last keyed on
+  Dsp* blend;
+  uint32_t blendKon[8]; // blend's konAt already judged
+  bool blendVoice[8]; // blend's voice is playing an effect: mix it in
 };
 
 Dsp* dsp_init(Apu* apu);
@@ -92,6 +99,7 @@ void dsp_handleState(Dsp* dsp, StateHandler* sh);
 void dsp_cycle(Dsp* dsp);
 uint8_t dsp_read(Dsp* dsp, uint8_t adr);
 void dsp_write(Dsp* dsp, uint8_t adr, uint8_t val);
+void dsp_copy(Dsp* dst, const Dsp* src);
 void dsp_getSamples(Dsp* dsp, int16_t* sampleData, int samplesPerFrame);
 
 #endif

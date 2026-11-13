@@ -42,6 +42,8 @@ static struct {
   AspectMode aspect;
   FilterMode filter;
   bool rumble;  // controller rumble in races (F8, --rumble)
+  bool keepMusic;  // Top Gear 2: the music plays on under the sound effects (--keep-music)
+  bool keepMusicOk;  // ...and it's this game
   bool tvColour;  // colours as a TV showed them (a CRT's deeper gamma, a little more saturation) rather than exact
   SDL_Texture* upscaled;  // sharp-bilinear's intermediate picture
   int upscaledFactor, upscaledW;
@@ -281,7 +283,7 @@ typedef struct {
 } Setting;
 
 static const Setting kSettings[] = {
-  {"fullscreen", &app.fullscreen}, {"integer_scale", &app.integerScale}, {"rumble", &app.rumble},
+  {"fullscreen", &app.fullscreen}, {"integer_scale", &app.integerScale}, {"rumble", &app.rumble}, {"keep_music", &app.keepMusic},
   {"smooth", &app.smooth}, {"full_view", &app.fullView},
   {"tall_road", &app.tallRoad}, {"map_top", &app.mapTop}, {"speed_bottom", &app.speedBottom}, {"wide", &app.wide}, {"side_by_side", &app.sideBySide},
   {"ghost", &app.ghost}, {"auto_save", &app.autoSave}, {"high_fps", &app.highFps}, {"tv_colour", &app.tvColour},
@@ -359,7 +361,7 @@ static void loadProgress(void) {
 
 static void updateTitle(void) {
   saveSettings();
-  char title[128];
+  char title[192];
   snprintf(title, sizeof(title), "%s  |  %s, %s%s%s%s%s", tg_games[app.gameId].name, aspectNames[app.aspect], filterNames[app.filter],
            app.integerScale ? ", integer scale" : "",
            app.smooth && app.smoothOk ? ", smooth motion" : "",
@@ -367,6 +369,7 @@ static void updateTitle(void) {
   if(app.wide && app.wideOk) SDL_strlcat(title, ", widescreen", sizeof(title));
   if(app.sideBySide && app.extrasOk) SDL_strlcat(title, ", side by side", sizeof(title));
   if(app.ghost && app.ghostOk) SDL_strlcat(title, ", ghost car", sizeof(title));
+  if(app.keepMusic && app.keepMusicOk) SDL_strlcat(title, ", music kept whole", sizeof(title));
   if(app.autoSave && app.extrasOk) SDL_strlcat(title, ", auto-save", sizeof(title));
   if(app.highFps && app.highFpsOk) SDL_strlcat(title, ", high frame rate", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
@@ -731,7 +734,7 @@ static void runFrame(int samples) {
 
 typedef enum {
   MI_RESUME, MI_ASPECT, MI_FILTER, MI_INTEGER, MI_FULLSCREEN, MI_WIDE, MI_FULLVIEW, MI_MAPPOS, MI_SPEEDPOS, MI_SIDE,
-  MI_COLOUR, MI_VSYNC, MI_SMOOTH, MI_HIGHFPS, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_SWAP, MI_KEYS,
+  MI_COLOUR, MI_VSYNC, MI_SMOOTH, MI_HIGHFPS, MI_GHOST, MI_AUTOSAVE, MI_RUMBLE, MI_MUSIC, MI_SWAP, MI_KEYS,
   MI_KEYS2, MI_PADS, MI_RESET, MI_QUIT, MI_COUNT
 } MenuItem;
 
@@ -850,6 +853,7 @@ static void menuItemText(int i, char* out, size_t size) {
     case MI_AUTOSAVE: snprintf(out, size, "Auto-save          %s", onOff(app.autoSave)); break;
     case MI_COLOUR: snprintf(out, size, "Colours            %s", app.tvColour ? "as on a TV" : "exact"); break;
     case MI_RUMBLE: snprintf(out, size, "Rumble             %s", onOff(app.rumble)); break;
+    case MI_MUSIC: snprintf(out, size, "Keep music whole   %s", app.keepMusicOk ? onOff(app.keepMusic) : "Top Gear 2 only"); break;
     case MI_SWAP: snprintf(out, size, "Swap gamepads      P1: %s", app.pads[0] ? SDL_GetGamepadName(app.pads[0]) : "none"); break;
     case MI_KEYS: snprintf(out, size, "Player 1 keys..."); break;
     case MI_KEYS2: snprintf(out, size, "Player 2 keys..."); break;
@@ -891,6 +895,13 @@ static void menuActivate(int dir) {
     case MI_GHOST: if(!locked) { app.ghost = !app.ghost; updateTitle(); } break;
     case MI_AUTOSAVE: app.autoSave = !app.autoSave; updateTitle(); break;
     case MI_RUMBLE: app.rumble = !app.rumble; updateTitle(); break;
+    case MI_MUSIC:
+      if(app.keepMusicOk) {
+        app.keepMusic = !app.keepMusic;
+        tg_game_set_music_keep(app.game, app.keepMusic);
+        updateTitle();
+      }
+      break;
     case MI_COLOUR: app.tvColour = !app.tvColour; uploadPicture(); updateTitle(); break;
     case MI_SWAP: {
       SDL_Gamepad* t = app.pads[0];
@@ -1039,6 +1050,7 @@ int main(int argc, char** argv) {
     else if(strcmp(argv[i], "--original") == 0) original = true;
     else if(strcmp(argv[i], "--smooth") == 0) app.smooth = true;
     else if(strcmp(argv[i], "--rumble") == 0) app.rumble = true;
+    else if(strcmp(argv[i], "--keep-music") == 0) app.keepMusic = true;
     else if(strcmp(argv[i], "--smooth-scaling") == 0) {}  // removed; still accepted
     else if(strcmp(argv[i], "--full-view") == 0) app.fullView = true;
     else if(strcmp(argv[i], "--tall-road") == 0) app.tallRoad = true;
@@ -1091,6 +1103,9 @@ int main(int argc, char** argv) {
   // Top Gear 3000 has no auto-save (its cartridge keeps the game) or side by side yet.
   app.extrasOk = app.wideOk && rom.game != TG_GAME_TOPGEAR3000;
   app.ghostOk = app.wideOk;
+  // Sound only, so it's fine with recordings and --original alike.
+  app.keepMusicOk = rom.game == TG_GAME_TOPGEAR2;
+  tg_game_set_music_keep(app.game, app.keepMusic && app.keepMusicOk);
   // Top Gear 3000's C port is under way: its translated routines run, the rest is the original.
   tg_game_set_port_mode(app.game, original ? TG_PORT_OFF : TG_PORT_NATIVE);
 
