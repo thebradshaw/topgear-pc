@@ -40,6 +40,7 @@ add_library(tgcore STATIC
   src/port3/dsp_objects.c
   src/port3/engine.c
   src/port3/player_setup.c
+  src/port3/track_position.c
   src/port3/objects.c
   src/port3/road.c
   src/port3/windows.c
