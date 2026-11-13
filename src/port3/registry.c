@@ -34,6 +34,8 @@ void Tg3EngineSound(TgRegs* r);
 void Tg3HorizonScroll(TgRegs* r);
 void Tg3PlayerFrame(TgRegs* r);
 void Tg3CarStats(TgRegs* r);
+void Tg3SceneryLoopTop(TgRegs* r);
+void Tg3SceneryLoopBottom(TgRegs* r);
 void Tg3CameraFollowBottom(TgRegs* r);
 void Tg3SpriteFinishBottom(TgRegs* r);
 void Tg3RoadWindowsTop(TgRegs* r);
@@ -60,6 +62,8 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x02AE15, "SpriteFinish", Tg3SpriteFinish, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x02AEA4, "SpriteFinishBottom", Tg3SpriteFinishBottom, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x02CBD4, "SceneryLoop", Tg3SceneryLoop, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x02CCC7, "SceneryLoopTop", Tg3SceneryLoopTop, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x02D2CC, "SceneryLoopBottom", Tg3SceneryLoopBottom, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02D934, "SendObject", Tg3SendObject, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02D988, "SendObjectFlat", Tg3SendObjectFlat, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DA48, "SceneryBobbing", Tg3SceneryBobbing, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },

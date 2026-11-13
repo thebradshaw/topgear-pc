@@ -26,6 +26,23 @@ static void l7e_set(uint32_t a, uint16_t v) { ram16_set((a - 0x7E0000) & 0x1FFFF
 // Long reads ($7E:FAB4+o,y): a stray index runs on into bank $7F, not round to $7E:0000.
 static uint16_t car(uint16_t y, uint16_t o) { return ram16((REC + o + y) & 0x1FFFF); }
 
+// The view: one player's, or a half of the two-player screen. $02:D2CC is the bottom half's
+// own copy, on the second player's record and tables (its sections indexed from $40).
+typedef struct Pass {
+  uint16_t list, list_add;        // the sprite list's start ($0186) and where it lies
+  uint8_t on_dp, end_dp;          // the shadow flag ($C8) and the sections' end ($90)
+  uint16_t rec;                   // the player's record: $0200 or $02B3
+  uint16_t fire;                  // the exhaust flame's words at $1F18.. (+2 for the second)
+  uint16_t pos1, flag1, tile1, pos2, flag2, tile2, colour;  // the course map's markers
+  uint16_t view, bottom, keep, cam;
+  uint16_t first;                 // the first section's slot
+  uint16_t lap, piece, jump;      // $1EDE/$1EE0, $1E5E, $1E66
+  uint16_t near, pal, me, bars, overlay, far, overlay_add, gauge;
+  bool jump_tables;               // other cars in the air use the raised road tables
+  bool top_init;                  // the first section set up as the one-player view does
+} Pass;
+static const Pass* P;
+
 static uint32_t g_bank;
 static void dput(uint16_t v) { tg_bus_write16(g_bank | 0x8000, v); }
 static uint16_t dget(void) { return (uint16_t) (tg_bus_read8(g_bank | 0x8000) | tg_bus_read8(g_bank | 0x8001) << 8); }
@@ -80,7 +97,7 @@ static void car_request(TgRegs* r, uint16_t x, uint16_t y) {
   dput(car(y, 0x00));
   uint16_t s14 = z(r, 0x14);
   r->c = false;
-  uint16_t a = adc16(r, sext8(w(0x0243)), 0x0033);
+  uint16_t a = adc16(r, sext8(w(0x0243 + P->rec)), 0x0033);
   r->c = false;
   a = adc16(r, a, z(r, 0x34));
   dput(a);
@@ -113,64 +130,88 @@ static bool scenery(TgRegs* r, uint16_t kind, uint16_t site) {
   return r->c;
 }
 
-void Tg3SceneryLoop(TgRegs* r) {
+// $02:CCC7, the two-player top half, is the same with the shorter view's $39/$6C, and runs
+// on into the same section code.
+static void scenery_loop(TgRegs* r, const Pass* p) {
+  P = p;
+  uint16_t rec = p->rec;
   r->db = 0x30;  // PEA $8330; PLB
   g_bank = 0x300000;
-  ws(0x0184, w(0x0186));
-  dput(3);
-  zs(r, 0x1A, (uint16_t) (z(r, 0x8E) + 0x200));
   r->c = false;
-  adc16(r, z(r, 0x8E), 0x200);
-  zs(r, 0x3C, z(r, 0xC8) == 0 ? 0x1000 : 0);
+  ws(0x0184, adc16(r, w(p->list), p->list_add));
+  dput(3);
+  r->c = false;
+  uint16_t a1a = adc16(r, z(r, 0x8E), 0x200);
+  if(p->list_add != 0) {
+    r->c = false;
+    a1a = adc16(r, a1a, p->list_add);
+  }
+  zs(r, 0x1A, a1a);
+  zs(r, 0x3C, z(r, p->on_dp) == 0 ? 0x1000 : 0);
   dwait();
   dput(5);
   // The first car in the order at or behind the view's place: $28.
   uint16_t y = 0x28, x = w(0x1E90);
-  r->c = w(0x0225) >= car(x, 0x01);
-  sbc16(r, w(0x0227), car(x, 0x03));
+  r->c = w(0x0225 + rec) >= car(x, 0x01);
+  sbc16(r, w(0x0227 + rec), car(x, 0x03));
   if(!r->c) {
     for(y = 0x26; y != 0; y = (uint16_t) (y - 2)) {
       x = w((uint16_t) (0x1E68 + y));
-      r->c = w(0x0225) >= car(x, 0x01);
-      sbc16(r, w(0x0227), car(x, 0x03));
+      r->c = w(0x0225 + rec) >= car(x, 0x01);
+      sbc16(r, w(0x0227 + rec), car(x, 0x03));
       if(r->c) break;
     }
   }
   zs(r, 0x28, y);
-  zs(r, 0x2C, w(0x0226));
+  zs(r, 0x2C, w(0x0226 + rec));
   dwait();
   // The two players' markers on the course map.
-  x = (uint16_t) ((w(0x0226) >> 2) & 0xFFFC);
-  if(w(0x1E66) & 0x8000) x = (uint16_t) (x + 2);
+  x = (uint16_t) ((w(p->pos1) >> 2) & 0xFFFC);
+  if(w(p->flag1) & 0x8000) x = (uint16_t) (x + 2);
   zs(r, 0x14, w(0x0235));
-  map_marker(r, 0x1E, x, l7e(0x7EFAD1) | 0x30FD);
-  x = (uint16_t) ((w(0x02D9) >> 2) & 0xFFFC);
-  if(w(0x1E68) & 0x8000) x = (uint16_t) (x + 2);
+  map_marker(r, p->colour, x, l7e(0x7EFAD1 + p->tile1) | 0x30FD);
+  x = (uint16_t) ((w(p->pos2) >> 2) & 0xFFFC);
+  if(w(p->flag2) & 0x8000) x = (uint16_t) (x + 2);
   zs(r, 0x14, w(0x02E8));
-  map_marker(r, 0x1E, x, l7e(0x7EFAD1 + 0x35) | 0x30FD);
-  static const uint16_t kStart[] = { 9, 0x80, 0xA9, 0, 0, 0x100, 4 };
+  map_marker(r, p->colour, x, l7e(0x7EFAD1 + p->tile2) | 0x30FD);
+  const uint16_t kStart[] = { 9, 0x80, p->view, 0, 0, 0x100, p->keep };
   for(unsigned i = 0; i < sizeof(kStart) / sizeof(kStart[0]); i++) dput(kStart[i]);
-  uint16_t h = w(0x1EF2);
-  dput((h & 0x8000) ? (uint16_t) (h + 0xDC) : 0xDC);
+  uint16_t h = w(0x1EF2 + p->cam);
+  dput((h & 0x8000) ? (uint16_t) (h + p->bottom) : p->bottom);
   if(h & 0x8000) {
     r->c = false;
-    adc16(r, h, 0xDC);
+    adc16(r, h, p->bottom);
   }
 
   // $CDB7: the sections.
-  zs(r, 0x14, 0);
-  zs(r, 0x16, (uint16_t) (w(0x0226) << 2));
+  zs(r, 0x14, p->first);
+  if(p->first != 0) {
+    r->c = false;
+    zs(r, p->end_dp, adc16(r, z(r, p->end_dp), p->first));
+  }
+  zs(r, 0x16, (uint16_t) (w(0x0226 + rec) << 2));
   zs(r, 0x18, (uint16_t) (w(0x019A) << 2));
-  zs(r, 0x30, (uint16_t) (w(0x1EDE) << 2));
+  zs(r, 0x30, (uint16_t) (w(p->lap) << 2));
   r->c = false;
-  x = adc16(r, w(0x019C), w(0x1E5E));
+  x = adc16(r, w(0x019C), w(p->piece));
   r->c = false;
   zs(r, 0x2E, (uint16_t) (adc16(r, tg_read16(0x840000 + x), 0x003F) << 2));
   uint16_t a = (uint16_t) (tg_read16(0x840010 + x) << 2);
-  if(w(0x1E66) & 0x8000) a = 0;
+  if(w(p->jump) & 0x8000) a = 0;
   zs(r, 0x36, a);
-  ws(0x1DF6, 0);
-  ws(0x1DF8, 0);
+  ws(p->near, 0);
+  ws((uint16_t) (p->near + 2), 0);
+  if(!p->top_init) {
+    // The second player's first section (its tables are indexed from $40).
+    r->c = true;
+    l7e_set(0x7E352C, sbc16(r, l7e(0x7E352E), w(0x02BF)));
+    r->c = true;
+    l7e_set(0x7E372C, sbc16(r, l7e(0x7E372E), w(0x02BB)));
+    l7e_set(0x7E38AC, 0x0033);
+    r->c = true;
+    l7e_set(0x7E3A2C, sbc16(r, l7e(0x7E3A2E), 0x0080));
+    goto cars;
+  }
   r->c = true;
   l7e_set(0x7E34EC, sbc16(r, l7e(0x7E34EE), w(0x020C)));
   r->c = true;
@@ -195,8 +236,8 @@ section:
     // The lap's join: the scenery list goes on from the start.
     zs(r, 0x16, a);
     r->c = false;
-    zs(r, 0x2C, adc16(r, w(0x1EE0), z(r, 0x2C)));
-    uint16_t j = w(0x1EE0);
+    zs(r, 0x2C, adc16(r, w((uint16_t) (p->lap + 2)), z(r, 0x2C)));
+    uint16_t j = w((uint16_t) (p->lap + 2));
     r->c = (j >> 14) & 1;
     a = adc16(r, (uint16_t) (j << 2), z(r, 0x16));
   }
@@ -222,16 +263,16 @@ section:
       uint16_t site;
       if(far < 0x0082) {
         // Close: the near palette, and remembered for the overlay.
-        zs(r, 0x26, l7e(0x7E45EC));
-        ws(0x1DF6, kind);
+        zs(r, 0x26, l7e(0x7E45EC + p->pal));
+        ws(p->near, kind);
         site = 0xCEE7;
         r->c = false;
       } else if(far >= 0x0442) {
-        zs(r, 0x26, l7e(0x7E495C + tg_read16(0x86AD66 + kind)));
+        zs(r, 0x26, l7e(0x7E495C + p->pal + tg_read16(0x86AD66 + kind)));
         site = 0xCED0;
         r->c = true;
       } else {
-        zs(r, 0x26, l7e(0x7E45EC + tg_read16(0x86AD66 + kind)));
+        zs(r, 0x26, l7e(0x7E45EC + p->pal + tg_read16(0x86AD66 + kind)));
         site = 0xCEB7;
         r->c = false;
       }
@@ -253,29 +294,30 @@ car_here:
   y = x;
   r->y = y;
   x = (uint16_t) (z(r, 0x14) + 2);
-  if(x == z(r, 0x90)) goto next_section;
-  if(y != 0 || (w(0x0244) & 1)) goto other_car;
+  if(x == z(r, p->end_dp)) goto next_section;
+  if(y != p->me || (w(0x0244 + rec) & 1)) goto other_car;
   {
     // The player's car: the exhaust flame, the car, its shadow and the gauge.
-    uint16_t gear = (uint16_t) ((w(0x023A) >> 8) & 0xFF);
-    if(w(0x021A) == 0) {
-      ws(0x1F24, w(0x1F18));
-      if(!(w(0x1F18) & 0x8000)) {
-        zs(r, 0x32, w(0x1F1C));
-        zs(r, 0x34, w(0x1F20));
+    uint16_t gear = (uint16_t) ((w(0x023A + rec) >> 8) & 0xFF);
+    uint16_t f = p->fire;
+    if(w(0x021A + rec) == 0) {
+      ws(0x1F24 + f, w(0x1F18 + f));
+      if(!(w(0x1F18 + f) & 0x8000)) {
+        zs(r, 0x32, w(0x1F1C + f));
+        zs(r, 0x34, w(0x1F20 + f));
         car_request(r, x, y);
         dput(car(r->x, 0x0B));
         r->c = false;
         a = adc16(r, z(r, 0x3C), w(0x1F34));
         r->c = false;
         dput(adc16(r, a, 0x0138));
-        ws(0x1F24, w(0x1F18) & 0xFFF8);
-        send_rom_shape(r, tg_read16(0x86C8B2 + w(0x1F24)));
+        ws(0x1F24 + f, w(0x1F18 + f) & 0xFFF8);
+        send_rom_shape(r, tg_read16(0x86C8B2 + w(0x1F24 + f)));
         r->x = x;
         r->y = y;
       }
     }
-    if(w(0x021D) & 0x8000) {
+    if(w(0x021D + rec) & 0x8000) {
       zs(r, 0x32, 0);
       zs(r, 0x34, 0);
       car_request(r, x, y);
@@ -303,37 +345,37 @@ car_here:
     r->y = tg_read16(0x86CC68 + i);
     r->a = tg_read16(0x86CC64 + i);
     Tg3DrawBar(r);
-    if(w(0x014C) == 2) {
+    if(w(p->bars) == 2) {
       dput(l7e(0x7E386A + z(r, 0x14)));
       static const uint16_t kRest[] = { 0x9000, 0, 0x33, 0x33, 0, 0, 0x7FFF };
       for(unsigned k = 0; k < sizeof(kRest) / sizeof(kRest[0]); k++) dput(kRest[k]);
-      dput(w(0x028B));
+      dput(w(0x028B + rec));
       dget();
-      dput(w(0x028D));
+      dput(w(0x028D + rec));
       dput(z(r, 0x3C));
       send_rom_shape(r, 0xAD4A);
     }
-    ws(0x0281, 0xFFFF);
+    ws(0x0281 + rec, 0xFFFF);
     r->c = false;
     goto after_car;
   }
 
 other_car:
   // $D062: another car. The first one seen is remembered (its far distance in $0293).
-  if(w(0x0281) & 0x8000) {
-    ws(0x0281, y);
-    ws(0x0283, x);
+  if(w(0x0281 + rec) & 0x8000) {
+    ws(0x0281 + rec, y);
+    ws(0x0283 + rec, x);
     r->c = false;
     uint16_t t = adc16(r, (uint16_t) ((car(y, 0x01) >> 1) & 0x7E), l7e(0x7E39EC + z(r, 0x14)));
-    ws(0x0293, tg_read16(0x83ACEC + t));
-    x = w(0x0283);
+    ws(0x0293 + rec, tg_read16(0x83ACEC + t));
+    x = w(0x0283 + rec);
   }
   {
     dput(l7e(0x7E386A + x));
     dput(0x9000);
     dput(car(y, 0x00));
     uint16_t s = z(r, 0x14), d;
-    bool jumping = (car(y, 0x2A) & 0x22) == 0x20;
+    bool jumping = p->jump_tables && (car(y, 0x2A) & 0x22) == 0x20;
     if(jumping) {
       dput(l7e(0x7E376E + s));
       dput(l7e(0x7E376C + s));
@@ -386,40 +428,71 @@ next_section:
     zs(r, 0x28, 0);
   }
   zs(r, 0x14, (uint16_t) (z(r, 0x14) + 2));
-  if(z(r, 0x14) != z(r, 0x90)) goto section;
+  if(z(r, 0x14) != z(r, p->end_dp)) goto section;
   r->c = true;
 
 done:
   // $D1E7: the end of the pass, and the near scenery's overlay.
   dput(0);
   dput(0x8000);
-  ws(0x1E02, 0);
-  x = w(0x1DF6);
+  uint16_t o = p->overlay;
+  ws(0x1E02 + o, 0);
+  x = w(p->near);
   if(x != 0) {
     a = tg_read16(0x86AE36 + x);
     if(a != 0) {
       zs(r, 0x14, a);
-      ws(0x1E04, 0x007F);
-      uint16_t m = tg_read16(0x848000 + l7e(0x7E39EE));
+      ws(0x1E04 + o, 0x007F);
+      uint16_t m = tg_read16(0x848000 + l7e(0x7E39EE + p->far));
       r->c = (m & 0x8000) != 0;
       uint16_t t = adc16(r, (uint16_t) (m << 1), a);
-      ws(0x1DFE, tg_read16(0x860006 + t));
-      ws(0x1E02, tg_read16(0x860008 + t));
+      ws(0x1DFE + o, tg_read16(0x860006 + t));
+      ws(0x1E02 + o, tg_read16(0x860008 + t));
       x = tg_read16(0x860000 + a);
       r->c = false;
-      ws(0x1DFE, adc16(r, l7e(0x7E6591 + x), w(0x1DFE)));
-      ws(0x1E00, (uint16_t) (l7e(0x7E45EC) << 4));
+      ws(0x1DFE + o, adc16(r, l7e(0x7E6591 + x), w(0x1DFE + o)));
+      uint16_t v = (uint16_t) (l7e(0x7E45EC + p->pal) << 4);
+      if(p->overlay_add != 0) {
+        r->c = false;
+        v = adc16(r, v, p->overlay_add);
+      }
+      ws(0x1E00 + o, v);
     }
   }
-  ws(0x0186, w(0x0184));
-  uint16_t i = (uint16_t) (((w(0x023A) >> 8) & 0xFF) << 3);
-  ws(0x1E52, tg_read16(0x86C974 + i));
-  ws(0x1E54, tg_read16(0x86C976 + i));
-  ws(0x1E56, tg_read16(0x86C978 + i));
-  r->a = w(0x1E56);
+  if(p->list_add != 0) {
+    r->c = true;
+    ws(p->list, sbc16(r, w(0x0184), p->list_add));
+    r->c = true;
+    zs(r, p->end_dp, sbc16(r, z(r, p->end_dp), p->first));
+  } else {
+    ws(p->list, w(0x0184));
+  }
+  uint16_t i = (uint16_t) (((w(0x023A + rec) >> 8) & 0xFF) << 3);
+  ws(0x1E52 + p->gauge, tg_read16(0x86C974 + i));
+  ws(0x1E54 + p->gauge, tg_read16(0x86C976 + i));
+  ws(0x1E56 + p->gauge, tg_read16(0x86C978 + i));
+  r->a = w(0x1E56 + p->gauge);
   r->c = false;  // from ASL of the gear
   r->x = i;
   r->db = 0x83;
   r->n = true;  // PLB of $83
   r->z = false;
 }
+
+// list, list_add, on_dp, end_dp, rec, fire, pos1, flag1, tile1, pos2, flag2, tile2, colour,
+// view, bottom, keep, cam, first, lap, piece, jump, near, pal, me, bars, overlay, far,
+// overlay_add, gauge, jump_tables, top_init
+static const Pass kOne = { 0x0186, 0, 0xC8, 0x90, 0, 0, 0x0226, 0x1E66, 0, 0x02D9, 0x1E68, 0x35, 0x1E,
+                           0xA9, 0xDC, 4, 0, 0, 0x1EDE, 0x1E5E, 0x1E66, 0x1DF6, 0, 0, 0x014C, 0, 0,
+                           0, 0, true, true };
+static const Pass kTop = { 0x0186, 0, 0xC8, 0x90, 0, 0, 0x0226, 0x1E66, 0, 0x02D9, 0x1E68, 0x35, 0x1E,
+                           0x39, 0x6C, 4, 0, 0, 0x1EDE, 0x1E5E, 0x1E66, 0x1DF6, 0, 0, 0x014C, 0, 0,
+                           0, 0, true, true };
+// The bottom half draws the markers' tiles and places crossed over, as the original does.
+static const Pass kBottom = { 0x0188, 0x440, 0xCA, 0x92, 0xB3, 2, 0x02D9, 0x1E68, 0x35, 0x0226, 0x1E66, 0, 0x8E,
+                              0xA9, 0xDC, 0x74, 0x0A, 0x40, 0x1EE2, 0x1E62, 0x1E68, 0x1DF8, 0xDC, 0x35, 0x014E,
+                              8, 0x40, 0x1000, 6, false, false };
+
+void Tg3SceneryLoop(TgRegs* r) { scenery_loop(r, &kOne); }
+void Tg3SceneryLoopTop(TgRegs* r) { scenery_loop(r, &kTop); }
+void Tg3SceneryLoopBottom(TgRegs* r) { scenery_loop(r, &kBottom); }
