@@ -29,6 +29,18 @@ static uint16_t dwait(void) {
 static void dwait_bit(void) {
   while(!(tg_bus_read8(0x30C001) & 0x80)) {}  // BIT $C000
 }
+// One player's view or either half of the two-player screen: $01:DBAC (top) and $01:E0F8
+// (bottom) are this routine with a shorter view and the second player's tables further on.
+typedef struct WinView {
+  uint16_t which, top, bottom, size, keep, rec, trk, sec, cam;
+  uint16_t lim, ff5b, ff5c, maxrows, band, fixed, end_sec, end_near;
+  uint8_t on_dp, set_dp;
+  uint16_t pal;
+  bool counter;   // only the one-player view steps $EA
+  bool tail_bug;  // the bottom half clears its last row with $00FF throughout
+} WinView;
+static const WinView* V;
+
 static uint16_t swap(uint16_t v) { return (uint16_t) (v << 8 | v >> 8); }
 // N of a - b: the game's "less" test (CMP, then BMI/BPL).
 static bool minus(uint16_t a, uint16_t b) { return ((uint16_t) (a - b) & 0x8000) != 0; }
@@ -54,19 +66,19 @@ static void take_lists(TgRegs* r) {
 }
 
 static void send_section(uint16_t s) {
-  dput(l7e(0x7E38EC + s));
-  dput(l7e(0x7E35EC + s));
-  dput(l7e(0x7E37EC + s));
-  dput(l7e(0x7E366C + s));
-  dput(l7e(0x7E386C + s));
+  dput(l7e(0x7E38EC + V->sec + s));
+  dput(l7e(0x7E35EC + V->sec + s));
+  dput(l7e(0x7E37EC + V->sec + s));
+  dput(l7e(0x7E366C + V->sec + s));
+  dput(l7e(0x7E386C + V->sec + s));
 }
 
 static void send_ends(uint16_t x, bool near) {
   uint16_t o = near ? 0 : 2;
-  dput(l7e(0x7E3C6C + o + x));
-  dput(l7e(0x7E3F6C + o + x));
-  dput(l7e(0x7E3C6C + o + x));
-  dput(l7e(0x7E3F6C + o + x));
+  dput(l7e(0x7E3C6C + V->trk + o + x));
+  dput(l7e(0x7E3F6C + V->trk + o + x));
+  dput(l7e(0x7E3C6C + V->trk + o + x));
+  dput(l7e(0x7E3F6C + V->trk + o + x));
 }
 
 // The chip's answer for one side of the shadow, as a byte (0-$FF).
@@ -81,48 +93,48 @@ static uint16_t shadow_edge(uint16_t a, uint16_t dist) {
   return a;
 }
 
-void Tg3RoadWindows(TgRegs* r) {
-  uint16_t x = w(0x00B4) != 0 ? 0x2E2C : 0x318C;
+static void road_windows(TgRegs* r, const WinView* v) {
+  V = v;
+  uint16_t x = w(v->which) != 0 ? v->top : v->bottom;
   zs(r, 0x16, x);
-  ws(0x1E4E, x);
-  zs(r, 0x1A, (uint16_t) ((w(0x0226) << 1) & 0x3E));
-  for(int row = 0; row < 0x1B; row++, x = (uint16_t) (x + 0x20)) {
-    for(int i = 0; i < 0x20; i += 4) {
-      l7e_set(0x7E0000 + (uint16_t) (x + i), 0x00FF);
-      l7e_set(0x7E0000 + (uint16_t) (x + i + 2), 0xFF00);
-    }
+  ws(v->keep, x);
+  zs(r, 0x1A, (uint16_t) ((w(0x0226 + v->rec) << 1) & 0x3E));
+  for(uint16_t i = 0; i < v->size; i += 4) {
+    bool bug = v->tail_bug && i >= v->size - 0x20;
+    l7e_set(0x7E0000 + (uint16_t) (x + i), 0x00FF);
+    l7e_set(0x7E0000 + (uint16_t) (x + i + 2), bug ? 0x00FF : 0xFF00);
   }
   x = z(r, 0x1A);
   // The road's two ends where the view is, between this section's points.
   dput(0);
-  dput((uint16_t) ((l7e(0x7E3C6E + x) - l7e(0x7E3C6C + x)) << 1));
-  uint16_t frac = swap((uint16_t) ((w(0x0225) >> 1) & 0x7F));
+  dput((uint16_t) ((l7e(0x7E3C6E + V->trk + x) - l7e(0x7E3C6C + V->trk + x)) << 1));
+  uint16_t frac = swap((uint16_t) ((w(0x0225 + v->rec) >> 1) & 0x7F));
   dput(frac);
   zs(r, 0x1E, frac);
   dget();
-  zs(r, 0x1C, (uint16_t) (dget() + l7e(0x7E3C6C + x)));
+  zs(r, 0x1C, (uint16_t) (dget() + l7e(0x7E3C6C + V->trk + x)));
   dput(0);
-  dput((uint16_t) ((l7e(0x7E3F6E + x) - l7e(0x7E3F6C + x)) << 1));
+  dput((uint16_t) ((l7e(0x7E3F6E + V->trk + x) - l7e(0x7E3F6C + V->trk + x)) << 1));
   dput(z(r, 0x1E));
   dget();
-  zs(r, 0x1E, (uint16_t) (dget() + l7e(0x7E3F6C + x)));
+  zs(r, 0x1E, (uint16_t) (dget() + l7e(0x7E3F6C + V->trk + x)));
   // Command 8 and the screen's limits.
   static const uint16_t kFixed[] = { 0x0008, 0x00FF, 0x00FF, 0x00FF, 0x00FF, 0, 0, 0, 0, 0x00A6, 0x00A6,
     0x00A6, 0x00A6, 0x00A5, 0x00A5, 0x00A7, 0x00A7, 0x0081, 0x007F, 0x0081, 0x007F };
   for(unsigned i = 0; i < sizeof(kFixed) / sizeof(kFixed[0]); i++) dput(kFixed[i]);
   uint16_t base = z(r, 0x16);
-  uint16_t h = w(0x0242), h2 = w(0x1EF2);
-  uint16_t a = (uint16_t) (base + 0x035C);
+  uint16_t h = w(0x0242 + v->rec), h2 = w(0x1EF2 + v->cam);
+  uint16_t a = (uint16_t) (base + v->lim);
   if(h & 0x8000) {
-    a = (uint16_t) ((uint16_t) (h << 2) + base + 0x035C);
+    a = (uint16_t) ((uint16_t) (h << 2) + base + v->lim);
     if(a < base) a = base;
   }
   dput(a);
   dput(a);
   zs(r, 0x18, a);
-  a = (uint16_t) (base + 0x035E);
+  a = (uint16_t) (base + (uint16_t) (v->lim + 2));
   if(h2 & 0x8000) {
-    a = (uint16_t) ((uint16_t) (h2 << 2) + base + 0x035E);
+    a = (uint16_t) ((uint16_t) (h2 << 2) + base + (uint16_t) (v->lim + 2));
     if(a < base) a = (uint16_t) (base + 2);
   }
   dput(a);
@@ -133,20 +145,20 @@ void Tg3RoadWindows(TgRegs* r) {
   a = (h2 & 0x8000) ? (uint16_t) (h2 + 0x33) : 0x0033;
   dput(a);
   dput(a);
-  for(int i = 0; i < 4; i++) dput(0xFF5B);
-  dput(0x2FC8);
+  for(int i = 0; i < 4; i++) dput(v->ff5b);
+  dput(v->fixed);
   dput(0x0034);
-  dput(0xFF5C);
+  dput(v->ff5c);
   dput(0x0035);
   dput(0x7FFF);
-  dput(w(0x0202));
-  dput((uint16_t) (w(0x0242) + 0x33));
-  dput(w(0x1EF6));
-  dput((uint16_t) (w(0x1EF2) + 0x33));
+  dput(w(0x0202 + v->rec));
+  dput((uint16_t) (w(0x0242 + v->rec) + 0x33));
+  dput(w(0x1EF6 + v->cam));
+  dput((uint16_t) (w(0x1EF2 + v->cam) + 0x33));
   x = z(r, 0x1A);
-  if(l7e(0x7E3D6E + x) & 1) {
-    zs(r, 0x1C, l7e(0x7E3C6C + x));
-    zs(r, 0x1E, l7e(0x7E3F6C + x));
+  if(l7e(0x7E3D6E + V->trk + x) & 1) {
+    zs(r, 0x1C, l7e(0x7E3C6C + V->trk + x));
+    zs(r, 0x1E, l7e(0x7E3F6C + V->trk + x));
   }
   dput(z(r, 0x1C));
   dput(z(r, 0x1E));
@@ -154,9 +166,9 @@ void Tg3RoadWindows(TgRegs* r) {
   dput(z(r, 0x1E));
   // With the view below the road, the chip first sends the rows it covers (at most $D8).
   x = z(r, 0x18);
-  a = (uint16_t) -w(0x0242);
+  a = (uint16_t) -w(0x0242 + v->rec);
   if(!(a & 0x8000) && a != 0) {
-    if(a >= 0xD8) a = 0xD8;
+    if(a >= v->maxrows) a = v->maxrows;
     for(uint16_t n = a; n != 0; n--) {
       dwait_bit();
       uint16_t v = dget();
@@ -174,11 +186,11 @@ void Tg3RoadWindows(TgRegs* r) {
   do {
     send_section(s);
     x = z(r, 0x1A);
-    bool split = l7e(0x7E3D6E + x) & 1;
+    bool split = l7e(0x7E3D6E + V->trk + x) & 1;
     send_ends(x, split);
     take_lists(r);
     x = z(r, 0x1A);
-    if(l7e(0x7E3D6E + x) & 1) {
+    if(l7e(0x7E3D6E + V->trk + x) & 1) {
       send_section(z(r, 0x14));
       send_ends(z(r, 0x1A), false);
       take_lists(r);
@@ -186,50 +198,60 @@ void Tg3RoadWindows(TgRegs* r) {
     s = (uint16_t) (z(r, 0x14) + 2);
     zs(r, 0x1A, (uint16_t) (z(r, 0x1A) + 2));
     zs(r, 0x14, s);
-  } while(s != w(0x0190));
+  } while(s != w(v->end_sec));
   x = s;
   dput(0x8000);
   bool shadow = dget() != 0;
   // The window settings, and the nearest section (the least far distance and height).
-  zs(r, 0xC8, shadow ? 1 : 0);
+  zs(r, v->on_dp, shadow ? 1 : 0);
   static const uint8_t kPlain[3] = { 0xC2, 0xB0, 0xA1 }, kShadow[6] = { 0xC8, 0xB0, 0x21, 0x20, 0x42, 0x82 };
-  for(int i = 0; i < 3; i++) zb(r, (uint8_t) (0xB6 + i), shadow ? kShadow[i] : kPlain[i]);
+  for(int i = 0; i < 3; i++) zb(r, (uint8_t) (v->set_dp + i), shadow ? kShadow[i] : kPlain[i]);
   for(int i = 0; i < 3; i++)
-    zb(r, (uint8_t) (0xB9 + i), shadow ? kShadow[3 + i] : g_ram[0x4E55 + 2 * i]);
+    zb(r, (uint8_t) (v->set_dp + 3 + i), shadow ? kShadow[3 + i] : g_ram[v->pal + 2 * i]);
   zs(r, 0x14, 0x3FFF);
   zs(r, 0x16, shadow ? 0xC001 : 0x3FFF);
   x = 2;
   do {
-    a = l7e(0x7E386C + x);
+    a = l7e(0x7E386C + V->sec + x);
     if(a == z(r, 0x14) || minus(a, z(r, 0x14))) {
       zs(r, 0x14, a);
       zs(r, 0x18, x);
     }
-    a = l7e(0x7E37EC + x);
+    a = l7e(0x7E37EC + V->sec + x);
     if(shadow ? !minus(a, z(r, 0x16)) : (a == z(r, 0x16) || minus(a, z(r, 0x16)))) {
       zs(r, 0x16, a);
       zs(r, 0x1A, x);
     }
     x = (uint16_t) (x + 2);
-  } while(x != w(0x0194));
-  if(minus(z(r, 0x16), z(r, 0x14))) {
+  } while(x != w(v->end_near));
+  bool shadow_done = minus(z(r, 0x16), z(r, 0x14));
+  if(shadow_done) {
     // The shadow band: between the chip's two edges, over the rows between them.
     x = z(r, 0x1A);
-    zs(r, 0x18, l7e(0x7E34EC + x));
-    zs(r, 0x1C, l7e(0x7E38EC + x));
-    x = (uint16_t) (((w(0x0226) << 1) & 0x3E) + z(r, 0x1A));
-    zs(r, 0x1A, (uint16_t) -(uint16_t) (l7e(0x7E3F6C + x) + z(r, 0x18)));
-    zs(r, 0x18, (uint16_t) -(uint16_t) (l7e(0x7E3C6C + x) + z(r, 0x18)));
+    zs(r, 0x18, l7e(0x7E34EC + V->sec + x));
+    zs(r, 0x1C, l7e(0x7E38EC + V->sec + x));
+    x = (uint16_t) (((w(0x0226 + v->rec) << 1) & 0x3E) + z(r, 0x1A));
+    zs(r, 0x1A, (uint16_t) -(uint16_t) (l7e(0x7E3F6C + V->trk + x) + z(r, 0x18)));
+    zs(r, 0x18, (uint16_t) -(uint16_t) (l7e(0x7E3C6C + V->trk + x) + z(r, 0x18)));
     uint16_t left = shadow_edge(z(r, 0x18), z(r, 0x1C));
     zs(r, 0x18, left);
     uint16_t right = shadow_edge(z(r, 0x1A), z(r, 0x1C));
     zs(r, 0x18, (uint16_t) (right << 8 | left));
-    zs(r, 0x14, (uint16_t) (((uint16_t) (z(r, 0x14) + 0xA5) << 2) + w(0x1E4E)));
-    x = (uint16_t) (((uint16_t) (z(r, 0x16) + 0xA5) << 2) + w(0x1E4E));
+    zs(r, 0x14, (uint16_t) (((uint16_t) (z(r, 0x14) + v->band) << 2) + w(v->keep)));
+    x = (uint16_t) (((uint16_t) (z(r, 0x16) + v->band) << 2) + w(v->keep));
     do {
       l7e_set(0x7E0002 + x, z(r, 0x18));
       x = (uint16_t) (x + 4);
     } while(x != z(r, 0x14));
+  }
+  if(!v->counter) {
+    r->a = shadow_done ? z(r, 0x18) : z(r, 0x16);
+    r->x = x;
+    r->y = 0;
+    r->db = 0x83;
+    r->n = true;  // PLB of $83
+    r->z = false;
+    return;
   }
   // A counter stepping by $11 through $A411-$A421.
   r->c = false;
@@ -244,3 +266,14 @@ void Tg3RoadWindows(TgRegs* r) {
   r->n = true;  // PLB of $83
   r->z = false;
 }
+
+static const WinView kOne = { 0x00B4, 0x2E2C, 0x318C, 0x360, 0x1E4E, 0, 0, 0, 0, 0x035C, 0xFF5B, 0xFF5C,
+                              0xD8, 0xA5, 0x2FC8, 0x0190, 0x0194, 0xC8, 0xB6, 0x4E55, true, false };
+static const WinView kTop = { 0x00B4, 0x2E2C, 0x318C, 0x1A0, 0x1E4E, 0, 0, 0, 0, 0x019C, 0xFFCB, 0xFFCC,
+                              0x68, 0x35, 0x2FC8, 0x0190, 0x0194, 0xC8, 0xB6, 0x4E55, true, false };
+static const WinView kBottom = { 0x00B6, 0x2FDC, 0x333C, 0x1A0, 0x1E50, 0xB3, 0x580, 0x40, 0x0A, 0x019C, 0xFFCB,
+                                 0xFFCC, 0x68, 0x35, 0x3178, 0x0192, 0x0196, 0xCA, 0xC2, 0x4E5B, false, true };
+
+void Tg3RoadWindows(TgRegs* r) { road_windows(r, &kOne); }
+void Tg3RoadWindowsTop(TgRegs* r) { road_windows(r, &kTop); }
+void Tg3RoadWindowsBottom(TgRegs* r) { road_windows(r, &kBottom); }
