@@ -2,6 +2,7 @@
 
 #include "../port/port.h"
 
+void Tg3DrawBar(TgRegs* r);
 void Tg3RoadWindows(TgRegs* r);
 void Tg3MoveObject(TgRegs* r);
 void Tg3ObjectSegment(TgRegs* r);
@@ -16,6 +17,7 @@ void Tg3SceneryFour(TgRegs* r);
 void Tg3SendShapeRom(TgRegs* r);
 
 const TgPortFunc tg3_port_funcs[] = {
+  { 0x018487, "DrawBar", Tg3DrawBar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x018564, "RoadWindows", Tg3RoadWindows, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x01F887, "MoveObject", Tg3MoveObject, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01FBB1, "ObjectSegment", Tg3ObjectSegment, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
