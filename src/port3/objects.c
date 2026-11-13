@@ -19,8 +19,8 @@
 
 static uint16_t w(uint16_t a) { return ram16(a); }
 static void ws(uint16_t a, uint16_t v) { ram16_set(a, v); }
-static uint16_t f(uint16_t y, uint16_t o) { return w((uint16_t) (REC + o + y)); }
-static void fs(uint16_t y, uint16_t o, uint16_t v) { ws((uint16_t) (REC + o + y), v); }
+static uint16_t f(uint16_t y, uint16_t o) { return ram16((REC + o + y) & 0x1FFFF); }  // carries on into $7F
+static void fs(uint16_t y, uint16_t o, uint16_t v) { ram16_set((REC + o + y) & 0x1FFFF, v); }
 
 // DSP-4 multiply.
 static void dput(uint16_t v) { tg_bus_write16(0x308000, v); }

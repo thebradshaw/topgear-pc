@@ -279,4 +279,9 @@ if(TG3_TEST_ROM AND TG3_TEST_DSP)
     --frames 14000 --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear3000/first_race.txt
     --expect-wram 9a4783b8c28a4eeb6a711bb56fdd294dffabe4e2913666150f8c68322a75d1e2
     --expect-frame 26110be1ee260b1507e3a0105d976e578199e67f71fa5425f9a9f6495d1ce775)
+  # Weaving and firing through the first race to RACE OVER, the results and the title options.
+  add_test(NAME tg3_steer_race COMMAND tg_headless --rom ${TG3_TEST_ROM} --dsp ${TG3_TEST_DSP} --port verify
+    --frames 15000 --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear3000/steer_race.txt
+    --expect-wram 908be5772008becb73009f786b9b13de69ad4d4090b5ddf0bfd33a5a9fa03904
+    --expect-frame 0eef84121d85e2473c104bf8216b56f928b346b2e86966956a9f6503b0e18717)
 endif()

@@ -33,6 +33,7 @@ static bool piece(TgRegs* r, uint16_t tile, uint16_t* y) {
     if(*y == z(r, 0x1A)) return true;
     dwait();
   }
+  r->c = false;  // CLC
   return false;
 }
 

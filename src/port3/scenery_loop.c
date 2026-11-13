@@ -23,7 +23,8 @@ static uint16_t w(uint16_t a) { return ram16(a); }
 static void ws(uint16_t a, uint16_t v) { ram16_set(a, v); }
 static uint16_t l7e(uint32_t a) { return ram16((a - 0x7E0000) & 0x1FFFF); }
 static void l7e_set(uint32_t a, uint16_t v) { ram16_set((a - 0x7E0000) & 0x1FFFF, v); }
-static uint16_t car(uint16_t y, uint16_t o) { return w((uint16_t) (REC + o + y)); }
+// Long reads ($7E:FAB4+o,y): a stray index runs on into bank $7F, not round to $7E:0000.
+static uint16_t car(uint16_t y, uint16_t o) { return ram16((REC + o + y) & 0x1FFFF); }
 
 static uint32_t g_bank;
 static void dput(uint16_t v) { tg_bus_write16(g_bank | 0x8000, v); }
