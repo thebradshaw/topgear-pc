@@ -284,4 +284,9 @@ if(TG3_TEST_ROM AND TG3_TEST_DSP)
     --frames 15000 --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear3000/steer_race.txt
     --expect-wram 908be5772008becb73009f786b9b13de69ad4d4090b5ddf0bfd33a5a9fa03904
     --expect-frame 0eef84121d85e2473c104bf8216b56f928b346b2e86966956a9f6503b0e18717)
+  # Two players, split screen, through the first race.
+  add_test(NAME tg3_race_2p COMMAND tg_headless --rom ${TG3_TEST_ROM} --dsp ${TG3_TEST_DSP} --port verify
+    --frames 14000 --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear3000/race_2p.txt
+    --expect-wram 2ad734a28654368e06868b62e81c8daa3ddaebe47bdcca66febb06fa7e3ba437
+    --expect-frame cfb13e439d4cb60321559be755405b86967482bc6e37615cdb861a1d2e8f21dc)
 endif()
