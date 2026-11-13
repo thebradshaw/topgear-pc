@@ -231,7 +231,11 @@ static void scenery_loop(TgRegs* r, const Pass* p) {
   if(w(p->flag2) & 0x8000) x = (uint16_t) (x + 2);
   zs(r, 0x14, w(0x02E8));
   map_marker(r, p->colour, x, l7e(0x7EFAD1 + p->tile2) | 0x30FD);
-  const uint16_t kStart[] = { 9, 0x80, p->view, 0, 0, 0x100, p->keep };
+  // The chip's command 9: the screen's centre, the view, then the window objects are kept
+  // in: x from 0 to $100, y from `keep` to the bottom. Widescreen (an enhancement) widens
+  // the x range by the side areas, which the PPU shows (x past 255 wraps round to the left).
+  uint16_t m = (uint16_t) (tg_port_wide_margin > 0 ? tg_port_wide_margin : 0);
+  const uint16_t kStart[] = { 9, 0x80, p->view, 0, (uint16_t) -m, (uint16_t) (0x100 + m), p->keep };
   for(unsigned i = 0; i < sizeof(kStart) / sizeof(kStart[0]); i++) dput(kStart[i]);
   uint16_t h = w(0x1EF2 + p->cam);
   dput((h & 0x8000) ? (uint16_t) (h + p->bottom) : p->bottom);
