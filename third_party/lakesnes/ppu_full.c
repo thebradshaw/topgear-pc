@@ -160,6 +160,17 @@ static void hudJoin(int* p, int a, int b) {
   if(a != b) p[a] = b;
 }
 
+// Joins a sprite to a part (or two sprites), unless that would put two parts with HUD art
+// into one: a sprite between two of them (a car bumping into the speedometer's corner, say)
+// must not tie the speedometer to the player's car in the middle, or it would stay there.
+static void hudJoinApart(int* p, bool* bg, int a, int b) {
+  a = hudRoot(p, a);
+  b = hudRoot(p, b);
+  if(a == b || (bg[a] && bg[b])) return;
+  p[a] = b;
+  bg[b] = bg[b] || bg[a];
+}
+
 static bool boxesNear(const HudBox* a, const HudBox* b, int gx, int gy) {
   return a->x0 <= b->x1 + gx && b->x0 <= a->x1 + gx && a->y0 <= b->y1 + gy && b->y0 <= a->y1 + gy;
 }
@@ -201,6 +212,7 @@ static void leftOrRight(Ppu* ppu, PpuFullView* f, int first, int last) {
 static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool full, int view) {
   static HudBox box[HUD_PARTS + 128];
   static int parent[HUD_PARTS + 128];
+  static bool bgSet[HUD_PARTS + 128];
   static int rowStart[SCREEN_LINES + 1];
   static uint8_t opaque[SCREEN_LINES][256];
   static int16_t dx[HUD_PARTS + 128], dy[HUD_PARTS + 128];
@@ -244,6 +256,7 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
     }
   }
   rowStart[rows] = n;
+  for(int i = 0; i < n; i++) bgSet[i] = true;
   // HUD sprites, as the view's middle row has them.
   loadState(ppu, lineState(f, (first + last) / 2));
   if(m != 0) leftOrRight(ppu, f, first, last);
@@ -300,19 +313,28 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
     int id = n + i;
     box[id] = b;
     parent[id] = id;
+    bgSet[id] = false;
     sprite[i] = id;
-    if(!bigSprite[i]) for(int j = 0; j < n; j++) if(boxesNear(&box[j], &b, 1, 1)) hudJoin(parent, j, id);
-    for(int j = 0; j < i; j++) if(sprite[j] >= 0 && bigSprite[j] == bigSprite[i] && boxesNear(&box[sprite[j]], &b, 1, 1)) hudJoin(parent, sprite[j], id);
+    if(!bigSprite[i]) for(int j = 0; j < n; j++) if(boxesNear(&box[j], &b, 1, 1)) hudJoinApart(parent, bgSet, j, id);
+    for(int j = 0; j < i; j++) if(sprite[j] >= 0 && bigSprite[j] == bigSprite[i] && boxesNear(&box[sprite[j]], &b, 1, 1)) hudJoinApart(parent, bgSet, sprite[j], id);
   }
   // Each part's extent, at its root.
   static HudBox part[HUD_PARTS + 128];
   static bool isRoot[HUD_PARTS + 128], hasBg[HUD_PARTS + 128];
+  static HudBox bgPart[HUD_PARTS + 128];  // the extent of its HUD art alone
   int total = n + 128;
   for(int i = 0; i < total; i++) isRoot[i] = hasBg[i] = false;
   for(int i = 0; i < total; i++) {
     if(i >= n && sprite[i - n] < 0) continue;
     int p = hudRoot(parent, i);
-    if(i < n) hasBg[p] = true;
+    if(i < n) {
+      if(!hasBg[p]) bgPart[p] = box[i];
+      else {
+        if(box[i].x0 < bgPart[p].x0) bgPart[p].x0 = box[i].x0;
+        if(box[i].x1 > bgPart[p].x1) bgPart[p].x1 = box[i].x1;
+      }
+      hasBg[p] = true;
+    }
     if(!isRoot[p]) { part[p] = box[i]; isRoot[p] = true; continue; }
     HudBox* q = &part[p];
     if(box[i].x0 < q->x0) q->x0 = box[i].x0;
@@ -324,7 +346,9 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
   for(int p = 0; p < total; p++) {
     if(!isRoot[p]) continue;
     const HudBox* q = &part[p];
-    int cx = (q->x0 + q->x1) / 2, cy = (q->y0 + q->y1) / 2 - f->off, h = q->y1 - q->y0 + 1;
+    // Which side a part goes to is decided by its HUD art, not by sprites beside it.
+    int cx = hasBg[p] ? (bgPart[p].x0 + bgPart[p].x1) / 2 : (q->x0 + q->x1) / 2;
+    int cy = (q->y0 + q->y1) / 2 - f->off, h = q->y1 - q->y0 + 1;
     dx[p] = (int16_t) (cx < HUD_LEFT ? -m : cx >= HUD_RIGHT ? m : 0);
     dy[p] = 0;
     // Sprites with no HUD art under them (race messages, the car in the pits) stay in the
