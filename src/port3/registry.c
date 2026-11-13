@@ -10,6 +10,7 @@ void Tg3RacePlaces(TgRegs* r);
 void Tg3SendObject(TgRegs* r);
 void Tg3MergeSplits(TgRegs* r);
 void Tg3BuildRoad(TgRegs* r);
+void Tg3RoadHdmaTables(TgRegs* r);
 void Tg3BuildRoadCar(TgRegs* r);
 void Tg3SendShapeRam(TgRegs* r);
 void Tg3SendObjectFlat(TgRegs* r);
@@ -32,5 +33,6 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x05B1FF, "MergeSplits", Tg3MergeSplits, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x05B3D7, "BuildRoadCar", Tg3BuildRoadCar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x05B828, "BuildRoad", Tg3BuildRoad, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
+  { 0x05BC20, "RoadHdmaTables", Tg3RoadHdmaTables, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
 };
 const int tg3_port_func_count = sizeof(tg3_port_funcs) / sizeof(tg3_port_funcs[0]);
