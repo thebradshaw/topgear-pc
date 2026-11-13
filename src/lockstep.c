@@ -614,6 +614,11 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
 
   // The original first, from a saved state, until it returns to the same caller.
   Snes* snes = ls->snes;
+  extern int necdsp_trace;
+  static int traced;
+  const char* tr = getenv("TG_DSP_TRACE");
+  necdsp_trace = tr && strcmp(tr, f->name) == 0 && traced++ == 0;
+  if(necdsp_trace) fprintf(stderr, "=== original\n");
   ls->stateSize = snes_saveState(snes, ls->state);
   ls->stateInts = cpu->interrupts;
   uint8_t* ram = snes->ram;
@@ -684,7 +689,9 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   ls->counterReadPos = 0;
   ls->logTarget = c;
   tg_port_take_min_sp();
+  if(necdsp_trace) fprintf(stderr, "=== C\n");
   bool ran = runC(ls, f, cpu);
+  necdsp_trace = 0;
   ls->logTarget = NULL;
   if(!ran) {
     // Calls the C version doesn't handle (yet) run emulated.

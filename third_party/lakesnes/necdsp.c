@@ -221,11 +221,22 @@ void necdsp_runUntilReady(NecDsp* dsp, uint64_t masterCycles, bool forRead) {
   // until it asks for the next word, and stays on the machine's clock (were it ahead,
   // original code talking to it next would find it not listening yet).
   for(int n = 0; (!(dsp->sr & SR_RQM) || (forRead && !dsp->drOut)) && n < 1000000; n++) step(dsp);
+  // Then on to where it waits for the CPU (a "jump while RQM" to itself): the chip often
+  // does a few more steps after asking, such as reading the old data register (DRNF),
+  // which a real CPU is always too slow to get in before.
+  for(int n = 0; n < 4096; n++) {
+    uint32_t w = dsp->programRom[dsp->pc & 0x7ff];
+    if(w >> 22 == 2 && ((w >> 13) & 0x1ff) == 0x0be && ((w >> 2) & 0x7ff) == (dsp->pc & 0x7ff)) break;
+    step(dsp);
+  }
 }
 
 uint8_t necdsp_readSr(NecDsp* d) { return (uint8_t) (d->sr >> 8); }
 
+#include <stdio.h>
+int necdsp_trace;
 uint8_t necdsp_readDr(NecDsp* d) {
+  if(necdsp_trace) fprintf(stderr, "R %04x sr=%04x out=%d pc=%03x\n", d->dr, d->sr, d->drOut, d->pc);
   if(!(d->sr & SR_DRC)) {
     if(!(d->sr & SR_DRS)) {
       d->sr |= SR_DRS;
@@ -241,6 +252,7 @@ uint8_t necdsp_readDr(NecDsp* d) {
 }
 
 void necdsp_writeDr(NecDsp* d, uint8_t val) {
+  if(necdsp_trace) fprintf(stderr, "W %02x sr=%04x pc=%03x\n", val, d->sr, d->pc);
   d->drOut = false;
   if(!(d->sr & SR_DRC)) {
     if(!(d->sr & SR_DRS)) {

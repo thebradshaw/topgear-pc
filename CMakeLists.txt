@@ -39,6 +39,7 @@ add_library(tgcore STATIC
   src/port3/registry.c
   src/port3/dsp_objects.c
   src/port3/objects.c
+  src/port3/road.c
   src/port2/video.c
   src/port2/road.c
   src/port2/objects.c
