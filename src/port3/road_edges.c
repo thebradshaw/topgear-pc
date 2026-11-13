@@ -34,35 +34,39 @@ static void call(TgRegs* r, uint16_t target, uint16_t site) {
   r->db = 0x30;
 }
 
-void Tg3RoadEdges(TgRegs* r) {
+// $02:F3D4 is the second player's copy on the two-player screen: its record (+$B3), its
+// ring of step settings (+$580), its own handler tables and result words.
+typedef struct { uint16_t rec, trk, cam, s4; uint32_t near, far; uint16_t site_near, site_far; } Edges;
+
+static void road_edges(TgRegs* r, const Edges* v) {
   r->db = 0x30;  // PEA $8330; PLB
   uint16_t d = r->d;
   ram16_set((uint16_t) (d + 0x3C), 0);
-  uint16_t x = (uint16_t) ((w(0x0226) << 1) & 0x3E);
+  uint16_t x = (uint16_t) ((w(0x0226 + v->rec) << 1) & 0x3E);
   ram16_set((uint16_t) (d + 0x16), x);
   dput(0);
-  dput((uint16_t) ((m(0x3DEEu + x) - m(0x3DECu + x)) << 1));
-  uint16_t f = (uint16_t) ((w(0x0224) >> 1) & 0xFF80);
+  dput((uint16_t) ((m(0x3DEEu + v->trk + x) - m(0x3DECu + v->trk + x)) << 1));
+  uint16_t f = (uint16_t) ((w(0x0224 + v->rec) >> 1) & 0xFF80);
   dput(f);
   ram16_set((uint16_t) (d + 0x14), f);
-  ws(0x1EF4, dget());
-  uint16_t a = (uint16_t) (dget() + m(0x3DECu + x));
+  ws(0x1EF4 + v->cam, dget());
+  uint16_t a = (uint16_t) (dget() + m(0x3DECu + v->trk + x));
   if(a != 0 && !(a & 0x8000)) a--;
-  ws(0x1EF6, a);
+  ws(0x1EF6 + v->cam, a);
 
-  r->x = w(0x0261) & 0xFF;
+  r->x = w(0x0261 + v->rec) & 0xFF;
   r->a = r->x;
-  call(r, tg_read16(0x02ED23u + r->x), 0xEC7F);
-  tg_push16(w(0x1EF4));
-  tg_push16(w(0x1EF6));
-  r->x = w(0x0260) & 0xFF;
+  call(r, tg_read16(v->near + r->x), v->site_near);
+  tg_push16(w(0x1EF4 + v->cam));
+  tg_push16(w(0x1EF6 + v->cam));
+  r->x = w(0x0260 + v->rec) & 0xFF;
   r->a = r->x;
-  call(r, tg_read16(0x02ED17u + r->x), 0xEC91);
-  ws(0x1EC4, tg_pull16());
-  ws(0x1EC2, tg_pull16());
+  call(r, tg_read16(v->far + r->x), v->site_far);
+  ws(0x1EC4 + v->s4, tg_pull16());
+  ws(0x1EC2 + v->s4, tg_pull16());
 
-  a = w(0x01CE);
-  ws(0x0229, a);
+  a = w(0x01CE + v->s4);
+  ws(0x0229 + v->rec, a);
   uint16_t k = 0xFFFF;
   if(a & 0x8000) {
     a = (uint16_t) -a;
@@ -73,9 +77,18 @@ void Tg3RoadEdges(TgRegs* r) {
   dput(0);
   dput(k);
   dput((uint16_t) (tg_bus_read8(0x304214) | tg_bus_read8(0x304215) << 8));
-  ws(0x01CE, dget());
+  ws(0x01CE + v->s4, dget());
   r->a = dget();
   r->db = 0x83;
   r->n = true;
   r->z = false;
+}
+
+void Tg3RoadEdges(TgRegs* r) {
+  static const Edges k = { 0, 0, 0, 0, 0x02ED23, 0x02ED17, 0xEC7F, 0xEC91 };
+  road_edges(r, &k);
+}
+void Tg3RoadEdgesBottom(TgRegs* r) {
+  static const Edges k = { 0xB3, 0x580, 0x0A, 4, 0x02F4C1, 0x02F4B5, 0xF41D, 0xF42F };
+  road_edges(r, &k);
 }
