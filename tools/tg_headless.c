@@ -219,9 +219,9 @@ int main(int argc, char** argv) {
     }
     if(trace) fprintf(trace, "# frame %ld\n", frame);
     {
-      // TG_DSP_TRACE=N: every byte to and from the DSP-4 in frame N, on stderr.
+      // TG_DSP_FRAME=N: every byte to and from the DSP-4 in frame N, on stderr.
       extern int necdsp_trace;
-      const char* t = getenv("TG_DSP_TRACE");
+      const char* t = getenv("TG_DSP_FRAME");
       if(t) necdsp_trace = frame == atol(t);
     }
     tg_game_run_frame(game);
