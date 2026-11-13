@@ -46,6 +46,7 @@ add_library(tgcore STATIC
   src/port3/bars.c
   src/port3/splits.c
   src/port3/hdma_tables.c
+  src/port3/race_order.c
   src/port2/video.c
   src/port2/road.c
   src/port2/objects.c
