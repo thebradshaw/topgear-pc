@@ -218,6 +218,22 @@ int main(int argc, char** argv) {
       tg_game_set_trace(game, trace);
     }
     if(trace) fprintf(trace, "# frame %ld\n", frame);
+    if(getenv("TG_POKE")) {
+      // TG_POKE=frame:addr:word,...: write WRAM words before those frames (for tests).
+      for(const char* c = getenv("TG_POKE"); *c;) {
+        char* end;
+        long f = strtol(c, &end, 10), a = 0, v = 0;
+        if(*end == ':') a = strtol(end + 1, &end, 16);
+        if(*end == ':') v = strtol(end + 1, &end, 16);
+        if(f == frame) {
+          uint8_t* w = (uint8_t*) tg_game_wram(game);
+          w[a & 0x1FFFF] = (uint8_t) v;
+          w[(a + 1) & 0x1FFFF] = (uint8_t) (v >> 8);
+        }
+        if(*end != ',') break;
+        c = end + 1;
+      }
+    }
     {
       // TG_DSP_FRAME=N: every byte to and from the DSP-4 in frame N, on stderr.
       extern int necdsp_trace;
