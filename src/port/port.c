@@ -37,7 +37,7 @@ static bool isDsp(uint32_t adr) {
 }
 
 uint8_t tg_bus_read8(uint32_t adr) {
-  if(isDsp(adr)) snes_dspSync(g_snes);
+  if(isDsp(adr)) snes_dspSync(g_snes, true);
   return snes_read(g_snes, adr);
 }
 
@@ -55,7 +55,7 @@ uint8_t tg_apu_read8(uint32_t adr) {
 }
 
 void tg_bus_write8(uint32_t adr, uint8_t val) {
-  if(isDsp(adr)) snes_dspSync(g_snes);
+  if(isDsp(adr)) snes_dspSync(g_snes, false);
   snes_write(g_snes, adr, val);
   // On the SNES a DMA starts right after the write that enables it, and the CPU waits for
   // it; translated code runs without CPU cycles, so the transfer happens here.

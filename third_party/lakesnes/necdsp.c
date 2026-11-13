@@ -21,6 +21,7 @@ bool necdsp_load(NecDsp* dsp, const uint8_t* data, int size) {
 void necdsp_reset(NecDsp* dsp) {
   memset(dsp->dataRam, 0, sizeof(dsp->dataRam));
   dsp->pc = 0;
+  dsp->drOut = false;
   dsp->rp = 0x3ff;
   dsp->dp = 0;
   dsp->sp = 0;
@@ -40,7 +41,7 @@ static void ld(NecDsp* d, uint16_t id, int dst) {
     case 3: d->tr = id; break;
     case 4: d->dp = (uint8_t) id; break;
     case 5: d->rp = id & 0x3ff; break;
-    case 6: d->dr = id; d->sr |= SR_RQM; break;
+    case 6: d->dr = id; d->sr |= SR_RQM; d->drOut = true; break;
     case 7: d->sr = (d->sr & 0x907c) | (id & ~0x907c); break;
     case 8: {  // SO, least significant bit first
       uint16_t r = 0;
@@ -214,12 +215,12 @@ void necdsp_catchUp(NecDsp* dsp, uint64_t masterCycles) {
   }
 }
 
-void necdsp_runUntilReady(NecDsp* dsp, uint64_t masterCycles) {
+void necdsp_runUntilReady(NecDsp* dsp, uint64_t masterCycles, bool forRead) {
   necdsp_catchUp(dsp, masterCycles);
   // A routine translated to C takes no time, and neither do these steps: the chip runs on
   // until it asks for the next word, and stays on the machine's clock (were it ahead,
   // original code talking to it next would find it not listening yet).
-  for(int n = 0; !(dsp->sr & SR_RQM) && n < 1000000; n++) step(dsp);
+  for(int n = 0; (!(dsp->sr & SR_RQM) || (forRead && !dsp->drOut)) && n < 1000000; n++) step(dsp);
 }
 
 uint8_t necdsp_readSr(NecDsp* d) { return (uint8_t) (d->sr >> 8); }
@@ -231,13 +232,16 @@ uint8_t necdsp_readDr(NecDsp* d) {
       return (uint8_t) d->dr;
     }
     d->sr &= ~(SR_RQM | SR_DRS);
+    d->drOut = false;
     return (uint8_t) (d->dr >> 8);
   }
   d->sr &= ~SR_RQM;
+  d->drOut = false;
   return (uint8_t) d->dr;
 }
 
 void necdsp_writeDr(NecDsp* d, uint8_t val) {
+  d->drOut = false;
   if(!(d->sr & SR_DRC)) {
     if(!(d->sr & SR_DRS)) {
       d->sr |= SR_DRS;

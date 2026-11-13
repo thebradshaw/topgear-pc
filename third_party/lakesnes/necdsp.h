@@ -22,6 +22,7 @@ typedef struct NecDsp {
   uint16_t a, b, tr, trb, dr, sr, si, so, k, l, m, n;
   NecDspFlags fa, fb;
   uint64_t cycles;  // SNES master cycles the chip has caught up to
+  bool drOut;  // the chip has put a word in DR that the CPU hasn't finished reading
 } NecDsp;
 
 // Firmware: 2048 program words of 3 bytes then 1024 data words of 2 bytes, little-endian
@@ -31,8 +32,9 @@ void necdsp_reset(NecDsp* dsp);
 // Runs the chip up to the given SNES master cycle count.
 void necdsp_catchUp(NecDsp* dsp, uint64_t masterCycles);
 // For code translated to C, which takes no time: catches up, then runs the chip on until
-// it is ready for the next transfer (its RQM status bit).
-void necdsp_runUntilReady(NecDsp* dsp, uint64_t masterCycles);
+// it is ready for the next transfer (its RQM status bit) and, for a read, has put a word
+// out (the original's timing gave it that long).
+void necdsp_runUntilReady(NecDsp* dsp, uint64_t masterCycles, bool forRead);
 uint8_t necdsp_readDr(NecDsp* dsp);
 uint8_t necdsp_readSr(NecDsp* dsp);
 void necdsp_writeDr(NecDsp* dsp, uint8_t val);

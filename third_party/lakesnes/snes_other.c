@@ -290,8 +290,8 @@ static void readHeader(const uint8_t* data, int length, int location, CartHeader
   header->score = score;
 }
 
-void snes_dspSync(Snes* snes) {
-  if(snes->cart->dsp) necdsp_runUntilReady(snes->cart->dsp, snes->cycles);
+void snes_dspSync(Snes* snes, bool forRead) {
+  if(snes->cart->dsp) necdsp_runUntilReady(snes->cart->dsp, snes->cycles, forRead);
 }
 
 bool snes_setDspFirmware(Snes* snes, const uint8_t* data, int size) {
