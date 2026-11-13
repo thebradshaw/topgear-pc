@@ -8,6 +8,7 @@ void Tg3MoveObject(TgRegs* r);
 void Tg3ObjectSegment(TgRegs* r);
 void Tg3RacePlaces(TgRegs* r);
 void Tg3SendObject(TgRegs* r);
+void Tg3MergeSplits(TgRegs* r);
 void Tg3BuildRoad(TgRegs* r);
 void Tg3BuildRoadCar(TgRegs* r);
 void Tg3SendShapeRam(TgRegs* r);
@@ -28,6 +29,7 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x02DB87, "SceneryFour", Tg3SceneryFour, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DDBF, "SendShapeRam", Tg3SendShapeRam, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DEA8, "SendShapeRom", Tg3SendShapeRom, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x05B1FF, "MergeSplits", Tg3MergeSplits, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x05B3D7, "BuildRoadCar", Tg3BuildRoadCar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x05B828, "BuildRoad", Tg3BuildRoad, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
 };
