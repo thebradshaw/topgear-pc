@@ -9,6 +9,9 @@ void Tg3SendObject(TgRegs* r);
 void Tg3BuildRoad(TgRegs* r);
 void Tg3BuildRoadCar(TgRegs* r);
 void Tg3SendShapeRam(TgRegs* r);
+void Tg3SendObjectFlat(TgRegs* r);
+void Tg3SceneryBobbing(TgRegs* r);
+void Tg3SceneryFour(TgRegs* r);
 void Tg3SendShapeRom(TgRegs* r);
 
 const TgPortFunc tg3_port_funcs[] = {
@@ -16,6 +19,9 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x01F887, "MoveObject", Tg3MoveObject, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01FBB1, "ObjectSegment", Tg3ObjectSegment, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02D934, "SendObject", Tg3SendObject, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x02D988, "SendObjectFlat", Tg3SendObjectFlat, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x02DA48, "SceneryBobbing", Tg3SceneryBobbing, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x02DB87, "SceneryFour", Tg3SceneryFour, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DDBF, "SendShapeRam", Tg3SendShapeRam, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DEA8, "SendShapeRom", Tg3SendShapeRom, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x05B3D7, "BuildRoadCar", Tg3BuildRoadCar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },

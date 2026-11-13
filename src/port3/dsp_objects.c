@@ -95,19 +95,19 @@ void Tg3SendShapeRam(TgRegs* r) { send_shape(r, 0x7F0000); }
 // $02:DEA8: the same for a shape from the ROM (bank $86).
 void Tg3SendShapeRom(TgRegs* r) { send_shape(r, 0x860000); }
 
-// $02:D934: an object: its position and size ($14: the object's slot in the tables at
-// $7E35EC-$7E39EC), the view offsets ($20, $22), its flags ($26 | $3A), then its shape.
-void Tg3SendObject(TgRegs* r) {
+// An object: four words from its slot ($14) in the tables at $7E:35EC-39EC, the view
+// offsets ($20, $22), its flags, then its shape (frame $24's entry, through the object's
+// model table).
+static void send_object(TgRegs* r, uint32_t t0, uint32_t t1, uint32_t t2, uint32_t t3, uint16_t flags) {
   uint16_t x = dp(r, 0x14);
   g_dr = (uint32_t) r->db << 16 | 0x8000;
-  dsp_put(tg_read16(0x7E386C + x));
-  dsp_put(tg_read16(0x7E38EC + x));
-  dsp_put(tg_read16(0x7E35EC + x));
-  dsp_put(tg_read16(0x7E37EC + x));
+  dsp_put(tg_read16(t0 + x));
+  dsp_put(tg_read16(t1 + x));
+  dsp_put(tg_read16(t2 + x));
+  dsp_put(tg_read16(t3 + x));
   dsp_put(dp(r, 0x20));
   dsp_put(dp(r, 0x22));
-  dsp_put(dp(r, 0x26) | dp(r, 0x3A));
-  // The shape: frame $24's entry, through the object's model table.
+  dsp_put(flags);
   uint16_t frame = dp(r, 0x24);
   uint16_t base = tg_read16(0x7E6591 + tg_read16(0x860000 + frame));
   tg_push16(base);
@@ -117,4 +117,14 @@ void Tg3SendObject(TgRegs* r) {
   r->c = false;
   r->x = adc16(r, base, tg_read16(0x860002 + i));
   send_shape(r, 0x7F0000);
+}
+
+// $02:D934: an object standing on the road.
+void Tg3SendObject(TgRegs* r) {
+  send_object(r, 0x7E386C, 0x7E38EC, 0x7E35EC, 0x7E37EC, dp(r, 0x26) | dp(r, 0x3A));
+}
+
+// $02:D988: the same object flat on the road (flag $1000), placed by the road's own height.
+void Tg3SendObjectFlat(TgRegs* r) {
+  send_object(r, 0x7E386C, 0x7E38EC, 0x7E366C, 0x7E386C, dp(r, 0x26) | 0x1000);
 }
