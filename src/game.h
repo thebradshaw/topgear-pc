@@ -92,6 +92,7 @@ bool tg_game_ghosts_changed(TgGame* game);
 bool tg_game_save_ghosts(TgGame* game, const char* path);
 bool tg_game_load_ghosts(TgGame* game, const char* path);
 int tg_game_wide_margin(const TgGame* game);
+void tg_game_dump_lines(TgGame* game, FILE* out);  // debugging: last race frame, line by line
 const uint32_t* tg_game_wide_pixels(TgGame* game);
 // Debugging: VRAM, CGRAM and OAM to a file.
 void tg_game_dump_ppu(TgGame* game, const char* path);

@@ -423,8 +423,29 @@ static const View kTop = { 0x00B4, 0x019C, 0x033C, 0x019C, 0x033C, 0x006C, 0xFFC
 static const View kBottom = { 0x00B6, 0x019C, 0x033C, 0x019C, 0x033C, 0x00DC, 0xFFCB, 0, 0x74,
                               0xB3, 0x580, 0x40, 0x98, 0x360, 0x400, 0x0A, 2, 4, 0x1040, 0xE6, 0 };
 
-void Tg3BuildRoad(TgRegs* r) { View v = kOne; v.end_dp = 0x94; build_road(r, &v); }
-void Tg3BuildRoadTop(TgRegs* r) { View v = kTop; v.end_dp = 0x94; build_road(r, &v); }
+// Widescreen: this frame is a race frame, which the PPU redraws wider.
+// The sprite lists' entries start as HUD pieces; the DSP's object pieces get a ground line
+// (dsp_objects.c).
+extern int tg3_obj_order;
+extern uint8_t tg3_race_flags;
+static void mark_race_frame(bool two) {
+  (void) two;  // 2 players side by side: not yet (the PPU's layout for it is Top Gear 1's)
+  bool frame = tg_port_wide_margin || tg_port_interp;
+  if(!frame && !tg_port_ghost) return;
+  if(frame) {
+    tg3_race_flags = 1;  // PPU_RACE_FRAME
+    tg_port_race_frame = (uint8_t) (tg3_race_flags | 32);  // and PPU_NEW_PICTURE
+  }
+  tg3_obj_order = 0x7000;
+  for(uint16_t a = 0x1576; a < 0x1576 + 0x640; a++) {
+    tg_port_obj_grounds[a] = -32768;  // PPU_NO_GROUND
+    tg_port_obj_idents[a] = 0;
+    tg_port_obj_flags[a] = 0;
+  }
+}
+
+void Tg3BuildRoad(TgRegs* r) { mark_race_frame(false); View v = kOne; v.end_dp = 0x94; build_road(r, &v); }
+void Tg3BuildRoadTop(TgRegs* r) { mark_race_frame(true); View v = kTop; v.end_dp = 0x94; build_road(r, &v); }
 void Tg3BuildRoadBottom(TgRegs* r) { View v = kBottom; v.end_dp = 0x96; v.clamp_cmp = 4; build_road(r, &v); }
 void Tg3BuildRoadCar(TgRegs* r) { View v = kOne; v.end_dp = 0x90; build_road_car(r, &v); }
 void Tg3BuildRoadCarTop(TgRegs* r) { View v = kTop; v.end_dp = 0x90; build_road_car(r, &v); }

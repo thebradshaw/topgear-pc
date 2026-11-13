@@ -82,7 +82,7 @@ static const Option kOptions[O_COUNT] = {
   {NULL, "Speed and time", "speed_bottom", OPT_CHOICE, {"Top", "Bottom"}, 2,
    "Where the speedometer and timer sit in full view: top right, or the bottom right corner.", "Tab menu"},
   {"Motion", "Smooth motion", "smooth", OPT_BOOL, {"Off", "On"}, 2,
-   "The race moves every frame instead of every third, so the road and cars glide instead of stepping.", "F6"},
+   "The race moves every frame instead of every third (in Top Gear 3000, every second frame), so the road and cars glide instead of stepping.", "F6"},
   {NULL, "High frame rate", "high_fps", OPT_BOOL, {"Off", "On"}, 2,
    "On a 120 Hz or faster display, extra pictures are drawn between frames. Turns on smooth motion too.", "Shift+F6"},
   {"Extras", "Ghost car", "ghost", OPT_BOOL, {"Off", "On"}, 2,
@@ -137,10 +137,11 @@ static bool gameReady(int g) {
 }
 
 // Which options each game supports: all of them in Top Gear; Top Gear 2 has no full-screen
-// view yet; Top Gear 3000 runs emulated, so only the display options apply.
+// view yet; Top Gear 3000 has the display options, widescreen, smooth motion, high frame
+// rate, the ghost car and rumble so far.
 static bool optionShown(int i) {
   if(L.game == TG_GAME_TOPGEAR2) return i != O_FULLVIEW && i != O_MAP && i != O_SPEED;
-  if(L.game == TG_GAME_TOPGEAR3000) return i <= O_COLOUR;
+  if(L.game == TG_GAME_TOPGEAR3000) return i <= O_COLOUR || i == O_WIDE || i == O_SMOOTH || i == O_HIGHFPS || i == O_GHOST || i == O_RUMBLE;
   return true;
 }
 

@@ -5,6 +5,8 @@
 void Tg3DrawText(TgRegs* r);
 void Tg3DrawTextCentred(TgRegs* r);
 void Tg3ListRow(TgRegs* r);
+void Tg3RacePace(TgRegs* r);
+void Tg3RacePace2P(TgRegs* r);
 void Tg3TitleSprites(TgRegs* r);
 void Tg3TitleChar(TgRegs* r);
 void Tg3TitleLine(TgRegs* r);
@@ -79,6 +81,8 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x01F887, "MoveObject", Tg3MoveObject, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01FA8F, "PlayerRecord", Tg3PlayerRecord, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x01FBB1, "ObjectSegment", Tg3ObjectSegment, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x028653, "RacePace", Tg3RacePace, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
+  { 0x028C48, "RacePace2P", Tg3RacePace2P, TG_CALL_NONE, TG_MX_16, TG_MX_ANY, 0, 0, TG_WAITS },
   { 0x02A9B7, "CameraFollow", Tg3CameraFollow, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x02AA7B, "CameraFollowBottom", Tg3CameraFollowBottom, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x02AB9D, "Countdown", Tg3Countdown, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },

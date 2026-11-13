@@ -60,6 +60,8 @@ add_library(tgcore STATIC
   src/port3/starfield.c
   src/port3/title_sprites.c
   src/port3/title_text.c
+  src/port3/race_pace.c
+  src/port3/ghost.c
   src/port3/objects.c
   src/port3/road.c
   src/port3/windows.c

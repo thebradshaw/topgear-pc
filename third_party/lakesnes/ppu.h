@@ -7,6 +7,8 @@
 
 typedef struct Ppu Ppu;
 
+#include <stdio.h>
+
 #include "snes.h"
 #include "statehandler.h"
 
@@ -154,6 +156,7 @@ struct Ppu {
   const int16_t* lineDepths;  // by low RAM address of a line's BG3 scroll entry
   const uint16_t* lineCams;
   bool interp;                // keep the last two race frames for ppu_interpCompose
+  bool interpSpans;           // ... the last two pictures, which last several frames (PPU_NEW_PICTURE)
   uint8_t* raceFrame;
   struct PpuFullView* full;
   uint8_t fullArmed;   // this frame's flags, latched at the last vblank
@@ -173,6 +176,9 @@ struct Ppu {
   // pixel at x on this line is the game's pixel hudLine[PPU_OBJX(x)] (source row << 9 |
   // column; -1: none), scrolled as that row was (hudRowH/V); HUD sprites move objHudDx.
   const int32_t* hudLine;
+  uint8_t hudLayer;     // the BG layer the HUD is on (Top Gear 3000: BG3)
+  uint8_t winEdge;      // wide lines take the windows from this far inside the old edges
+  int16_t hudLeft, hudRight;  // widescreen: HUD parts centred left of hudLeft move left, from hudRight on right
   const uint16_t* hudRowH;
   const uint16_t* hudRowV;
   int16_t objHudDx[128];
@@ -188,6 +194,7 @@ struct Ppu {
 #define PPU_SIDE_BY_SIDE 4  // 2 players: the two views side by side, each full height
 #define PPU_PIT_TOP 8       // the top view shows the pit stop scene (widescreen: nothing past its sides)
 #define PPU_PIT_BOTTOM 16   // the same for the bottom view
+#define PPU_NEW_PICTURE 32  // with interpSpans: the game's picture changed this frame
 
 #define PPU_NO_GROUND (-32768)
 #define PPU_NO_DEPTH (-32767)  // a line's scroll entry off the road
@@ -215,6 +222,7 @@ void ppu_setPixelOutputFormat(Ppu* ppu, int pixelOutputFormat);
 void ppu_tagObj(Ppu* ppu, uint8_t bank, uint16_t adr);
 void ppu_fullCapture(Ppu* ppu, int line);
 void ppu_fullCompose(Ppu* ppu);
+void ppu_fullDump(Ppu* ppu, FILE* out);  // debugging: each line of the last race frame
 void ppu_tagLine(Ppu* ppu, uint8_t bank, uint16_t adr);
 // High frame rate: redraws the last race frame as it would look t (0-1) of a frame after
 // the one before it. False when there are not two race frames to go between.

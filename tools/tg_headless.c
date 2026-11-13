@@ -218,10 +218,28 @@ int main(int argc, char** argv) {
       tg_game_set_trace(game, trace);
     }
     if(trace) fprintf(trace, "# frame %ld\n", frame);
+    {
+      // TG_DSP_TRACE=N: every byte to and from the DSP-4 in frame N, on stderr.
+      extern int necdsp_trace;
+      const char* t = getenv("TG_DSP_TRACE");
+      if(t) necdsp_trace = frame == atol(t);
+    }
     tg_game_run_frame(game);
     if(watchWord >= 0 && (getenv("TG_WATCH_ALL") || frame % 60 == 0)) {
       const uint8_t* w = tg_game_wram(game);
       printf("frame %ld word %04lX = %04X\n", frame, watchWord, w[watchWord & 0x1FFFF] | w[(watchWord + 1) & 0x1FFFF] << 8);
+    }
+    if(getenv("TG_WATCH") && frame % 60 == 0) {  // TG_WATCH=1ECE,FAD3: these WRAM words once a second
+      const uint8_t* w = tg_game_wram(game);
+      printf("frame %ld", frame);
+      for(const char* c = getenv("TG_WATCH"); *c;) {
+        char* end;
+        long a = strtol(c, &end, 16);
+        if(end == c) break;
+        printf(" %04lX=%04X", a, w[a & 0x1FFFF] | w[(a + 1) & 0x1FFFF] << 8);
+        c = *end ? end + 1 : end;
+      }
+      printf("\n");
     }
     if(trace && frame == traceFrame + traceCount - 1) {
       tg_game_set_trace(game, NULL);
@@ -250,6 +268,7 @@ int main(int argc, char** argv) {
   if(hashes) fclose(hashes);
   tg_game_get_pixels(game, pixels);
   if(screenshot) writePpm(screenshot, pixels);
+  if(getenv("TG_PPU_DUMP")) tg_game_dump_lines(game, stdout);
   if(dumpPpu) tg_game_dump_ppu(game, dumpPpu);
   if(dumpWram) {
     FILE* f = fopen(dumpWram, "wb");

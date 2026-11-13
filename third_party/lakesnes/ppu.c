@@ -423,7 +423,7 @@ static int ppu_getPixel(Ppu* ppu, int x, int y, bool sub, int* r, int* g, int* b
         // bg layer
         int lx = x;
         int ly = y;
-        if(curLayer == 0 && ppu->hudLine) {
+        if(curLayer == ppu->hudLayer && ppu->hudLine) {
           // Top Gear port: the HUD's parts moved (widescreen, full view)
           int32_t s = ppu->hudLine[PPU_OBJX(x)];
           if(s < 0) continue;
@@ -640,8 +640,12 @@ static int ppu_getPixelForMode7(Ppu* ppu, int x, int layer, bool priority) {
 }
 
 static bool ppu_getWindowState(Ppu* ppu, int layer, int x) {
-  if(x < 0) x = 0;  // Top Gear port: wide lines carry on the windows at the edges
-  if(x > 255) x = 255;
+  // Top Gear port: wide lines carry on the windows at the edges (Top Gear 3000 draws a
+  // one-pixel border there with them, so it takes them from just inside).
+  // The border's own columns get the same, as its HUD layer has moved out to the new edges.
+  int edge = ppu->lineLeft < 0 ? ppu->winEdge : 0;
+  if(x < edge) x = edge;
+  if(x > 255 - edge) x = 255 - edge;
   if(!ppu->windowLayer[layer].window1enabled && !ppu->windowLayer[layer].window2enabled) {
     return false;
   }

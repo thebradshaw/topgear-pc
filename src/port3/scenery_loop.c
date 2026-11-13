@@ -16,6 +16,7 @@
 
 void Tg3SendShapeRom(TgRegs* r);
 void Tg3DrawBar(TgRegs* r);
+extern uint16_t tg3_obj_ident;
 
 static uint16_t z(const TgRegs* r, uint8_t o) { return ram16((uint16_t) (r->d + o)); }
 static void zs(const TgRegs* r, uint8_t o, uint16_t v) { ram16_set((uint16_t) (r->d + o), v); }
@@ -24,7 +25,15 @@ static void ws(uint16_t a, uint16_t v) { ram16_set(a, v); }
 static uint16_t l7e(uint32_t a) { return ram16((a - 0x7E0000) & 0x1FFFF); }
 static void l7e_set(uint32_t a, uint16_t v) { ram16_set((a - 0x7E0000) & 0x1FFFF, v); }
 // Long reads ($7E:FAB4+o,y): a stray index runs on into bank $7F, not round to $7E:0000.
-static uint16_t car(uint16_t y, uint16_t o) { return ram16((REC + o + y) & 0x1FFFF); }
+#define GHOST 0xFF00u  // the ghost car's record (ghost.c), in place of a record offset
+extern uint8_t tg3_ghost_record[0x36];
+extern uint16_t tg3_ghost_section;
+extern bool tg3_obj_ghost;
+void tg3_ghost_update(void);
+static uint16_t car(uint16_t y, uint16_t o) {
+  if(y == GHOST) return (uint16_t) (tg3_ghost_record[o] | tg3_ghost_record[o + 1] << 8);
+  return ram16((REC + o + y) & 0x1FFFF);
+}
 
 // The view: one player's, or a half of the two-player screen. $02:D2CC is the bottom half's
 // own copy, on the second player's record and tables (its sections indexed from $40).
@@ -42,6 +51,7 @@ typedef struct Pass {
   bool top_init;                  // the first section set up as the one-player view does
 } Pass;
 static const Pass* P;
+static bool g_ghost_pass;  // the ghost car is still to be drawn in this pass
 
 static uint32_t g_bank;
 static void dput(uint16_t v) { tg_bus_write16(g_bank | 0x8000, v); }
@@ -115,6 +125,53 @@ static void car_request(TgRegs* r, uint16_t x, uint16_t y) {
 static void send_rom_shape(TgRegs* r, uint16_t x) {
   r->x = x;
   Tg3SendShapeRom(r);
+}
+
+// $D07E: car y (record offset) drawn from its record, turned to one of seven views
+// (x: the section's slot + 2, or the first car's).
+static void draw_other(TgRegs* r, const Pass* p, uint16_t x, uint16_t y) {
+  uint16_t a;
+  dput(l7e(0x7E386A + x));
+  dput(0x9000);
+  dput(car(y, 0x00));
+  uint16_t s = z(r, 0x14), d;
+  bool jumping = p->jump_tables && (car(y, 0x2A) & 0x22) == 0x20;
+  if(jumping) {
+    dput(l7e(0x7E376E + s));
+    dput(l7e(0x7E376C + s));
+    dput(l7e(0x7E356E + s));
+    dput(l7e(0x7E356C + s));
+  } else {
+    dput(l7e(0x7E36EE + s));
+    dput(l7e(0x7E36EC + s));
+    dput(l7e(0x7E34EE + s));
+    dput(l7e(0x7E34EC + s));
+  }
+  r->c = false;
+  uint16_t t = adc16(r, (uint16_t) ((car(y, 0x01) >> 1) & 0x7E), l7e(0x7E39EC + s));
+  dput(tg_read16(0x83ACEC + t));
+  dput(car(y, 0x07));
+  zs(r, 0x2A, dget());
+  dput(car(y, 0x0B));
+  r->c = true;
+  if(jumping) {
+    dput(0x1000 | car(y, 0x1D));
+    d = sbc16(r, l7e(0x7E356C + s), l7e(0x7E356E + s));
+  } else {
+    dput(z(r, 0x3C) | car(y, 0x1D));
+    d = sbc16(r, l7e(0x7E34EC + s), l7e(0x7E34EE + s));
+  }
+  // How far it is turned against the road picks one of seven views.
+  r->c = true;
+  a = adc16(r, (uint16_t) ~(uint16_t) (d << 1), z(r, 0x2A));
+  static const uint16_t kTurn[6] = { 0xFFA0, 0xFFC0, 0xFFE8, 0x0018, 0x0040, 0x0060 };
+  uint16_t v = 0;
+  while(v < 12 && !minus(a, kTurn[v >> 1])) v = (uint16_t) (v + 2);
+  a = tg_read16(0x7F0000 + v);
+  r->c = false;
+  a = adc16(r, a, tg_read16(0x849180 + t));
+  tg3_obj_ident = (uint16_t) (0x4000 | (y & 0x3FFF));  // high frame rate: this car (its record)
+  send_rom_shape(r, tg_read16(0x7F0000 + a));
 }
 
 // The section's scenery handler (X: its kind), in C when there is one. Returns carry.
@@ -281,6 +338,18 @@ section:
   }
 
 cars:
+  if(g_ghost_pass && z(r, 0x2C) == tg3_ghost_section) {
+    // The ghost car (an enhancement), first of the cars in its section.
+    g_ghost_pass = false;
+    uint16_t gx = (uint16_t) (z(r, 0x14) + 2);
+    if(gx != z(r, p->end_dp)) {
+      TgRegs keep = *r;
+      tg3_obj_ghost = true;
+      draw_other(r, p, gx, GHOST);
+      tg3_obj_ghost = false;
+      *r = keep;
+    }
+  }
   // $CEFD: the cars standing in this section, in race order.
   for(;;) {
     x = w((uint16_t) (0x1E6A + z(r, 0x28)));
@@ -370,48 +439,7 @@ other_car:
     ws(0x0293 + rec, tg_read16(0x83ACEC + t));
     x = w(0x0283 + rec);
   }
-  {
-    dput(l7e(0x7E386A + x));
-    dput(0x9000);
-    dput(car(y, 0x00));
-    uint16_t s = z(r, 0x14), d;
-    bool jumping = p->jump_tables && (car(y, 0x2A) & 0x22) == 0x20;
-    if(jumping) {
-      dput(l7e(0x7E376E + s));
-      dput(l7e(0x7E376C + s));
-      dput(l7e(0x7E356E + s));
-      dput(l7e(0x7E356C + s));
-    } else {
-      dput(l7e(0x7E36EE + s));
-      dput(l7e(0x7E36EC + s));
-      dput(l7e(0x7E34EE + s));
-      dput(l7e(0x7E34EC + s));
-    }
-    r->c = false;
-    uint16_t t = adc16(r, (uint16_t) ((car(y, 0x01) >> 1) & 0x7E), l7e(0x7E39EC + s));
-    dput(tg_read16(0x83ACEC + t));
-    dput(car(y, 0x07));
-    zs(r, 0x2A, dget());
-    dput(car(y, 0x0B));
-    r->c = true;
-    if(jumping) {
-      dput(0x1000 | car(y, 0x1D));
-      d = sbc16(r, l7e(0x7E356C + s), l7e(0x7E356E + s));
-    } else {
-      dput(z(r, 0x3C) | car(y, 0x1D));
-      d = sbc16(r, l7e(0x7E34EC + s), l7e(0x7E34EE + s));
-    }
-    // How far it is turned against the road picks one of seven views.
-    r->c = true;
-    a = adc16(r, (uint16_t) ~(uint16_t) (d << 1), z(r, 0x2A));
-    static const uint16_t kTurn[6] = { 0xFFA0, 0xFFC0, 0xFFE8, 0x0018, 0x0040, 0x0060 };
-    uint16_t v = 0;
-    while(v < 12 && !minus(a, kTurn[v >> 1])) v = (uint16_t) (v + 2);
-    a = tg_read16(0x7F0000 + v);
-    r->c = false;
-    a = adc16(r, a, tg_read16(0x849180 + t));
-    send_rom_shape(r, tg_read16(0x7F0000 + a));
-  }
+  draw_other(r, p, x, y);
 
 after_car:
   // $D1B5
@@ -493,6 +521,11 @@ static const Pass kBottom = { 0x0188, 0x440, 0xCA, 0x92, 0xB3, 2, 0x02D9, 0x1E68
                               0xA9, 0xDC, 0x74, 0x0A, 0x40, 0x1EE2, 0x1E62, 0x1E68, 0x1DF8, 0xDC, 0x35, 0x014E,
                               8, 0x40, 0x1000, 6, false, false };
 
-void Tg3SceneryLoop(TgRegs* r) { scenery_loop(r, &kOne); }
+void Tg3SceneryLoop(TgRegs* r) {
+  tg3_ghost_update();
+  g_ghost_pass = tg3_ghost_section != 0xFFFF;
+  scenery_loop(r, &kOne);
+  g_ghost_pass = false;
+}
 void Tg3SceneryLoopTop(TgRegs* r) { scenery_loop(r, &kTop); }
 void Tg3SceneryLoopBottom(TgRegs* r) { scenery_loop(r, &kBottom); }

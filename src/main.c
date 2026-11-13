@@ -61,8 +61,10 @@ static struct {
   bool original;  // the game's own code throughout (--original)
   TgGameId gameId;  // which of the three games the ROM is
   bool plain;  // no Top Gear 1 extras: --original, or Top Gear 2 / 3000 (not there yet)
-  bool smoothOk;  // smooth motion: the C port runs the race (TG1, TG2)
-  bool wideOk;  // widescreen works: Top Gear 1, or Top Gear 2's C port
+  bool smoothOk;  // smooth motion: the C port runs the race
+  bool extrasOk;  // auto-save, side by side (TG1, TG2 so far)
+  bool ghostOk;  // the ghost car: the C ports
+  bool wideOk;  // widescreen works: the C ports (not with --original)
   bool smooth;  // enhancement: race logic every frame instead of every third (F6, --smooth)
   bool recordedSmooth;
   bool highFps;  // enhancement: in-between frames at the display's rate (Shift+F6, --high-fps)
@@ -362,9 +364,9 @@ static void updateTitle(void) {
            app.smooth && app.smoothOk ? ", smooth motion" : "",
            app.fullView && !app.plain ? (app.tallRoad ? ", full-screen view (tall road)" : ", full-screen view") : "", app.rumble ? ", rumble" : "");
   if(app.wide && app.wideOk) SDL_strlcat(title, ", widescreen", sizeof(title));
-  if(app.sideBySide && app.smoothOk) SDL_strlcat(title, ", side by side", sizeof(title));
-  if(app.ghost && app.smoothOk) SDL_strlcat(title, ", ghost car", sizeof(title));
-  if(app.autoSave && app.smoothOk) SDL_strlcat(title, ", auto-save", sizeof(title));
+  if(app.sideBySide && app.extrasOk) SDL_strlcat(title, ", side by side", sizeof(title));
+  if(app.ghost && app.ghostOk) SDL_strlcat(title, ", ghost car", sizeof(title));
+  if(app.autoSave && app.extrasOk) SDL_strlcat(title, ", auto-save", sizeof(title));
   if(app.highFps && app.smoothOk) SDL_strlcat(title, ", high frame rate", sizeof(title));
   SDL_SetWindowTitle(app.window, title);
 }
@@ -484,31 +486,31 @@ static void stopRecording(void) {
 
 // Controller rumble in races: a knock when a car bumps something ($1EF5/$1EF6 bit 7) and
 // a long light rumble when its nitro fires ($1E6C/$1E6E bit 15). Pad 1 drives the first
-// car, pad 2 the second. Top Gear 2 counts them in its C port; Top Gear 3000 has none yet.
+// car, pad 2 the second. Top Gear 2 and 3000 count them in their C ports.
 static void rumble(void) {
   static uint32_t lastIrqs;
   static uint8_t lastBump[2], lastNitro[2];
   bool inRace = tg_port_race_irqs != lastIrqs;
   lastIrqs = tg_port_race_irqs;
   const uint8_t* ram = tg_game_wram(app.game);
-  bool tg2 = app.gameId == TG_GAME_TOPGEAR2;
+  bool tg2 = app.gameId != TG_GAME_TOPGEAR;
   static uint32_t lastBumps[2], lastNitros[2];
   for(int p = 0; p < 2; p++) {
     uint8_t bump, nitro;
     bool demo;
     if(tg2) {
-      // Top Gear 2's C port counts each player's knocks and nitro bursts; $FF1A: the demo.
+      // The C ports count each player's knocks and nitro bursts; Top Gear 2's $FF1A: the demo.
       bump = tg2_rumble_bump[p] != lastBumps[p];
       nitro = tg2_rumble_nitro[p] != lastNitros[p];
       lastBumps[p] = tg2_rumble_bump[p];
       lastNitros[p] = tg2_rumble_nitro[p];
-      demo = (ram[0xFF1A] | ram[0xFF1B]) != 0;
+      demo = app.gameId == TG_GAME_TOPGEAR2 && (ram[0xFF1A] | ram[0xFF1B]) != 0;
     } else {
       bump = inRace ? ram[0x1EF5 + p] & 0x80 : 0;
       nitro = inRace ? ram[0x1E6D + 2 * p] & 0x80 : 0;
       demo = ram[0x1FF6] != 0;
     }
-    if(app.rumble && app.pads[p] && !demo && app.gameId != TG_GAME_TOPGEAR3000) {  // not in the attract demo
+    if(app.rumble && app.pads[p] && !demo) {  // not in the attract demo
       if(bump && !lastBump[p]) SDL_RumbleGamepad(app.pads[p], 0xC000, 0xFFFF, 200);
       else if(nitro && !lastNitro[p]) SDL_RumbleGamepad(app.pads[p], 0x3000, 0x8000, 800);
     }
@@ -628,9 +630,11 @@ static void runFrame(int samples) {
     if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
   } else if(app.wideOk) {
     if(margin != tg_port_wide_margin) tg_game_set_wide(app.game, margin);
-    if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
-    if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
     if(app.highFps != tg_port_interp) tg_game_set_interp(app.game, app.highFps);
+    if(app.ghost != tg_port_ghost) tg_game_set_ghost(app.game, app.ghost);
+  }
+  if(app.gameId == TG_GAME_TOPGEAR2 && app.wideOk) {
+    if(app.sideBySide != tg_port_side_by_side) tg_game_set_side_by_side(app.game, app.sideBySide);
   }
   tg2_autosave = app.autoSave && !app.replaying && app.gameId == TG_GAME_TOPGEAR2 && !app.original;
   if(app.record) {
@@ -691,7 +695,7 @@ static void runFrame(int samples) {
   tg_game_run_frame(app.game);
   app.frame++;
   // A new best race is saved straight away (not while replaying someone's recording).
-  if(app.smoothOk && tg_game_ghosts_changed(app.game) && !app.replaying && app.ghostPath[0]) tg_game_save_ghosts(app.game, app.ghostPath);
+  if(app.ghostOk && tg_game_ghosts_changed(app.game) && !app.replaying && app.ghostPath[0]) tg_game_save_ghosts(app.game, app.ghostPath);
   if(app.autoSave && !app.replaying && app.gameId == TG_GAME_TOPGEAR) {
     uint8_t open[3];
     tg_game_progress(app.game, open);
@@ -1081,8 +1085,11 @@ int main(int argc, char** argv) {
   app.original = original;
   app.gameId = rom.game;
   app.plain = original || rom.game != TG_GAME_TOPGEAR;
-  app.wideOk = !original && rom.game != TG_GAME_TOPGEAR3000;
+  app.wideOk = !original;
   app.smoothOk = app.wideOk;
+  // Top Gear 3000 has no auto-save (its cartridge keeps the game) or side by side yet.
+  app.extrasOk = app.wideOk && rom.game != TG_GAME_TOPGEAR3000;
+  app.ghostOk = app.wideOk;
   // Top Gear 3000's C port is under way: its translated routines run, the rest is the original.
   tg_game_set_port_mode(app.game, original ? TG_PORT_OFF : TG_PORT_NATIVE);
 
@@ -1099,9 +1106,9 @@ int main(int argc, char** argv) {
   char* pref = SDL_GetPrefPath("topgear-pc", "Top Gear");
   if(pref) {
     // One file per game: Top Gear 2's courses are numbered differently.
-    snprintf(app.ghostPath, sizeof(app.ghostPath), app.gameId == TG_GAME_TOPGEAR2 ? "%sghosts2.bin" : "%sghosts.bin", pref);
+    snprintf(app.ghostPath, sizeof(app.ghostPath), app.gameId == TG_GAME_TOPGEAR2 ? "%sghosts2.bin" : app.gameId == TG_GAME_TOPGEAR3000 ? "%sghosts3.bin" : "%sghosts.bin", pref);
     SDL_free(pref);
-    if(app.smoothOk) tg_game_load_ghosts(app.game, app.ghostPath);
+    if(app.ghostOk) tg_game_load_ghosts(app.game, app.ghostPath);
   }
 
   loadControls();

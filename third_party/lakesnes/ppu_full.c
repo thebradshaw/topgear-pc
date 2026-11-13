@@ -21,6 +21,7 @@
 // - Sprites move down with the ground line their object stands on (the game's sprite
 //   builder records it), so they keep their size and stay on the road.
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
@@ -40,8 +41,8 @@
 #define SKY_ROWS 40      // the most rows of scenery carried on above the view
 #define HUD_SPLIT 47     // full view: parts of the HUD centred below this row ...
 #define HUD_MOVE 116     // ... move down this far, and so do the race messages
-#define HUD_LEFT 64      // widescreen: parts of the HUD centred left of this move left ...
-#define HUD_RIGHT 160    // ... and from this one on, right
+#define HUD_LEFT ppu->hudLeft    // widescreen: parts of the HUD centred left of this move left ...
+#define HUD_RIGHT ppu->hudRight  // ... and from this one on, right (64 and 160; Top Gear 3000 100, 152)
 #define HUD_GAP 6        // HUD pixels this close together are one part (a word, the map)
 #define HUD_PARTS 4096
 
@@ -78,6 +79,7 @@ typedef struct PpuFullView {
   bool haveCur, havePrev;
   uint8_t curFlags;  // how the last race frame was composed
   int curMargin;
+  int phase, span;  // interpSpans: frames since the picture changed, and how long the last one lasted
 } PpuFullView;
 
 // The part of the PPU that decides how a line looks, apart from VRAM.
@@ -212,11 +214,12 @@ static void layoutHud(Ppu* ppu, PpuFullView* f, int first, int last, int m, bool
     int r = first + k;
     rowStart[k] = n;
     loadState(ppu, lineState(f, r));
-    f->hudH[r] = ppu->bgLayer[0].hScroll;
-    f->hudV[r] = ppu->bgLayer[0].vScroll;
-    bool on = ppu->layer[0].mainScreenEnabled, all = on;
+    int hl = ppu->hudLayer;
+    f->hudH[r] = ppu->bgLayer[hl].hScroll;
+    f->hudV[r] = ppu->bgLayer[hl].vScroll;
+    bool on = ppu->layer[hl].mainScreenEnabled, all = on;
     for(int x = 0; x < 256; x++) {
-      opaque[k][x] = on && ppu_bgOpaque(ppu, 0, x, r + 1);
+      opaque[k][x] = on && ppu_bgOpaque(ppu, hl, x, r + 1);
       all = all && opaque[k][x];
     }
     if(all && m != 0 && !full) {
@@ -553,9 +556,20 @@ static void pillarbox(Ppu* ppu) {
 
 static void composeFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m);
 
-// High frame rate: keeps this race frame's line states, and the last one's.
-static void keepFrame(PpuFullView* f, uint8_t flags, int m) {
+// High frame rate: keeps this race frame's line states, and the last one's. With
+// interpSpans, only frames where the game's picture changed count: the frames in between
+// show the same picture again.
+static void keepFrame(Ppu* ppu, PpuFullView* f, uint8_t flags, int m) {
   size_t size = SCREEN_LINES * stateSize();
+  if(ppu->interpSpans) {
+    if(!(flags & PPU_NEW_PICTURE) && f->haveCur) {
+      if(f->phase < 8) f->phase++;
+      return;
+    }
+    f->span = f->haveCur ? f->phase + 1 : 1;
+    f->phase = 0;
+    flags &= (uint8_t) ~PPU_NEW_PICTURE;
+  }
   if(f->cur == NULL) {
     f->cur = malloc(size);
     f->prev = malloc(size);
@@ -680,13 +694,14 @@ static void blendView(PpuFullView* f, int first, int last, float t) {
 // two frames. A road row's art row (vScroll + row) moves smoothly down the screen as the
 // camera drives on, so at a fixed screen row it moves a short way between frames; where it
 // jumps (a hill, the next segment's art) the nearer frame's row is kept as it is.
-static void blendLerp(PpuFullView* f, int first, int last, float t) {
+static void blendLerp(PpuFullView* f, int first, int last, float t, int hudLayer) {
   for(int y = first; y <= last; y++) {
     Ppu* b = blendRow(f, y);
     const Ppu* c = rowOf(f->cur, y);
     const Ppu* p = rowOf(f->prev, y);
     if(c->mode != p->mode) continue;
-    for(int l = 1; l < 4; l++) {
+    for(int l = 0; l < 4; l++) {
+      if(l == hudLayer) continue;  // the HUD's layer stays put
       const BgLayer* pl = &p->bgLayer[l];
       const BgLayer* cl = &c->bgLayer[l];
       int dv = wrap10(cl->vScroll - pl->vScroll);
@@ -741,11 +756,12 @@ static void moveObjects(Ppu* b, const int16_t dx[128], const int16_t dy[128]) {
 bool ppu_interpCompose(Ppu* ppu, float t) {
   PpuFullView* f = ppu->full;
   if(f == NULL || !f->haveCur || !f->havePrev || f->blend == NULL) return false;
+  if(ppu->interpSpans && f->span > 0) t = (f->phase + t) / f->span;
   if(t < 0) t = 0;
   if(t > 1) t = 1;
   memcpy(f->blend, f->cur, SCREEN_LINES * stateSize());
   if(ppu->lineDepths == NULL) {
-    blendLerp(f, 0, SCREEN_LINES - 1, t);
+    blendLerp(f, 0, SCREEN_LINES - 1, t, ppu->hudLayer);
   } else {
     blendView(f, VIEW_TOP, VIEW_LINES - 1, t);
     blendView(f, VIEW_STEP + VIEW_TOP, VIEW_STEP + VIEW_LINES - 1, t);
@@ -891,6 +907,29 @@ void ppu_fullCompose(Ppu* ppu) {
     if(m > 0) pillarbox(ppu);
     return;
   }
-  if(ppu->interp) keepFrame(f, flags, m);
+  if(ppu->interp) keepFrame(ppu, f, flags, m);
   composeFrame(ppu, f, flags, m);
+}
+
+// Debugging: each line's layer setup in the last race frame (env TG_PPU_DUMP).
+void ppu_fullDump(Ppu* ppu, FILE* out) {
+  PpuFullView* f = ppu->full;
+  if(f == NULL) return;
+  for(int y = 0; y < SCREEN_LINES; y++) {
+    const Ppu* p = asPpu(lineState(f, y));
+    fprintf(out, "%3d m%d main", y, p->mode);
+    for(int l = 0; l < 5; l++) fprintf(out, "%c", p->layer[l].mainScreenEnabled ? '0' + l : '.');
+    fprintf(out, " sub");
+    for(int l = 0; l < 5; l++) fprintf(out, "%c", p->layer[l].subScreenEnabled ? '0' + l : '.');
+    fprintf(out, " win");
+    for(int l = 0; l < 6; l++) fprintf(out, "%c", p->layer[l < 5 ? l : 4].mainScreenWindowed && l < 5 ? 'w' : '.');
+    fprintf(out, " w1 %3d-%3d w2 %3d-%3d", p->window1left, p->window1right, p->window2left, p->window2right);
+    for(int l = 0; l < 6; l++) {
+      const WindowLayer* w = &p->windowLayer[l];
+      fprintf(out, " %c%c%c%c%d", w->window1enabled ? 'A' : '-', w->window1inversed ? 'i' : '-', w->window2enabled ? 'B' : '-', w->window2inversed ? 'i' : '-', w->maskLogic);
+    }
+    fprintf(out, " clip%d pm%d", p->clipMode, p->preventMathMode);
+    for(int l = 0; l < 3; l++) fprintf(out, " bg%d %03x/%03x map%04x%c%c", l + 1, p->bgLayer[l].hScroll, p->bgLayer[l].vScroll, p->bgLayer[l].tilemapAdr, p->bgLayer[l].tilemapWider ? 'W' : '-', p->bgLayer[l].tilemapHigher ? 'H' : '-');
+    fprintf(out, "\n");
+  }
 }

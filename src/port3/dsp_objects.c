@@ -24,6 +24,35 @@ static void dsp_wait(void) {
 // Writes a word to the sprite buffer through the data bank (low RAM).
 static void buf_set(uint8_t db, uint16_t y, uint16_t v) { tg_bus_write16((uint32_t) db << 16 | (uint16_t) (0x1574 + y), v); }
 
+// Widescreen: the pieces of each object get one value in the PPU's ground table, which
+// marks them as an object's rather than the HUD's. The PPU draws higher values in front, so
+// they count down the list, which the game sends nearest first: the list's own order.
+// High frame rate: they also get the object's identity (tg3_obj_ident, set by the sender:
+// 0 for none) and its first piece's place, for the PPU to move them between pictures.
+int tg3_obj_order;
+uint16_t tg3_obj_ident;
+bool tg3_obj_ghost;  // the ghost car's pieces: drawn see-through (scenery_loop.c)
+static uint16_t g_first, g_anchor;
+static bool g_anchored;
+static void piece_line(uint16_t y, uint16_t pos) {
+  (void) y;
+  if(!g_anchored) g_anchor = pos, g_anchored = true;
+}
+static void object_lines(uint16_t end) {
+  uint16_t ident = tg3_obj_ident;
+  tg3_obj_ident = 0;
+  if(end == g_first) return;
+  for(uint16_t y = g_first; y != end && y < 0x640; y = (uint16_t) (y + 4)) {
+    uint16_t a = (0x1576 + y) & 0x1FFF;
+    tg_port_obj_grounds[a] = (int16_t) tg3_obj_order;
+    tg_port_obj_idents[a] = ident;
+    tg_port_obj_ax[a] = (int16_t) (g_anchor & 0xFF);
+    tg_port_obj_ay[a] = (int16_t) (g_anchor >> 8);
+    tg_port_obj_flags[a] = tg3_obj_ghost ? 1 : 0;  // PPU_OBJ_GHOST
+  }
+  tg3_obj_order--;
+}
+
 // One run of the shape list: each entry (three words) is sent, and the pieces the chip
 // answers with are collected until it sends 0. A zero entry ends the run. Returns false
 // when the buffer filled up (at the limit in $1A): the rest of the answer is read and
@@ -37,7 +66,9 @@ static bool send_run(TgRegs* r, uint32_t list, uint16_t* x, uint16_t* y) {
     dsp_wait();
     while(dsp_get() != 0) {
       *y = (uint16_t) (*y + 2);
-      buf_set(r->db, *y, dsp_get());
+      uint16_t pos = dsp_get();
+      buf_set(r->db, *y, pos);
+      piece_line(*y, pos);
       *y = (uint16_t) (*y + 2);
       buf_set(r->db, *y, dsp_get());
       if(*y == dp(r, 0x1A)) return false;
@@ -66,6 +97,8 @@ static void drain(void) {
 static void send_shape(TgRegs* r, uint32_t list) {
   g_dr = (uint32_t) r->db << 16 | 0x8000;
   uint16_t x = r->x, y = dp(r, 0x84);
+  g_first = y;
+  g_anchored = false;
   if(!send_run(r, list, &x, &y)) {
     drain();
     dsp_put(0);
@@ -82,6 +115,8 @@ static void send_shape(TgRegs* r, uint32_t list) {
     }
   }
   dp_set(r, 0x84, y);
+  if(tg_port_wide_margin || tg_port_interp || tg_port_ghost) object_lines(y);
+  else tg3_obj_ident = 0;
   r->x = x;
   r->y = y;
   r->a = 0;
@@ -116,6 +151,8 @@ static void send_object(TgRegs* r, uint32_t t0, uint32_t t1, uint32_t t2, uint32
   base = tg_pull16();
   r->c = false;
   r->x = adc16(r, base, tg_read16(0x860002 + i));
+  // A piece of scenery: its record in the track's list and its side offset.
+  tg3_obj_ident = (uint16_t) (0x8000 | ((dp(r, 0x1C) * 31u + dp(r, 0x20)) & 0x7FFF));
   send_shape(r, 0x7F0000);
 }
 

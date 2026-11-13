@@ -16,6 +16,7 @@ struct TgGame {
   FILE* trace;
   TgLockstep* lockstep;
   bool tg2;  // Top Gear 2
+  bool tg3;  // Top Gear 3000
 };
 
 TgGame* tg_game_create(const TgRom* rom) {
@@ -28,6 +29,12 @@ TgGame* tg_game_create(const TgRom* rom) {
   tg_port_select_game(rom->game);
   game->tg2 = rom->game == TG_GAME_TOPGEAR2;
   game->snes->ppu->hudStay = game->tg2;
+  bool tg3 = rom->game == TG_GAME_TOPGEAR3000;
+  game->snes->ppu->hudLayer = tg3 ? 2 : 0;  // Top Gear 3000's HUD is on BG3
+  game->snes->ppu->winEdge = tg3 ? 1 : 0;   // and it borders the screen with its windows
+  game->snes->ppu->hudLeft = tg3 ? 100 : 64;
+  game->snes->ppu->hudRight = tg3 ? 152 : 160;
+  game->tg3 = tg3;
   if(!snes_loadRom(game->snes, rom->data, (int) rom->size)) {
     tg_game_destroy(game);
     return NULL;
@@ -167,7 +174,8 @@ void tg_game_set_interp(TgGame* game, bool on) {
   ppu->objIdents = on ? tg_port_obj_idents : NULL;
   ppu->objAnchorXs = tg_port_obj_ax;
   ppu->objAnchorYs = tg_port_obj_ay;
-  ppu->lineDepths = on && !game->tg2 ? tg_port_line_depth : NULL;  // Top Gear 2: blended by scroll
+  ppu->lineDepths = on && !game->tg2 && !game->tg3 ? tg_port_line_depth : NULL;  // Top Gear 2 and 3000: blended by scroll
+  ppu->interpSpans = on && game->tg3;  // Top Gear 3000's pictures last two or three frames
   ppu->lineCams = tg_port_line_cam;
   updateRedraw(game);
 }
@@ -297,3 +305,5 @@ const uint8_t* tg_game_wram(const TgGame* game) {
 uint32_t tg_game_frame_count(const TgGame* game) {
   return game->snes->frames;
 }
+
+void tg_game_dump_lines(TgGame* game, FILE* out) { ppu_fullDump(game->snes->ppu, out); }

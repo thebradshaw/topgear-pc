@@ -192,7 +192,14 @@ static void feature_sound(TgRegs* r, uint16_t s, uint16_t site) {
   sound(r, s, 0, site);
 }
 
+// Controller rumble (an enhancement): the players' cars are the blocks at $0200 and $02B3.
+static void rumble(uint32_t* count) {
+  if(g_d == 0x0200) count[0]++;
+  else if(g_d == 0x02B3) count[1]++;
+}
+
 static void crash(TgRegs* r, uint16_t site) {
+  rumble(tg2_rumble_bump);
   zs(0x44, (uint16_t) (z(0x44) | 0x20));
   zs(0x1A, 5);
   r->x = w(0x1EBA);
@@ -246,6 +253,7 @@ void Tg3PlayerEngine(TgRegs* r) {
     if(z(0x4E) & 0xFF) {
       zs(0x4E, (uint16_t) (z(0x4E) - 1));
       zs(0x31, w(0x1EB6));
+      rumble(tg2_rumble_nitro);
       sound(r, 0xFF1B, 0x3C, 0xEB5A);
     } else {
       sound(r, 0xFF1C, 0, 0xEB68);
@@ -262,6 +270,7 @@ void Tg3PlayerEngine(TgRegs* r) {
     if(!(z(0x44) & 0x20)) {
       zs(0x44, (uint16_t) (z(0x44) | 0x120));
       zs(0x1A, 5);
+      rumble(tg2_rumble_bump);
       sound(r, 0xFF29, 0, 0xEBA7);
       r->x = w(0x1EBA);
       l7e_set(0x7EFADEu + r->x, l7e(0x7EFADEu + r->x) | 8);
