@@ -51,6 +51,7 @@ add_library(tgcore STATIC
   src/port3/road_pieces.c
   src/port3/engine_sound.c
   src/port3/horizon_scroll.c
+  src/port3/player_frame.c
   src/port3/objects.c
   src/port3/road.c
   src/port3/windows.c
