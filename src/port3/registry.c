@@ -34,6 +34,8 @@ void Tg3EngineSound(TgRegs* r);
 void Tg3HorizonScroll(TgRegs* r);
 void Tg3PlayerFrame(TgRegs* r);
 void Tg3CarStats(TgRegs* r);
+void Tg3CameraFollowBottom(TgRegs* r);
+void Tg3SpriteFinishBottom(TgRegs* r);
 void Tg3RoadWindowsTop(TgRegs* r);
 void Tg3RoadWindowsBottom(TgRegs* r);
 void Tg3BuildRoadTop(TgRegs* r);
@@ -51,10 +53,12 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x01FA8F, "PlayerRecord", Tg3PlayerRecord, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x01FBB1, "ObjectSegment", Tg3ObjectSegment, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02A9B7, "CameraFollow", Tg3CameraFollow, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
+  { 0x02AA7B, "CameraFollowBottom", Tg3CameraFollowBottom, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x02AB9D, "Countdown", Tg3Countdown, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x02AC52, "EngineSound", Tg3EngineSound, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x02AD2C, "RacePlaces", Tg3RacePlaces, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02AE15, "SpriteFinish", Tg3SpriteFinish, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x02AEA4, "SpriteFinishBottom", Tg3SpriteFinishBottom, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x02CBD4, "SceneryLoop", Tg3SceneryLoop, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02D934, "SendObject", Tg3SendObject, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02D988, "SendObjectFlat", Tg3SendObjectFlat, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },

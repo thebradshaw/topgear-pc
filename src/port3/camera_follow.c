@@ -57,31 +57,36 @@ static void follow(uint16_t addr, uint16_t target) {
   ws(addr, a);
 }
 
-void Tg3CameraFollow(TgRegs* r) {
+// $02:AA7B is the same for the second player's half screen, on its record ($0334-$0346);
+// it still reads the car's place from the first player's road tables, as the original does.
+static void camera_follow(TgRegs* r, uint16_t rec) {
   g_d = r->d;
   r->db = 0x7E;  // PEA $837E; PLB
-  if(neg(w(0x0281))) {
+  if(neg(w(0x0281 + rec))) {
     zs(0x18, 0xFFD0);
     zs(0x16, 0);
   } else {
-    r->y = w(0x0283);
-    r->x = w(0x0281);
+    r->y = w(0x0283 + rec);
+    r->x = w(0x0281 + rec);
     car_place(r->x, r->y);
     dput(0);
     dput((uint16_t) (z(0x16) << 1));
-    dput(w(0x0293));
+    dput(w(0x0293 + rec));
     dget();
     zs(0x16, (uint16_t) -dget());
     dput(0);
     dput((uint16_t) (z(0x18) << 1));
-    dput(w(0x0293));
+    dput(w(0x0293 + rec));
     dput(0x33);
     zs(0x18, (uint16_t) -(uint16_t) (0x33 - dget()));
   }
-  follow(0x028B, z(0x16));
-  follow(0x028D, z(0x18));
-  r->a = w(0x028D);
+  follow(0x028B + rec, z(0x16));
+  follow(0x028D + rec, z(0x18));
+  r->a = w(0x028D + rec);
   r->db = 0x83;
   r->n = true;
   r->z = false;
 }
+
+void Tg3CameraFollow(TgRegs* r) { camera_follow(r, 0); }
+void Tg3CameraFollowBottom(TgRegs* r) { camera_follow(r, 0xB3); }
