@@ -44,6 +44,39 @@ static bool neg(uint16_t v) { return (v & 0x8000) != 0; }
 // The N flag after CMP: a - b negative.
 static bool lt(uint16_t a, uint16_t b) { return neg((uint16_t) (a - b)); }
 static bool le(uint16_t a, uint16_t b) { return a == b || lt(a, b); }
+// Widescreen: the clip edges ($34/$36) as on the wider screen, where they start at its
+// edges instead of the old ones; tunnel edges are clipped by these instead and kept for
+// the window builder (tg2_tunnel_wide). Equal to $34/$36 once those leave the old edges.
+int16_t tg2_tunnel_wide[0x200];
+int16_t tg2_tunnel_wide_6c, tg2_tunnel_wide_6e;
+static int16_t g_wl, g_wr;
+// Clips that moved inside the old edges (walls and the like) hold on the wider screen too.
+static void wide_sync(void) {
+  int16_t l = (int16_t) z(0x34), r = (int16_t) z(0x36);
+  if(l > 0 && l > g_wl) g_wl = l;
+  if(r < 0x100 && r < g_wr) g_wr = r;
+}
+static int16_t wide_l(uint16_t raw) {
+  wide_sync();
+  int16_t v = (int16_t) raw;
+  if(v < g_wl) v = g_wl;
+  return g_wl = v;
+}
+static int16_t wide_r(uint16_t raw) {
+  wide_sync();
+  int16_t v = (int16_t) raw;
+  if(v > g_wr) v = g_wr;
+  return g_wr = v;
+}
+static void wide_slot(uint16_t x, int16_t left, int16_t right) {
+  tg2_tunnel_wide[(x >> 1) & 0x1FF] = left;
+  tg2_tunnel_wide[((x >> 1) + 1) & 0x1FF] = right;
+}
+static void wide_closed(void) {
+  g_wl = 0x80;
+  g_wr = 0x7F;
+}
+
 // A long read from bank $8B/$8F tables, index added across the bank.
 static uint16_t lr(uint32_t base, uint16_t i) { return rom16((base + i) & 0xFFFFFF); }
 
@@ -243,15 +276,19 @@ static void first_strip_state(void) {
     zs(0x32, a);
     zs(0x78, a);
     a = (uint16_t) (z(0xF2) - z(0x5A));
+    int16_t wl = wide_l(a);
     if(le(a, z(0x34))) a = z(0x34);
     else zs(0x34, a);
     ws((uint16_t) (0xC0C0 + x), a);
     a = (uint16_t) (z(0xF2) + z(0x5A));
+    wide_slot(x, wl, (int16_t) (wide_r(a) - 1));
     if(lt(a, z(0x36))) zs(0x36, a);
     else a = z(0x36);
     ws((uint16_t) (0xC0C2 + x), (uint16_t) (a - 1));
     zs(0x6C, 0);
     zs(0x6E, 0x00FF);
+    tg2_tunnel_wide_6c = -0x8000;
+    tg2_tunnel_wide_6e = 0x7FFF;
     zs(0x72, 0);
     zs(0x66, (uint16_t) (x + 8));
     return;
@@ -371,20 +408,24 @@ static bool strip_tunnel(void) {
     zs(0x78, a);
   }
   a = (uint16_t) (z(0xF2) - z(0x5A));
+  uint16_t raw = a;
   if(le(a, z(0x34))) {
     a = z(0x34);
   } else {
     if(!lt(a, z(0x36))) goto sides;
     zs(0x34, a);
   }
+  int16_t wl = wide_l(raw);
   ws((uint16_t) (0xC0C0 + x), a);
   a = (uint16_t) (z(0xF2) + z(0x5A));
+  raw = a;
   if(!lt(a, z(0x36))) {
     a = z(0x36);
   } else {
     if(le(a, z(0x34))) goto sides;
     zs(0x36, a);
   }
+  wide_slot(x, wl, (int16_t) (wide_r(raw) - 1));
   ws((uint16_t) (0xC0C2 + x), (uint16_t) (a - 1));
   zs(0x66, (uint16_t) (x + 8));
   return false;
@@ -395,6 +436,7 @@ sides:  // $9E26
   zs(0x38, z(0x3A));
   zs(0x34, 0x0080);
   zs(0x36, 0x007F);
+  wide_closed();
   return false;
 
 closed:  // $9D76
@@ -404,6 +446,7 @@ closed:  // $9D76
   zs(0x76, a);
   zs(0x34, 0x0080);
   zs(0x36, 0x007F);
+  wide_closed();
   m7b(0x1E);
   a = add_prod(z(0xF4));
   if(lt(a, z(0x32))) {
@@ -519,6 +562,10 @@ static void close_sides(uint16_t x) {
   zs(0x36, 0x007F);
   zs(0x6E, 0x007F);
   ws((uint16_t) (0xC0C2 + x), 0x007F);
+  wide_closed();
+  wide_slot(x, 0x80, 0x7F);
+  tg2_tunnel_wide_6c = 0x80;
+  tg2_tunnel_wide_6e = 0x7F;
 }
 
 // $9901: a tunnel entrance.
@@ -564,15 +611,18 @@ static bool tunnel_start(void) {
   zs(0x78, a);
   zs(0x6A, a);
   a = (uint16_t) (z(0xF2) - z(0x5A));
+  uint16_t raw = a;
   if(le(a, z(0x34))) {
     a = z(0x34);
   } else {
     if(!lt(a, z(0x36))) goto closed;
     zs(0x34, a);
   }
+  int16_t wl = wide_l(raw);
   zs(0x6C, a);
   ws((uint16_t) (0xC0C0 + x), a);
   a = (uint16_t) (z(0xF2) + z(0x5A));
+  raw = a;
   if(!lt(a, z(0x36))) {
     a = z(0x36);
   } else {
@@ -582,6 +632,12 @@ static bool tunnel_start(void) {
   a = (uint16_t) (a - 1);
   zs(0x6E, a);
   ws((uint16_t) (0xC0C2 + x), a);
+  {
+    int16_t wr = (int16_t) (wide_r(raw) - 1);
+    wide_slot(x, wl, wr);
+    tg2_tunnel_wide_6c = wl;
+    tg2_tunnel_wide_6e = wr;
+  }
   goto done;
 closed:
   zs(0x68, (uint16_t) (z(0x68) - 1));
@@ -845,6 +901,8 @@ static void next_strip(void) {
 
 // $0B:8578.
 void Tg2ObjectPass(TgRegs* r) {
+  g_wl = (int16_t) -tg_port_wide_margin;
+  g_wr = (int16_t) (0x100 + tg_port_wide_margin);
   uint16_t d0 = r->d;
   uint8_t db0 = r->db;
   zs(0x4C, (uint16_t) (z(0x4C) - 1));

@@ -166,6 +166,10 @@ static void updateRedraw(TgGame* game) {
   game->snes->ppu->objGrounds = on ? tg_port_obj_grounds : NULL;
   game->snes->ppu->raceFrame = on ? &tg_port_race_frame : NULL;
   game->snes->ppu->wideMargin = tg_port_wide_margin;
+  // Top Gear 2's tunnels say where their edges are on the wider screen (port2/windows.c).
+  bool winWide = game->tg2 && tg_port_wide_margin > 0;
+  game->snes->ppu->winWide = winWide ? tg_port_win_wide : NULL;
+  game->snes->ppu->winKey = winWide ? tg_port_win_key : NULL;
 }
 
 void tg_game_set_full_view(TgGame* game, bool on) {

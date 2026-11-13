@@ -77,6 +77,8 @@ Ppu* ppu_init(Snes* snes) {
   ppu->snes = snes;
   ppu->objGrounds = NULL;
   ppu->objFlags = NULL;
+  ppu->winWide = NULL;
+  ppu->winKey = NULL;
   memset(ppu->objFlag, 0, sizeof(ppu->objFlag));
   ppu->raceFrame = NULL;
   ppu->full = NULL;
@@ -184,6 +186,8 @@ void ppu_reset(Ppu* ppu) {
   ppu->window1right = 0;
   ppu->window2left = 0;
   ppu->window2right = 0;
+  ppu->window1leftW = ppu->window2leftW = -0x8000;
+  ppu->window1rightW = ppu->window2rightW = 0;
   ppu->clipMode = 0;
   ppu->preventMathMode = 0;
   ppu->addSubscreen = false;
@@ -639,7 +643,35 @@ static int ppu_getPixelForMode7(Ppu* ppu, int x, int layer, bool priority) {
   return pixel;
 }
 
+// Top Gear port: an edge for wide lines (see window1leftW).
+static int16_t ppu_wideEdge(Ppu* ppu, uint8_t val, bool left) {
+  int32_t at = ppu->snes->dmaWram;
+  if(ppu->winWide && at >= 0 && ppu->winKey[at] == (0x100 | val)) return ppu->winWide[at];
+  if(left) return val == 0 ? -0x8000 : val;
+  return val == 255 ? 0x7fff : val;
+}
+
+static bool ppu_getWindowStateWide(Ppu* ppu, int layer, int x) {
+  const WindowLayer* wl = &ppu->windowLayer[layer];
+  if(!wl->window1enabled && !wl->window2enabled) return false;
+  bool test1 = x >= ppu->window1leftW && x <= ppu->window1rightW;
+  bool test2 = x >= ppu->window2leftW && x <= ppu->window2rightW;
+  if(wl->window1inversed) test1 = !test1;
+  if(wl->window2inversed) test2 = !test2;
+  if(!wl->window2enabled) return test1;
+  if(!wl->window1enabled) return test2;
+  switch(wl->maskLogic) {
+    case 0: return test1 || test2;
+    case 1: return test1 && test2;
+    case 2: return test1 != test2;
+    case 3: return test1 == test2;
+  }
+  return false;
+}
+
 static bool ppu_getWindowState(Ppu* ppu, int layer, int x) {
+  // Wide lines with no inset (the same as below where no edge came from the port).
+  if(ppu->lineLeft < 0 && ppu->winEdge == 0 && ppu->winWide) return ppu_getWindowStateWide(ppu, layer, x);
   // Top Gear port: wide lines carry on the windows at the edges (Top Gear 3000 draws a
   // one-pixel border there with them, so it takes them from just inside).
   // The border's own columns get the same, as its HUD layer has moved out to the new edges.
@@ -1146,18 +1178,22 @@ void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val) {
     }
     case 0x26: {
       ppu->window1left = val;
+      ppu->window1leftW = ppu_wideEdge(ppu, val, true);
       break;
     }
     case 0x27: {
       ppu->window1right = val;
+      ppu->window1rightW = ppu_wideEdge(ppu, val, false);
       break;
     }
     case 0x28: {
       ppu->window2left = val;
+      ppu->window2leftW = ppu_wideEdge(ppu, val, true);
       break;
     }
     case 0x29: {
       ppu->window2right = val;
+      ppu->window2rightW = ppu_wideEdge(ppu, val, false);
       break;
     }
     case 0x2a: {

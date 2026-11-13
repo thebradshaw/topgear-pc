@@ -110,6 +110,10 @@ struct Ppu {
   uint8_t window1right;
   uint8_t window2left;
   uint8_t window2right;
+  // Top Gear port: the same edges for wide lines, which may lie past the old edges. An
+  // edge at the old screen edge carries on to the wider one, unless the game's port said
+  // where it really is (winWide, by the work RAM byte HDMA sent it from).
+  int16_t window1leftW, window1rightW, window2leftW, window2rightW;
   // color math
   uint8_t clipMode;
   uint8_t preventMathMode;
@@ -150,6 +154,8 @@ struct Ppu {
   // each line as it is drawn and redraws the screen from them at the start of vblank.
   const int16_t* objGrounds;  // by low RAM address of an OAM entry (ppu_tagObj)
   const uint8_t* objFlags;    // the same for objFlag
+  const int16_t* winWide;     // by work RAM address: a window edge's wide position, valid
+  const uint16_t* winKey;     // where winKey is $100 | the byte there
   const uint16_t* objIdents;  // the same for objIdent, objAnchorX and objAnchorY
   const int16_t* objAnchorXs;
   const int16_t* objAnchorYs;

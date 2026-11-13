@@ -352,9 +352,13 @@ static void dma_transferByte(Dma* dma, uint16_t aAdr, uint8_t aBank, uint8_t bAd
     if(validA) snes_write(dma->snes, (aBank << 16) | aAdr, val);
   } else {
     uint8_t val = validA ? snes_read(dma->snes, (aBank << 16) | aAdr) : dma->snes->openBus;
+    // Top Gear port: the work RAM byte being sent, for the PPU's widescreen windows.
+    dma->snes->dmaWram = aBank == 0x7e ? aAdr : aBank == 0x7f ? 0x10000 | aAdr :
+      (aBank < 0x40 || (aBank >= 0x80 && aBank < 0xc0)) && aAdr < 0x2000 ? aAdr : -1;
     if(bAdr == 0x04 && (dma->snes->ppu->objGrounds || dma->snes->ppu->objFlags || dma->snes->ppu->objIdents)) ppu_tagObj(dma->snes->ppu, aBank, aAdr);  // Top Gear port
     if(bAdr == 0x11 && dma->snes->ppu->lineDepths) ppu_tagLine(dma->snes->ppu, aBank, aAdr);
     if(validB) snes_writeBBus(dma->snes, bAdr, val);
+    dma->snes->dmaWram = -1;
   }
 }
 

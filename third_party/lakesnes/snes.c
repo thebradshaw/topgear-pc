@@ -36,6 +36,7 @@ Snes* snes_init(void) {
   snes->cpu = cpu_init(snes, snes_cpuRead, snes_cpuWrite, snes_cpuIdle);
   snes->apu = apu_init(snes);
   snes->apuMusic = NULL;
+  snes->dmaWram = -1;
   snes->musicSynced = false;
   snes->dma = dma_init(snes);
   snes->ppu = ppu_init(snes);

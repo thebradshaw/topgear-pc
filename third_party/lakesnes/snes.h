@@ -76,6 +76,7 @@ struct Snes {
   // lockstep checker replays these, since they depend on time rather than on the code
   void (*hdmaWriteHook)(void* ctx, uint8_t adr, uint8_t val);
   bool inHdma;
+  int32_t dmaWram; // Top Gear port: the work RAM address a DMA byte came from, or -1
 };
 
 Snes* snes_init(void);

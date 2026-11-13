@@ -197,6 +197,14 @@ extern bool tg_port_side_by_side;  // 2 players in widescreen: the views side by
 extern int tg_port_wide_margin;  // extra pixels on each side, 0 when off
 extern uint8_t tg_port_race_frame;
 extern int16_t tg_port_obj_grounds[0x2000];
+// Widescreen windows: by work RAM address, where a window edge byte the HDMA lists hold
+// would be on the wider screen (tg_port_win_key is $100 | that byte while it's valid).
+extern int16_t tg_port_win_wide[0x20000];
+extern uint16_t tg_port_win_key[0x20000];
+// Top Gear 2: a tunnel's edges as on the wider screen, from the object pass for the
+// window builder: by $C0C0 record offset / 2 (left, right - 1), and the mouth's ($6C/$6E).
+extern int16_t tg2_tunnel_wide[0x200];
+extern int16_t tg2_tunnel_wide_6c, tg2_tunnel_wide_6e;
 
 // Ghost car (ghost.c), an enhancement: the player's best race on each course, replayed as a
 // see-through car in 1-player races. The sprite builder flags the ghost's OAM entries in

@@ -8,6 +8,8 @@
 //
 // The lists are built last line first: every routine here pushes below the list's start.
 
+#include <stddef.h>
+
 #include "../port/port.h"
 
 #define DPB 0x0400u
@@ -23,14 +25,56 @@ static bool neg(uint16_t v) { return (v & 0x8000) != 0; }
 static bool lt(uint16_t a, uint16_t b) { return neg((uint16_t) (a - b)); }
 static bool le(uint16_t a, uint16_t b) { return a == b || lt(a, b); }
 
-// An edge pair for the lines above: two words pushed below $9C.
-static void pair(uint16_t first, uint16_t second) {
+// Widescreen: where window edge bytes in the lists would be on the wider screen
+// (tg_port_win_wide). Each build forgets what the build four before it marked, so a byte
+// the lists no longer use (or a wall's line pairs, written elsewhere) never keeps a mark.
+int16_t tg_port_win_wide[0x20000];
+uint16_t tg_port_win_key[0x20000];
+#define MARKS 128
+static uint16_t g_marks[4][MARKS];
+static int g_markCount[4], g_build;
+
+static void forget_old_marks(void) {
+  g_build = (g_build + 1) & 3;
+  for(int i = 0; i < g_markCount[g_build]; i++) tg_port_win_key[g_marks[g_build][i]] = 0;
+  g_markCount[g_build] = 0;
+}
+
+// The byte at adr (bank $7E) is a window edge at `wide` on the wider screen.
+static void mark(uint16_t adr, int16_t wide) {
+  if(g_markCount[g_build] == MARKS) return;
+  g_marks[g_build][g_markCount[g_build]++] = adr;
+  tg_port_win_wide[adr] = wide;
+  tg_port_win_key[adr] = (uint16_t) (0x100 | g_ram[adr]);
+}
+
+// An edge pair for the lines above: two words pushed below $9C. With widescreen on, wf
+// and wsec (left, right) say where first's and second's edges are on the wider screen.
+static void pair_wide(uint16_t first, uint16_t second, const int16_t* wf, const int16_t* wsec) {
   uint16_t x = z(0x9C);
   x = (uint16_t) (x - 2);
   ws(x, first);
+  if(tg_port_wide_margin) {
+    tg_port_win_key[x] = tg_port_win_key[(uint16_t) (x + 1)] = 0;
+    if(wf) {
+      mark(x, wf[0]);
+      mark((uint16_t) (x + 1), wf[1]);
+    }
+  }
   x = (uint16_t) (x - 2);
   ws(x, second);
+  if(tg_port_wide_margin) {
+    tg_port_win_key[x] = tg_port_win_key[(uint16_t) (x + 1)] = 0;
+    if(wsec) {
+      mark(x, wsec[0]);
+      mark((uint16_t) (x + 1), wsec[1]);
+    }
+  }
   zs(0x9C, x);
+}
+
+static void pair(uint16_t first, uint16_t second) {
+  pair_wide(first, second, NULL, NULL);
 }
 
 // An HDMA entry of `lines` scanlines using the pair at $9C. More than $7F lines takes two
@@ -124,6 +168,9 @@ void Tg2WindowsNone(TgRegs* r) {
 // edges strip by strip ($64 strips from the span records at $C0C0, eight bytes each), then
 // the fixed bands below ($74, $70, $6A, $78) down to the view's height ($30).
 void Tg2WindowsTunnel(TgRegs* r) {
+  // On the wider screen: the strip's edges ($A0) and the mouth's ($9E).
+  int16_t wa0[2] = { tg2_tunnel_wide[0], tg2_tunnel_wide[1] };
+  const int16_t w9e[2] = { tg2_tunnel_wide_6c, tg2_tunnel_wide_6e };
   zs(0xC8, w(0x0114));
   zs(0x9E, (uint16_t) (zb(0x6C) | zb(0x6E) << 8));
   zs(0xA0, (uint16_t) (g_ram[0xC0C0] | g_ram[0xC0C2] << 8));
@@ -137,18 +184,20 @@ void Tg2WindowsTunnel(TgRegs* r) {
     zs(0x66, (uint16_t) (z(0x66) + 8));
     uint16_t x = z(0x66);
     if(span_to(w((uint16_t) (0xC0C4 + x)))) {
-      pair(z(0xA0), z(0x9E));
+      pair_wide(z(0xA0), z(0x9E), wa0, w9e);
       entry(z(0xB2));
     }
     zs(0xA0, (uint16_t) (g_ram[(uint16_t) (0xC0C0 + x)] | g_ram[(uint16_t) (0xC0C2 + x)] << 8));
+    wa0[0] = tg2_tunnel_wide[(x >> 1) & 0x1FF];
+    wa0[1] = tg2_tunnel_wide[((x >> 1) + 1) & 0x1FF];
     zs(0x64, (uint16_t) (z(0x64) - 1));
   }
   if(span_to(z(0x74))) {
-    pair(z(0xA0), z(0x9E));
+    pair_wide(z(0xA0), z(0x9E), wa0, w9e);
     entry(z(0xB2));
   }
   if(span_to(z(0x70))) {
-    pair(0x00FF, z(0x9E));
+    pair_wide(0x00FF, z(0x9E), NULL, w9e);
     entry(z(0xB2));
   }
   if(span_to(z(0x6A))) {
@@ -782,6 +831,7 @@ void Tg2WindowsRoadBoth(TgRegs* r) {
 
 // $0E:8B40: the builder for what the object pass saw ($52).
 void Tg2Windows(TgRegs* r) {
+  if(tg_port_wide_margin) forget_old_marks();
   switch(z(0x52)) {
     case 1: Tg2WindowsTunnel(r); break;
     case 2: Tg2WindowsWall(r); break;

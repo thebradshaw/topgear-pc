@@ -584,18 +584,73 @@ static SDL_Texture* startTexture(void) {
   return tex;
 }
 
+// The header is a little race scene in the colours of each game's first course: Top Gear's
+// green hills and red-and-white kerbs, Top Gear 2's desert sunset in Australia, and Top Gear
+// 3000's pale sky and snowy mountain over green fields.
+typedef struct {
+  Rgb skyTop, skyBottom, hills, hillsLow, groundA, groundB, roadA, roadB, kerbA, kerbB, line;
+  float hillHeight;
+  int shape;  // 0 rolling hills, 1 a snowy mountain, 2 a flat-topped rock (Uluru)
+} Scene;
+
+static const Scene kScenes[TG_GAME_COUNT] = {
+  {{0, 165, 247}, {0, 189, 255}, {123, 123, 0}, {107, 107, 0}, {0, 90, 0}, {0, 115, 0},
+   {66, 82, 82}, {41, 66, 66}, {181, 16, 16}, {206, 206, 206}, {255, 255, 255}, 12, 0},
+  {{90, 57, 90}, {239, 148, 115}, {173, 66, 33}, {123, 49, 33}, {189, 123, 90}, {222, 156, 123},
+   {156, 165, 173}, {140, 148, 156}, {24, 24, 255}, {222, 222, 230}, {255, 255, 255}, 13, 2},
+  {{132, 156, 231}, {189, 198, 247}, {222, 231, 255}, {82, 107, 107}, {49, 115, 82}, {66, 132, 99},
+   {74, 82, 90}, {66, 74, 82}, {189, 198, 247}, {231, 231, 255}, {255, 255, 255}, 26, 1},
+};
+
+static Rgb mix(Rgb a, Rgb b, float f) {
+  return (Rgb) {(Uint8) (a.r + (b.r - a.r) * f), (Uint8) (a.g + (b.g - a.g) * f), (Uint8) (a.b + (b.b - a.b) * f)};
+}
+
 static void drawRoad(Uint64 t) {
-  // A little road running to the horizon in the header, its stripes scrolling like a race.
+  const Scene* sc = &kScenes[L.game];
   const float cx = 700, top = 30, rows = 56;
+  // Sky down to the horizon.
+  for(int y = 0; y < top; y++) fill(0, (float) y, VIEW_W, 1, mix(sc->skyTop, sc->skyBottom, y / (top - 1)), 255);
+  // Hills, the mountain or the rock along the horizon.
+  for(int x = 0; x < VIEW_W; x += 4) {
+    float low = 3 + 2 * SDL_sinf(x * 0.021f) + 1.5f * SDL_sinf(x * 0.067f);
+    if(sc->shape == 0) {
+      float h = sc->hillHeight * (0.55f + 0.3f * SDL_sinf(x * 0.009f) + 0.15f * SDL_sinf(x * 0.031f));
+      fill((float) x, top - h, 4, h, sc->hills, 255);
+      fill((float) x, top - h * 0.35f, 4, h * 0.35f, sc->hillsLow, 255);
+    } else if(sc->shape == 1) {
+      float d = SDL_fabsf(x - 1010.0f) / 230.0f;
+      float h = SDL_max(d < 1 ? sc->hillHeight * (1 - d * d * 0.4f - d * 0.6f) : 0, low + 2);
+      float snow = SDL_max(0.0f, h - 10);
+      fill((float) x, top - h, 4, h, sc->hillsLow, 255);
+      if(snow > 0) fill((float) x, top - h, 4, snow, sc->hills, 255);
+    } else {
+      // A long low rock with rounded ends, red in the sunset.
+      float d = SDL_fabsf(x - 1000.0f) / 150.0f;
+      float h = d < 1 ? sc->hillHeight * SDL_sqrtf(1 - SDL_powf(d, 6)) : 0;
+      fill((float) x, top - low * 0.5f, 4, low * 0.5f, sc->hillsLow, 255);
+      if(h > 0) {
+        fill((float) x, top - h, 4, h, sc->hills, 255);
+        fill((float) x, top - h * 0.3f, 4, h * 0.3f, sc->hillsLow, 255);
+      }
+    }
+  }
+  // The ground and the road, their bands scrolling towards you like a race.
   for(int y = 0; y < rows; y++) {
     float z = (y + 1) / rows;  // nearer towards the bottom
     float half = 6 + z * z * 260;
     int band = (int) (1.0f / (z + 0.05f) * 3 - (float) t / 90.0f) & 1;
     float edge = 1 + 5 * z;
-    fill(cx - half, top + y, half * 2, 1, band ? (Rgb) {58, 62, 80} : (Rgb) {48, 52, 68}, 255);
-    fill(cx - half - edge, top + y, edge, 1, band ? kAccent : kText, 255);
-    fill(cx + half, top + y, edge, 1, band ? kAccent : kText, 255);
-    if(band) fill(cx - edge / 2, top + y, edge, 1, kAccent2, 255);
+    fill(0, top + y, VIEW_W, 1, band ? sc->groundA : sc->groundB, 255);
+    fill(cx - half, top + y, half * 2, 1, band ? sc->roadA : sc->roadB, 255);
+    fill(cx - half - edge, top + y, edge, 1, band ? sc->kerbA : sc->kerbB, 255);
+    fill(cx + half, top + y, edge, 1, band ? sc->kerbA : sc->kerbB, 255);
+    if(band) fill(cx - edge / 2, top + y, edge, 1, sc->line, 255);
+  }
+  // The scene fades into the dark behind the logo, so the logo stands out.
+  for(int x = 0; x < LEFT_X + LEFT_W + 220; x += 4) {
+    float f = x < LEFT_X + LEFT_W - 60 ? 1 : 1 - (x - (LEFT_X + LEFT_W - 60)) / 280.0f;
+    fill((float) x, 0, 4, 86, kBg, (Uint8) (225 * f * f));
   }
 }
 
@@ -624,7 +679,7 @@ static void draw(void) {
   color(kBg, 255);
   SDL_RenderClear(L.renderer);
   // Header
-  for(int y = 0; y < 86; y++) fill(0, (float) y, VIEW_W, 1, (Rgb) {(Uint8) (20 + y / 4), (Uint8) (22 + y / 6), (Uint8) (36 + y / 3)}, 255);
+  drawRoad(t);
   SDL_Texture* logo = L.logo[L.game] ? L.logo[L.game] : L.logo[TG_GAME_TOPGEAR];
   if(logo) {
     // At most 78 high and 440 wide (the sequels' logos are long), centred in the header.
@@ -637,7 +692,6 @@ static void draw(void) {
   } else {
     text(LEFT_X, 22, 5, kAccent, "TOP GEAR");
   }
-  drawRoad(t);
   fill(0, 86, VIEW_W, 2, kAccent, 255);
 
   // The games, one tab each, with a light that shows which are ready to play.
