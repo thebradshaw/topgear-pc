@@ -54,6 +54,12 @@ add_library(tgcore STATIC
   src/port3/player_frame.c
   src/port3/car_stats.c
   src/port3/text.c
+  src/port3/oam_pack.c
+  src/port3/setup_headings.c
+  src/port3/shop_row.c
+  src/port3/starfield.c
+  src/port3/title_sprites.c
+  src/port3/title_text.c
   src/port3/objects.c
   src/port3/road.c
   src/port3/windows.c

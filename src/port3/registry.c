@@ -4,6 +4,17 @@
 
 void Tg3DrawText(TgRegs* r);
 void Tg3DrawTextCentred(TgRegs* r);
+void Tg3ListRow(TgRegs* r);
+void Tg3TitleSprites(TgRegs* r);
+void Tg3TitleChar(TgRegs* r);
+void Tg3TitleLine(TgRegs* r);
+void Tg3TitleClearObjects(TgRegs* r);
+void Tg3TitleCursor(TgRegs* r);
+void Tg3Starfield(TgRegs* r);
+void Tg3SetupHeadings(TgRegs* r);
+void Tg3SetupBar(TgRegs* r);
+void Tg3PackSprites(TgRegs* r);
+void Tg3PackSpritesMenu(TgRegs* r);
 void Tg3DrawBar(TgRegs* r);
 void Tg3RoadWindows(TgRegs* r);
 void Tg3CarsTurn(TgRegs* r);
@@ -54,6 +65,12 @@ void Tg3BuildRoadCarBottom(TgRegs* r);
 const TgPortFunc tg3_port_funcs[] = {
   { 0x00841A, "DrawText", Tg3DrawText, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x0084BE, "DrawTextCentred", Tg3DrawTextCentred, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x00B2F2, "ListRow", Tg3ListRow, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x00C35E, "SetupHeadings", Tg3SetupHeadings, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x00C475, "SetupBar", Tg3SetupBar, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x00F950, "Starfield", Tg3Starfield, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0180F6, "PackSpritesMenu", Tg3PackSpritesMenu, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x018101, "PackSprites", Tg3PackSprites, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x018487, "DrawBar", Tg3DrawBar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x018564, "RoadWindows", Tg3RoadWindows, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x01DBAC, "RoadWindowsTop", Tg3RoadWindowsTop, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
@@ -100,5 +117,10 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x05B3D7, "BuildRoadCar", Tg3BuildRoadCar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x05B828, "BuildRoad", Tg3BuildRoad, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x05BC20, "RoadHdmaTables", Tg3RoadHdmaTables, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
+  { 0x0A8E1B, "TitleSprites", Tg3TitleSprites, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
+  { 0x0AA216, "TitleCursor", Tg3TitleCursor, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0AA47E, "TitleClearObjects", Tg3TitleClearObjects, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0AB6AA, "TitleLine", Tg3TitleLine, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0AB83C, "TitleChar", Tg3TitleChar, TG_CALL_JSR, TG_MX_A8_I16, TG_MX_ANY, 0 },
 };
 const int tg3_port_func_count = sizeof(tg3_port_funcs) / sizeof(tg3_port_funcs[0]);
