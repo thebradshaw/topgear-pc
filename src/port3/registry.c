@@ -2,6 +2,8 @@
 
 #include "../port/port.h"
 
+void Tg3DrawText(TgRegs* r);
+void Tg3DrawTextCentred(TgRegs* r);
 void Tg3DrawBar(TgRegs* r);
 void Tg3RoadWindows(TgRegs* r);
 void Tg3CarsTurn(TgRegs* r);
@@ -50,6 +52,8 @@ void Tg3BuildRoadCarTop(TgRegs* r);
 void Tg3BuildRoadCarBottom(TgRegs* r);
 
 const TgPortFunc tg3_port_funcs[] = {
+  { 0x00841A, "DrawText", Tg3DrawText, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x0084BE, "DrawTextCentred", Tg3DrawTextCentred, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x018487, "DrawBar", Tg3DrawBar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x018564, "RoadWindows", Tg3RoadWindows, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x01DBAC, "RoadWindowsTop", Tg3RoadWindowsTop, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
