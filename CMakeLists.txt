@@ -42,6 +42,7 @@ add_library(tgcore STATIC
   src/port3/road.c
   src/port3/windows.c
   src/port3/scenery.c
+  src/port3/positions.c
   src/port2/video.c
   src/port2/road.c
   src/port2/objects.c
