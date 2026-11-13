@@ -37,7 +37,9 @@ static bool isDsp(uint32_t adr) {
 }
 
 uint8_t tg_bus_read8(uint32_t adr) {
-  if(isDsp(adr)) snes_dspSync(g_snes, true);
+  // The data register waits for the chip's output; the status register only for its
+  // request bit (a command may answer nothing).
+  if(isDsp(adr)) snes_dspSync(g_snes, (adr & 0xffff) < 0xc000);
   return snes_read(g_snes, adr);
 }
 
