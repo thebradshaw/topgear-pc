@@ -49,6 +49,7 @@ add_library(tgcore STATIC
   src/port3/countdown.c
   src/port3/player_record.c
   src/port3/road_pieces.c
+  src/port3/engine_sound.c
   src/port3/objects.c
   src/port3/road.c
   src/port3/windows.c
