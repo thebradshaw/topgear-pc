@@ -28,7 +28,16 @@ void tg_port_bind(Snes* snes, const uint8_t* rom) {
   g_rom = rom;
 }
 
+// Top Gear 3000's DSP-4 (banks 30-3F, $8000-$FFFF). Translated code takes no time, so
+// before each transfer the chip runs on until it is ready, as the original's own timing
+// (or its polling of the status register) gave it time to be.
+static bool isDsp(uint32_t adr) {
+  uint8_t bank = (uint8_t) ((adr >> 16) & 0x7f);
+  return bank >= 0x30 && bank < 0x40 && (adr & 0xffff) >= 0x8000;
+}
+
 uint8_t tg_bus_read8(uint32_t adr) {
+  if(isDsp(adr)) snes_dspSync(g_snes);
   return snes_read(g_snes, adr);
 }
 
@@ -46,6 +55,7 @@ uint8_t tg_apu_read8(uint32_t adr) {
 }
 
 void tg_bus_write8(uint32_t adr, uint8_t val) {
+  if(isDsp(adr)) snes_dspSync(g_snes);
   snes_write(g_snes, adr, val);
   // On the SNES a DMA starts right after the write that enables it, and the CPU waits for
   // it; translated code runs without CPU cycles, so the transfer happens here.

@@ -1,0 +1,35 @@
+# Top Gear 3000: 1 Player Full from the title menu (B), Race, through the track description and
+# the shop (down to the exit), then the first race holding X to accelerate, no steering.
+# The intro can't be skipped; the title menu takes B, not START.
+# Runs emulated: tg_headless --rom "Top Gear 3000 (USA).sfc" --dsp dsp4.bin --port off --input <this file> --frames 14000
+3100 1 B
+3110 1 -
+3200 1 DOWN
+3210 1 -
+3260 1 B
+3270 1 -
+3500 1 DOWN
+3510 1 -
+3540 1 DOWN
+3550 1 -
+3580 1 DOWN
+3590 1 -
+3620 1 B
+3630 1 -
+3900 1 B
+3910 1 -
+4200 1 DOWN
+4208 1 -
+4230 1 DOWN
+4238 1 -
+4260 1 DOWN
+4268 1 -
+4290 1 DOWN
+4298 1 -
+4320 1 DOWN
+4328 1 -
+4350 1 DOWN
+4358 1 -
+4410 1 B
+4418 1 -
+5300 1 X

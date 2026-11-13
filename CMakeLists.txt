@@ -36,6 +36,8 @@ add_library(tgcore STATIC
   src/lockstep.c
   src/port/port.c
   src/port2/registry.c
+  src/port3/registry.c
+  src/port3/dsp_objects.c
   src/port2/video.c
   src/port2/road.c
   src/port2/objects.c
@@ -243,4 +245,13 @@ if(TG2_TEST_ROM)
     add_test(NAME tg2_${name} COMMAND tg_headless --rom ${TG2_TEST_ROM} --port verify --frames ${frames}
       --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear2/${name}.txt --expect-wram ${wram} --expect-frame ${frame})
   endforeach()
+endif()
+set(TG3_TEST_ROM "" CACHE FILEPATH "Your Top Gear 3000 (USA) ROM, for its tests")
+set(TG3_TEST_DSP "" CACHE FILEPATH "The DSP-4 firmware (dsp4.bin, 8192 bytes), for Top Gear 3000's tests")
+if(TG3_TEST_ROM AND TG3_TEST_DSP)
+  # Top Gear 3000's first race with every translated routine checked against the original.
+  add_test(NAME tg3_first_race COMMAND tg_headless --rom ${TG3_TEST_ROM} --dsp ${TG3_TEST_DSP} --port verify
+    --frames 14000 --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear3000/first_race.txt
+    --expect-wram 9532323d9d1398fb45e4c5cf2763b6eed0858182478e9d697dfffa95ab2cfe89
+    --expect-frame d5819bc7d7770765068a21cf8db6554e8c0f524b4912187f4242b263e5ed20e0)
 endif()

@@ -135,6 +135,8 @@ void tg_port_select_game(int game);
 // Top Gear 2's routines (src/port2/registry.c).
 extern const TgPortFunc tg2_port_funcs[];
 extern const int tg2_port_func_count;
+extern const TgPortFunc tg3_port_funcs[];  // Top Gear 3000 (src/port3)
+extern const int tg3_port_func_count;
 
 // 128 KiB of work RAM, $7E:0000-$7F:FFFF. Low RAM ($0000-$1FFF in banks $00-$3F) is its
 // first 8 KiB.

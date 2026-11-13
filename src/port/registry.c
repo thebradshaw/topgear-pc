@@ -287,6 +287,9 @@ void tg_port_select_game(int game) {
   if(game == 1) {
     tg_port_funcs = tg2_port_funcs;
     tg_port_func_count = tg2_port_func_count;
+  } else if(game == 2) {
+    tg_port_funcs = tg3_port_funcs;
+    tg_port_func_count = tg3_port_func_count;
   } else {
     tg_port_funcs = kTopGearFuncs;
     tg_port_func_count = sizeof(kTopGearFuncs) / sizeof(kTopGearFuncs[0]);

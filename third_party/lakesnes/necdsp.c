@@ -214,6 +214,14 @@ void necdsp_catchUp(NecDsp* dsp, uint64_t masterCycles) {
   }
 }
 
+void necdsp_runUntilReady(NecDsp* dsp, uint64_t masterCycles) {
+  necdsp_catchUp(dsp, masterCycles);
+  // A routine translated to C takes no time, and neither do these steps: the chip runs on
+  // until it asks for the next word, and stays on the machine's clock (were it ahead,
+  // original code talking to it next would find it not listening yet).
+  for(int n = 0; !(dsp->sr & SR_RQM) && n < 1000000; n++) step(dsp);
+}
+
 uint8_t necdsp_readSr(NecDsp* d) { return (uint8_t) (d->sr >> 8); }
 
 uint8_t necdsp_readDr(NecDsp* d) {

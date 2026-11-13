@@ -65,6 +65,18 @@ bool cart_handleTypeState(Cart* cart, StateHandler* sh) {
 
 void cart_handleState(Cart* cart, StateHandler* sh) {
   if(cart->ram != NULL) sh_handleByteArray(sh, cart->ram, cart->ramSize);
+  if(cart->dsp != NULL) {
+    // The DSP chip's working state (its firmware stays as loaded).
+    NecDsp* d = cart->dsp;
+    sh_handleWordArray(sh, d->dataRam, 256);
+    sh_handleWordArray(sh, d->stack, 4);
+    sh_handleWords(sh, &d->pc, &d->rp, &d->a, &d->b, &d->tr, &d->trb, &d->dr, &d->sr, &d->si, &d->so,
+      &d->k, &d->l, &d->m, &d->n, NULL);
+    sh_handleBytes(sh, &d->dp, &d->sp, NULL);
+    sh_handleBools(sh, &d->fa.ov0, &d->fa.ov1, &d->fa.z, &d->fa.c, &d->fa.s0, &d->fa.s1,
+      &d->fb.ov0, &d->fb.ov1, &d->fb.z, &d->fb.c, &d->fb.s0, &d->fb.s1, NULL);
+    sh_handleLongLongs(sh, &d->cycles, NULL);
+  }
 }
 
 void cart_load(Cart* cart, int type, uint8_t* rom, int romSize, int ramSize) {

@@ -119,10 +119,11 @@ static bool findRom(const char* romArg, TgRom* rom, char* message, size_t messag
   return false;
 }
 
-// Top Gear 3000's DSP-4 firmware: dsp4.bin next to the ROM given, or next to the program.
-static bool loadDspFirmware(const char* romArg) {
-  char paths[2][2048];
+// Top Gear 3000's DSP-4 firmware: the file given with --dsp, else dsp4.bin next to the ROM given, or next to the program.
+static bool loadDspFirmware(const char* romArg, const char* dspArg) {
+  char paths[3][2048];
   int n = 0;
+  if(dspArg) snprintf(paths[n++], sizeof(paths[0]), "%s", dspArg);
   if(romArg) {
     const char* slash = strrchr(romArg, '/');
     const char* back = strrchr(romArg, '\\');
@@ -1026,6 +1027,7 @@ int main(int argc, char** argv) {
   }
   const char* romArg = NULL;
   const char* replayPath = NULL;
+  const char* dspArg = NULL;
   bool record = true;
   bool original = false;
   for(int i = 1; i < argc; i++) {
@@ -1051,6 +1053,7 @@ int main(int argc, char** argv) {
       for(int f = 0; f < FILTER_COUNT; f++) if(strcmp(argv[i], filterNames[f]) == 0) app.filter = f;
     }
     else if(strcmp(argv[i], "--replay") == 0 && i + 1 < argc) replayPath = argv[++i];
+    else if(strcmp(argv[i], "--dsp") == 0 && i + 1 < argc) dspArg = argv[++i];
     else romArg = argv[i];
   }
 
@@ -1066,7 +1069,7 @@ int main(int argc, char** argv) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear", "Failed to start the game.", NULL);
     return 1;
   }
-  if(rom.game == TG_GAME_TOPGEAR3000 && !loadDspFirmware(romArg)) {
+  if(rom.game == TG_GAME_TOPGEAR3000 && !loadDspFirmware(romArg, dspArg)) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Top Gear 3000",
       "Top Gear 3000 needs the DSP-4 chip's firmware too.\n\n"
       "Put it next to topgear.exe (or next to the ROM) named \"dsp4.bin\" (8192 bytes).", NULL);
@@ -1080,8 +1083,8 @@ int main(int argc, char** argv) {
   app.plain = original || rom.game != TG_GAME_TOPGEAR;
   app.wideOk = !original && rom.game != TG_GAME_TOPGEAR3000;
   app.smoothOk = app.wideOk;
-  // Top Gear 3000 has no C port yet, so it always runs the game's own code.
-  tg_game_set_port_mode(app.game, original || rom.game == TG_GAME_TOPGEAR3000 ? TG_PORT_OFF : TG_PORT_NATIVE);
+  // Top Gear 3000's C port is under way: its translated routines run, the rest is the original.
+  tg_game_set_port_mode(app.game, original ? TG_PORT_OFF : TG_PORT_NATIVE);
 
   if(replayPath) {
     if(!tg_input_script_load(replayPath, &app.replay, message, sizeof(message))) {

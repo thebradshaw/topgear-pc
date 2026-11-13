@@ -290,6 +290,10 @@ static void readHeader(const uint8_t* data, int length, int location, CartHeader
   header->score = score;
 }
 
+void snes_dspSync(Snes* snes) {
+  if(snes->cart->dsp) necdsp_runUntilReady(snes->cart->dsp, snes->cycles);
+}
+
 bool snes_setDspFirmware(Snes* snes, const uint8_t* data, int size) {
   NecDsp* dsp = malloc(sizeof(NecDsp));
   if(dsp == NULL || !necdsp_load(dsp, data, size)) {

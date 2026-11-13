@@ -30,6 +30,9 @@ bool necdsp_load(NecDsp* dsp, const uint8_t* data, int size);
 void necdsp_reset(NecDsp* dsp);
 // Runs the chip up to the given SNES master cycle count.
 void necdsp_catchUp(NecDsp* dsp, uint64_t masterCycles);
+// For code translated to C, which takes no time: catches up, then runs the chip on until
+// it is ready for the next transfer (its RQM status bit).
+void necdsp_runUntilReady(NecDsp* dsp, uint64_t masterCycles);
 uint8_t necdsp_readDr(NecDsp* dsp);
 uint8_t necdsp_readSr(NecDsp* dsp);
 void necdsp_writeDr(NecDsp* dsp, uint8_t val);

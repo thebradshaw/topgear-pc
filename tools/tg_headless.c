@@ -161,10 +161,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  if(rom.game == TG_GAME_TOPGEAR3000 && (portMode != TG_PORT_OFF || nativeFrom >= 0)) {
-    fprintf(stderr, "%s runs emulated only: use --port off\n", tg_games[rom.game].name);
-    return 2;
-  }
   TgGame* game = tg_game_create(&rom);
 
   g_game = game;
