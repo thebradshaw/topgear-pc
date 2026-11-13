@@ -33,6 +33,7 @@ void Tg3RoadPieces(TgRegs* r);
 void Tg3EngineSound(TgRegs* r);
 void Tg3HorizonScroll(TgRegs* r);
 void Tg3PlayerFrame(TgRegs* r);
+void Tg3CarStats(TgRegs* r);
 
 const TgPortFunc tg3_port_funcs[] = {
   { 0x018487, "DrawBar", Tg3DrawBar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
@@ -59,6 +60,7 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x038989, "HorizonScroll", Tg3HorizonScroll, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x03E241, "PlayerFrame", Tg3PlayerFrame, TG_CALL_JSL, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x03E2D7, "PlayerSetup", Tg3PlayerSetup, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x03EA9B, "CarStats", Tg3CarStats, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x03EAC6, "PlayerEngine", Tg3PlayerEngine, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x03F7F9, "TrackPosition", Tg3TrackPosition, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x059147, "TileScroll", Tg3TileScroll, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
