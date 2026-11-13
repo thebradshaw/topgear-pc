@@ -22,6 +22,7 @@ typedef struct NecDsp {
   uint16_t a, b, tr, trb, dr, sr, si, so, k, l, m, n;
   NecDspFlags fa, fb;
   uint64_t cycles;  // SNES master cycles the chip has caught up to
+  uint64_t frac;    // and the part of one past that, in 1/DSP_HZ of a master cycle
   bool drOut;  // the chip has put a word in DR that the CPU hasn't finished reading
 } NecDsp;
 

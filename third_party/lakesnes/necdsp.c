@@ -6,8 +6,12 @@
 
 enum { SR_RQM = 0x8000, SR_DRS = 0x1000, SR_DRC = 0x0400 };
 
-// The chip runs at 7.6 MHz, one instruction per cycle; the SNES master clock is 21.477 MHz.
-#define MASTER_PER_INSN 3
+// The chip runs at 7.6 MHz, one instruction per cycle; the SNES master clock is 21.477 MHz,
+// so an instruction takes 2.826 master cycles. (Rounding that to 3 made the chip too slow:
+// Top Gear 3000's player car code writes the next word only a few instructions after a
+// command, and a slower chip lost it.)
+#define DSP_HZ 7600000ull
+#define MASTER_HZ 21477273ull
 
 bool necdsp_load(NecDsp* dsp, const uint8_t* data, int size) {
   if(size != 8192) return false;
@@ -209,10 +213,14 @@ static void step(NecDsp* d) {
 void necdsp_catchUp(NecDsp* dsp, uint64_t masterCycles) {
   // Never more than a frame behind (after a long gap the chip is idle waiting anyway).
   if(masterCycles > dsp->cycles + 400000) dsp->cycles = masterCycles - 400000;
-  while(dsp->cycles + MASTER_PER_INSN <= masterCycles) {
+  if(masterCycles <= dsp->cycles) return;
+  uint64_t have = (masterCycles - dsp->cycles) * DSP_HZ;
+  while(dsp->frac + MASTER_HZ <= have) {
     step(dsp);
-    dsp->cycles += MASTER_PER_INSN;
+    dsp->frac += MASTER_HZ;
   }
+  dsp->cycles += dsp->frac / DSP_HZ;
+  dsp->frac %= DSP_HZ;
 }
 
 void necdsp_runUntilReady(NecDsp* dsp, uint64_t masterCycles, bool forRead) {

@@ -39,6 +39,7 @@ void cart_reset(Cart* cart) {
   if(cart->dsp) {
     necdsp_reset(cart->dsp);
     cart->dsp->cycles = cart->snes->cycles;
+    cart->dsp->frac = 0;
   }
 }
 
@@ -75,7 +76,7 @@ void cart_handleState(Cart* cart, StateHandler* sh) {
     sh_handleBytes(sh, &d->dp, &d->sp, NULL);
     sh_handleBools(sh, &d->drOut, &d->fa.ov0, &d->fa.ov1, &d->fa.z, &d->fa.c, &d->fa.s0, &d->fa.s1,
       &d->fb.ov0, &d->fb.ov1, &d->fb.z, &d->fb.c, &d->fb.s0, &d->fb.s1, NULL);
-    sh_handleLongLongs(sh, &d->cycles, NULL);
+    sh_handleLongLongs(sh, &d->cycles, &d->frac, NULL);
   }
 }
 

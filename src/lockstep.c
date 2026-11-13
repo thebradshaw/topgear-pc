@@ -617,7 +617,9 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   extern int necdsp_trace;
   static int traced;
   const char* tr = getenv("TG_DSP_TRACE");
-  necdsp_trace = tr && strcmp(tr, f->name) == 0 && traced++ == 0;
+  const char* trFrame = getenv("TG_DSP_TRACE_FRAME");  // the first call from this frame on
+  necdsp_trace = tr && strcmp(tr, f->name) == 0 && (!trFrame || snes->frames >= (uint32_t) atoi(trFrame)) &&
+    traced++ == 0;
   if(necdsp_trace) fprintf(stderr, "=== original\n");
   ls->stateSize = snes_saveState(snes, ls->state);
   ls->stateInts = cpu->interrupts;
@@ -652,7 +654,9 @@ bool tg_lockstep_on_opcode(TgLockstep* ls, Cpu* cpu) {
   }
   ls->inOriginal = false;
   ls->logTarget = NULL;
-  if(!(cpu->sp == retSp && cpu->pc == retPc && cpu->k == retK)) {
+  // (Returning just as the next vblank starts counts too: the frontend, waiting for the
+  // end of this vblank, would run through that one and lose a frame.)
+  if(reachedVblank || !(cpu->sp == retSp && cpu->pc == retPc && cpu->k == retK)) {
     if(getenv("TG_LOCKSTEP_DEBUG")) fprintf(stderr, "%s: abandoned at frame %u line %u -> frame %u line %u, %d steps\n", f->name, entryFrame, entryLine, snes->frames, snes->vPos, steps);
     // It ran into the next frame: check it on its own, then run it again normally.
     countIsolated(ls, f, st, isolatedCheck(ls, f, cpu, retSp, retPc, retK));

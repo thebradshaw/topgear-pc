@@ -19,6 +19,7 @@ void Tg3SendObjectFlat(TgRegs* r);
 void Tg3SceneryBobbing(TgRegs* r);
 void Tg3SceneryFour(TgRegs* r);
 void Tg3SendShapeRom(TgRegs* r);
+void Tg3PlayerEngine(TgRegs* r);
 
 const TgPortFunc tg3_port_funcs[] = {
   { 0x018487, "DrawBar", Tg3DrawBar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
@@ -34,6 +35,7 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x02DB87, "SceneryFour", Tg3SceneryFour, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DDBF, "SendShapeRam", Tg3SendShapeRam, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DEA8, "SendShapeRom", Tg3SendShapeRom, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x03EAC6, "PlayerEngine", Tg3PlayerEngine, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x05B1FF, "MergeSplits", Tg3MergeSplits, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x05B3D7, "BuildRoadCar", Tg3BuildRoadCar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x05B828, "BuildRoad", Tg3BuildRoad, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },

@@ -38,6 +38,7 @@ add_library(tgcore STATIC
   src/port2/registry.c
   src/port3/registry.c
   src/port3/dsp_objects.c
+  src/port3/engine.c
   src/port3/objects.c
   src/port3/road.c
   src/port3/windows.c
@@ -262,6 +263,6 @@ if(TG3_TEST_ROM AND TG3_TEST_DSP)
   # Top Gear 3000's first race with every translated routine checked against the original.
   add_test(NAME tg3_first_race COMMAND tg_headless --rom ${TG3_TEST_ROM} --dsp ${TG3_TEST_DSP} --port verify
     --frames 14000 --input ${CMAKE_SOURCE_DIR}/tests/inputs/topgear3000/first_race.txt
-    --expect-wram 9532323d9d1398fb45e4c5cf2763b6eed0858182478e9d697dfffa95ab2cfe89
-    --expect-frame d5819bc7d7770765068a21cf8db6554e8c0f524b4912187f4242b263e5ed20e0)
+    --expect-wram 9a4783b8c28a4eeb6a711bb56fdd294dffabe4e2913666150f8c68322a75d1e2
+    --expect-frame 26110be1ee260b1507e3a0105d976e578199e67f71fa5425f9a9f6495d1ce775)
 endif()
