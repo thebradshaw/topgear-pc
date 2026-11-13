@@ -14,6 +14,18 @@
 
 #include "../port/port.h"
 
+// $02:E503 is the second player's copy on the two-player screen: its record ($02B3 on), its
+// ring of step settings ($580 on), its own handler table, and no check for a join piece.
+typedef struct Ahead {
+  uint16_t rec, trk, s2, s4, sa;  // shifts: the record, the ring, and $1Exx/$01xx words
+  uint8_t obj_dp, piece_dp;       // $A0, $A2
+  uint32_t handlers, kinds;       // the step handlers ($02:819E), the special kinds ($02:E261)
+  uint16_t kind_edge, kind_flat;  // that table's two targets
+  uint16_t site_handler, site_near, site_far;
+  uint16_t far_flag, row_add, pal;
+  bool join_check;
+} Ahead;
+static const Ahead* V;
 static uint16_t g_d;
 static uint16_t z(uint8_t o) { return ram16((uint16_t) (g_d + o)); }
 static void zs(uint8_t o, uint16_t v) { ram16_set((uint16_t) (g_d + o), v); }
@@ -66,41 +78,41 @@ static uint16_t height(uint16_t a) {
 // it has set everything itself.
 static bool special_step(uint16_t a, uint16_t x, uint16_t y) {
   while(a >= 0x40) {
-    uint16_t f = (uint16_t) (m(0x3D6Cu + y) | 8);
-    ring(0x3D6C, y, f);
-    ring(0x3FEC, y, m(0x3CEAu + y));
-    zs(0xA2, (uint16_t) (z(0xA2) + 0x14));
-    if(!neg(w(0x1E66))) {
+    uint16_t f = (uint16_t) (m(0x3D6Cu + V->trk + y) | 8);
+    ring(0x3D6C + V->trk, y, f);
+    ring(0x3FEC + V->trk, y, m(0x3CEAu + V->trk + y));
+    zs(V->piece_dp, (uint16_t) (z(V->piece_dp) + 0x14));
+    if(!neg(w(0x1E66 + V->s2))) {
       uint16_t t = rd(0x840010u + x);
-      ws(0x1EE6, t);
+      ws(0x1EE6 + V->s2, t);
       zs(0x16, (uint16_t) (t + z(0x16)));
     }
-    x = (uint16_t) (z(0x9C) + z(0xA2));
+    x = (uint16_t) (z(0x9C) + z(V->piece_dp));
     uint16_t b = rd(0x840000u + x);
     if(z(0x16) < b) return false;
     a = (uint16_t) (z(0x16) - b);
   }
-  if(a == 0x3E && neg(w(0x1E66))) {
-    ring(0x3D6C, y, 0x8001);
+  if(a == 0x3E && neg(w(0x1E66 + V->s2))) {
+    ring(0x3D6C + V->trk, y, 0x8001);
     a = 0x3E;
   }
   a = (uint16_t) (a << 1);
   zs(0x1E, a);
   zs(0x20, x);
-  ring(0x3DEC, y, rd(0x850000u + (uint16_t) (a + rd(0x840004u + x))));
-  ring(0x3E6C, y, rd(0x850000u + (uint16_t) (z(0x1E) + rd(0x840006u + z(0x20)))));
-  uint16_t target = rd(0x02E261u + rd(0x84000Au + z(0x20)));
-  if(target == 0xE265) {
-    ring(0x3C6C, y, 0xFF00);
-    ring(0x3F6C, y, 0x0100);
-  } else if(target == 0xE279) {
-    uint16_t e = m(0x3DECu + y);
+  ring(0x3DEC + V->trk, y, rd(0x850000u + (uint16_t) (a + rd(0x840004u + x))));
+  ring(0x3E6C + V->trk, y, rd(0x850000u + (uint16_t) (z(0x1E) + rd(0x840006u + z(0x20)))));
+  uint16_t target = rd(V->kinds + rd(0x84000Au + z(0x20)));
+  if(target == V->kind_flat) {
+    ring(0x3C6C + V->trk, y, 0xFF00);
+    ring(0x3F6C + V->trk, y, 0x0100);
+  } else if(target == V->kind_edge) {
+    uint16_t e = m(0x3DECu + V->trk + y);
     if(neg(e)) {
-      ring(0x3C6C, y, (uint16_t) (e >> 1 | 0x8000));
-      ring(0x3F6C, y, 0x3FFF);
+      ring(0x3C6C + V->trk, y, (uint16_t) (e >> 1 | 0x8000));
+      ring(0x3F6C + V->trk, y, 0x3FFF);
     } else {
-      ring(0x3F6C, y, (uint16_t) (e >> 1));
-      ring(0x3C6C, y, 0xC001);
+      ring(0x3F6C + V->trk, y, (uint16_t) (e >> 1));
+      ring(0x3C6C + V->trk, y, 0xC001);
     }
   }
   x = z(0x20);
@@ -109,14 +121,14 @@ static bool special_step(uint16_t a, uint16_t x, uint16_t y) {
     a = (uint16_t) (a - 0x40);
     x = (uint16_t) (x + 2);
   }
-  ring(0x3FEC, y, m(0x5391u + (uint16_t) (a + rd(0x84000Cu + x))));
+  ring(0x3FEC + V->trk, y, m(0x5391u + (uint16_t) (a + rd(0x84000Cu + x))));
   return true;
 }
 
 // $02:E0C1: one road step comes into view.
 static void prepare_step(TgRegs* r) {
   if(z(0x16) >= z(0x22)) {
-    zs(0x16, (uint16_t) (z(0x16) + w(0x1EE0)));
+    zs(0x16, (uint16_t) (z(0x16) + w(0x1EE0 + V->s4)));
     zs(0x22, 0x7FFF);
   }
   uint16_t s16 = z(0x16);
@@ -131,16 +143,16 @@ static void prepare_step(TgRegs* r) {
   zs(0x1A, y);
   zs(0x1C, s16 & 0x3E);
   x = (uint16_t) (z(0x1C) + rd(0x840000u + x) + c);
-  ring(0x3AEC, y, rd(0x850000u + x));
+  ring(0x3AEC + V->trk, y, rd(0x850000u + x));
   x = (uint16_t) (z(0x1C) + rd(0x840002u + z(0x18)));
-  ring(0x3B6C, y, (uint16_t) (rd(0x850000u + x) - w(0x1E1E)));
-  if((y & 6) == 6) ws(0x1E1E, rd(0x850000u + x));
+  ring(0x3B6C + V->trk, y, (uint16_t) (rd(0x850000u + x) - w(0x1E1E + V->s2)));
+  if((y & 6) == 6) ws(0x1E1E + V->s2, rd(0x850000u + x));
   uint16_t a = (y & 2) ? (uint16_t) (z(0x1C) | 1) : z(0x1C);
   c = a >> 15;
   a = (uint16_t) (a << 1);
   if(!(a & 0x40)) x = (uint16_t) (a + rd(0x840006u + z(0x18)) + c);
   else x = (uint16_t) ((a & 0x3F) + rd(0x840008u + z(0x18)) + c);
-  ring(0x3CEC, y, m(0x5391u + x));
+  ring(0x3CEC + V->trk, y, m(0x5391u + x));
   x = rd(0x840004u + z(0x18));
   uint16_t v;
   for(;;) {
@@ -149,24 +161,24 @@ static void prepare_step(TgRegs* r) {
     x = (uint16_t) (x + 4);
   }
   y = z(0x1A);
-  ring(0x3BEC, y, v);
-  ring(0x3D6C, y, 0);
-  x = (uint16_t) (z(0x9C) + z(0xA2));
+  ring(0x3BEC + V->trk, y, v);
+  ring(0x3D6C + V->trk, y, 0);
+  x = (uint16_t) (z(0x9C) + z(V->piece_dp));
   uint16_t b = rd(0x840000u + x);
   bool plain = true, colour = true;
   if(z(0x16) < b) {
-    if((uint16_t) (z(0x16) + 1) == z(0x22) && neg(w(0x1E66))) ring(0x3D6C, y, 0x8002);
+    if((uint16_t) (z(0x16) + 1) == z(0x22) && neg(w(0x1E66 + V->s2))) ring(0x3D6C + V->trk, y, 0x8002);
   } else {
     colour = false;
     plain = !special_step((uint16_t) (z(0x16) - b), x, y);
   }
-  if(colour) ring(0x3FEC, y, (uint16_t) (((z(0x16) & 7) << 3) + w(0x1F0A)));
+  if(colour) ring(0x3FEC + V->trk, y, (uint16_t) (((z(0x16) & 7) << 3) + w(0x1F0A + V->s2)));
   if(plain) {
     // $02:E2D5
-    ring(0x3DEC, y, 0);
-    ring(0x3E6C, y, 0);
-    ring(0x3C6C, y, w(0x1F0E));
-    ring(0x3F6C, y, w(0x1F10));
+    ring(0x3DEC + V->trk, y, 0);
+    ring(0x3E6C + V->trk, y, 0);
+    ring(0x3C6C + V->trk, y, w(0x1F0E + V->s4));
+    ring(0x3F6C + V->trk, y, w(0x1F10 + V->s4));
   }
   x = (uint16_t) (z(0x16) << 2);
   uint16_t k = m(0x8CB4u + x) & 0xFF;
@@ -175,134 +187,135 @@ static void prepare_step(TgRegs* r) {
     r->x = (uint16_t) (k << 1);
     r->y = x;
     r->a = r->x;
-    call(r, 0x020000u | rd(0x02819Eu + r->x), 0xE307, false);
+    call(r, 0x020000u | rd(V->handlers + r->x), V->site_handler, false);
   }
   zs(0x16, (uint16_t) (z(0x16) + 1));
   if(z(0x16) == w(0x019A)) {
     zs(0x16, 0);
-    zs(0xA2, 0);
+    zs(V->piece_dp, 0);
   }
 }
 
 // $02:E31E: the roadside objects now in range. False when the lap wrapped (go again).
 static bool place_objects(TgRegs* r) {
-  uint16_t x = z(0xA0);
-  if(w(0x0226) >= m(0x5B91u + x)) {
+  uint16_t x = z(V->obj_dp);
+  if(w(0x0226 + V->rec) >= m(0x5B91u + x)) {
     uint16_t y = w(0x0100);
     do {
       uint16_t a = m(0x5B94u + x);
       if(a == 0) {
-        ms(0x45EC, (uint16_t) ((m(0x5B93u + x) & 0xFF) << 1));
+        ms(0x45EC + V->pal, (uint16_t) ((m(0x5B93u + x) & 0xFF) << 1));
       } else {
         bool far = (a & 0xFF00) != 0;
         uint16_t t = rd((far ? 0x86AC36u : 0x86AE36u) + (uint16_t) (a << 1));
         ms(0xF533u + y, rd(0x860000u + (uint16_t) (t + (far ? 0x22 : 0x1E))));
         ms(0xF433u + y, rd(0x860000u + (uint16_t) (t + (far ? 0x24 : 0x20))));
-        ms(0xF733u + y, 0x7F);
+        ms(0xF733u + y, V->far_flag);
         uint16_t i = rd(0x860000u + t);
         ms(0xF533u + y, (uint16_t) (m(0x6591u + i) + m(0xF533u + y)));
-        x = z(0xA0);
+        x = z(V->obj_dp);
         uint16_t b = m(0x5B93u + x);
-        ms(0xF633u + y, (uint16_t) (((b & 0xFF) << 8) >> 3));
+        ms(0xF633u + y, (uint16_t) ((((b & 0xFF) << 8) >> 3) + V->row_add));
         ms(0xF933u + y, (uint16_t) ((b & 0xFF) << 1));
-        ms(0xF833u + y, (uint16_t) (((b >> 8) << 1) + (far ? 0x495C : 0x45EC)));
+        ms(0xF833u + y, (uint16_t) (((b >> 8) << 1) + (far ? 0x495C : 0x45EC) + V->pal));
         r->db = 0x7E;
         r->x = x;
         r->y = y;
         r->a = m(0xF833u + y);
-        call(r, 0x85CDAF, far ? 0xE3FA : 0xE394, true);
+        call(r, 0x85CDAF, far ? V->site_far : V->site_near, true);
         x = r->x;
         y = (uint16_t) ((r->y + 2) & 0xFF);
       }
       x = (uint16_t) (x + 5);
-      zs(0xA0, x);
-    } while(w(0x0226) >= m(0x5B91u + x));
+      zs(V->obj_dp, x);
+    } while(w(0x0226 + V->rec) >= m(0x5B91u + x));
     ws(0x0100, y);
   }
   // $02:E429
-  uint16_t a = w(0x0226);
+  uint16_t a = w(0x0226 + V->rec);
   if(a >= w(0x019A)) {
     a = (uint16_t) (a - w(0x019A));
-    ws(0x0226, a);
-    ws(0x023E, a);
-    zs(0xA0, 0);
-    ws(0x1E5E, 0);
-    ws(0x1E60, 0);
-    ms(0x45EC, 0x0140);
+    ws(0x0226 + V->rec, a);
+    ws(0x023E + V->rec, a);
+    zs(V->obj_dp, 0);
+    ws(0x1E5E + V->s4, 0);
+    ws(0x1E60 + V->s4, 0);
+    ms(0x45EC + V->pal, 0x0140);
     return false;
   }
-  ws(0x0226, a);
-  ws(0x023E, a);
-  ws(0x0260, 0);
+  ws(0x0226 + V->rec, a);
+  ws(0x023E + V->rec, a);
+  ws(0x0260 + V->rec, 0);
   x = z(0x9C);
   for(;;) {
-    uint16_t p = (uint16_t) (w(0x0226) + 2);
+    uint16_t p = (uint16_t) (w(0x0226 + V->rec) + 2);
     uint16_t b = rd(0x840000u + x);
     if(p < b) break;
     if((uint16_t) (p - b) < 0x41) {
-      if(!((rd(0x840002u + x) & 0xFF) == 0x0A && (uint16_t) (w(0x1EDE) + 1) == rd(0x840000u + x)))
-        ws(0x0260, rd(0x840002u + x));
+      if(!(V->join_check && (rd(0x840002u + x) & 0xFF) == 0x0A && (uint16_t) (w(0x1EDE + V->s4) + 1) == rd(0x840000u + x)))
+        ws(0x0260 + V->rec, rd(0x840002u + x));
       break;
     }
     x = (uint16_t) (x + 0x14);
   }
-  ws(0x0142, w(0x0260) & 0xFF);
+  ws(0x0142 + V->s2, w(0x0260 + V->rec) & 0xFF);
   return true;
 }
 
-void Tg3RoadAhead(TgRegs* r) {
+static void road_ahead(TgRegs* r, const Ahead* v) {
+  V = v;
   g_d = r->d;
   r->db = 0x7E;  // PEA $837E; PLB
-  uint16_t x = (uint16_t) (((w(0x023E) + w(0x1EE6)) << 1) & 0x3E);
-  uint16_t n = (uint16_t) (w(0x0226) - w(0x023E));
+  uint16_t x = (uint16_t) (((w(0x023E + V->rec) + w(0x1EE6 + V->s2)) << 1) & 0x3E);
+  uint16_t n = (uint16_t) (w(0x0226 + V->rec) - w(0x023E + V->rec));
   if(n != 0) {
     dput(0);
-    uint16_t c = w(0x023C) == 0;  // from 0 - $023C
-    dput((uint16_t) (((uint16_t) -w(0x023C)) >> 8));
-    dput(m(0x3AEEu + x));
+    uint16_t c = w(0x023C + V->rec) == 0;  // from 0 - $023C
+    dput((uint16_t) (((uint16_t) -w(0x023C + V->rec)) >> 8));
+    dput(m(0x3AEEu + V->trk + x));
     uint16_t t = swap(dget());
     zs(0x14, t & 0xFF00);
     zs(0x16, t & 0xFF);
     uint16_t a = (uint16_t) ((swap(dget()) & 0xFF00) | z(0x16));
-    ws(0x01CE, a);
+    ws(0x01CE + V->s4, a);
     x = (uint16_t) (x + 2);
     if(--n != 0) {
       do {
-        uint32_t s = (uint32_t) a + m(0x3AEEu + x) + c;
+        uint32_t s = (uint32_t) a + m(0x3AEEu + V->trk + x) + c;
         a = (uint16_t) s;
         c = (uint16_t) (s >> 16);
         x = (uint16_t) (x + 2);
       } while(--n != 0);
-      ws(0x01CE, a);
+      ws(0x01CE + V->s4, a);
     }
     dput(0);
-    dput((uint16_t) ((w(0x0224) & 0xFF00) >> 1));
-    dput((uint16_t) (m(0x3AEEu + x) << 1));
+    dput((uint16_t) ((w(0x0224 + V->rec) & 0xFF00) >> 1));
+    dput((uint16_t) (m(0x3AEEu + V->trk + x) << 1));
     dget();
-    ws(0x01CE, (uint16_t) (dget() + w(0x01CE)));
+    ws(0x01CE + V->s4, (uint16_t) (dget() + w(0x01CE + V->s4)));
   } else {
     dput(0);
-    dput((uint16_t) (((uint16_t) ((w(0x0224) & 0xFF00) - w(0x023C))) >> 1));
-    dput((uint16_t) (m(0x3AEEu + x) << 1));
+    dput((uint16_t) (((uint16_t) ((w(0x0224 + V->rec) & 0xFF00) - w(0x023C + V->rec))) >> 1));
+    dput((uint16_t) (m(0x3AEEu + V->trk + x) << 1));
     dget();
-    ws(0x01CE, dget());
+    ws(0x01CE + V->s4, dget());
   }
 
   // $02:E069
   {
-    uint16_t a = (uint16_t) (w(0x023E) + 0x20 + w(0x1EE6));
+    uint16_t a = (uint16_t) (w(0x023E + V->rec) + 0x20 + w(0x1EE6 + V->s2));
     if(a >= w(0x019A)) a = (uint16_t) (a - w(0x019A));
     zs(0x16, a);
   }
-  ws(0x023C, w(0x0224) & 0xFF00);
-  n = (uint16_t) (w(0x0226) - w(0x023E));
+  ws(0x023C + V->rec, w(0x0224 + V->rec) & 0xFF00);
+  n = (uint16_t) (w(0x0226 + V->rec) - w(0x023E + V->rec));
   if(n != 0) {
     zs(0x14, n);
-    ws(0x0240, (uint16_t) (n + w(0x0240)));
-    zs(0x22, w(0x1EDE));
-    x = (uint16_t) ((w(0x023E) << 1) & 0x3E);
-    ws(0x1EF8, (uint16_t) (m(0x3E6Eu + x) - m(0x3E6Cu + x)));
-    ws(0x1EFA, (uint16_t) (m(0x3DEEu + x) - m(0x3DECu + x)));
+    ws(0x0240 + V->rec, (uint16_t) (n + w(0x0240 + V->rec)));
+    zs(0x22, w(0x1EDE + V->s4));
+    x = (uint16_t) ((w(0x023E + V->rec) << 1) & 0x3E);
+    ws(0x1EF8 + V->sa, (uint16_t) (m(0x3E6Eu + V->trk + x) - m(0x3E6Cu + V->trk + x)));
+    ws(0x1EFA + V->sa, (uint16_t) (m(0x3DEEu + V->trk + x) - m(0x3DECu + V->trk + x)));
     do {
       prepare_step(r);
       zs(0x14, (uint16_t) (z(0x14) - 1));
@@ -312,15 +325,15 @@ void Tg3RoadAhead(TgRegs* r) {
   }
 
   // $02:E497: the road's tilt.
-  uint16_t a = (uint16_t) (w(0x0226) + 1);
+  uint16_t a = (uint16_t) (w(0x0226 + V->rec) + 1);
   if(a >= w(0x019A)) a = (uint16_t) (a - w(0x019A));
   zs(0x14, height(a));
-  a = w(0x0226);
+  a = w(0x0226 + V->rec);
   a = a >= 3 ? (uint16_t) (a - 3) : (uint16_t) (a - 3 + w(0x019A));
   zs(0x16, height(a));
   dput(0);
   dput((uint16_t) (z(0x14) - z(0x16)));
-  dput((uint16_t) ((w(0x0225) + 0x100) & 0x3FF));
+  dput((uint16_t) ((w(0x0225 + V->rec) + 0x100) & 0x3FF));
   uint16_t a0 = z(0x16);
   uint16_t a1 = (uint16_t) (a0 << 1 | (a0 >= 0x8000));
   uint16_t a2 = (uint16_t) (a1 << 1 | (a0 >> 15));
@@ -328,8 +341,19 @@ void Tg3RoadAhead(TgRegs* r) {
   if(h & 0x80) h |= 0xFF00;
   dput(h);
   h = (uint16_t) (h + dget() + 9);
-  ws(0x0237, (uint16_t) -h);
+  ws(0x0237 + V->rec, (uint16_t) -h);
   r->db = 0x83;
   r->n = true;
   r->z = false;
+}
+
+void Tg3RoadAhead(TgRegs* r) {
+  static const Ahead k = { 0, 0, 0, 0, 0, 0xA0, 0xA2, 0x02819E, 0x02E261, 0xE279, 0xE265,
+                           0xE307, 0xE394, 0xE3FA, 0x7F, 0, 0, true };
+  road_ahead(r, &k);
+}
+void Tg3RoadAheadBottom(TgRegs* r) {
+  static const Ahead k = { 0xB3, 0x580, 2, 4, 0x0A, 0xA4, 0xA6, 0x02826E, 0x02E7B7, 0xE7CF, 0xE7BB,
+                           0xE85D, 0xE8ED, 0xE956, 0x17F, 0x1000, 0xDC, false };
+  road_ahead(r, &k);
 }

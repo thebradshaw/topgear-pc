@@ -38,6 +38,7 @@ void Tg3SceneryLoopTop(TgRegs* r);
 void Tg3SceneryLoopBottom(TgRegs* r);
 void Tg3RoadHdmaTables2p(TgRegs* r);
 void Tg3MergeSplitsBottom(TgRegs* r);
+void Tg3RoadAheadBottom(TgRegs* r);
 void Tg3CameraFollowBottom(TgRegs* r);
 void Tg3SpriteFinishBottom(TgRegs* r);
 void Tg3RoadWindowsTop(TgRegs* r);
@@ -73,6 +74,7 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x02DDBF, "SendShapeRam", Tg3SendShapeRam, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DEA8, "SendShapeRom", Tg3SendShapeRom, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02DFAD, "RoadAhead", Tg3RoadAhead, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
+  { 0x02E503, "RoadAheadBottom", Tg3RoadAheadBottom, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x02EC36, "RoadEdges", Tg3RoadEdges, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_AXY_FLAGS },
   { 0x02F2B3, "RoadPieces", Tg3RoadPieces, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x038989, "HorizonScroll", Tg3HorizonScroll, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
