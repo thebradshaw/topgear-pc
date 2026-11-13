@@ -24,6 +24,7 @@ void Tg3PlayerSetup(TgRegs* r);
 void Tg3TrackPosition(TgRegs* r);
 void Tg3RoadAhead(TgRegs* r);
 void Tg3RoadEdges(TgRegs* r);
+void Tg3CameraFollow(TgRegs* r);
 
 const TgPortFunc tg3_port_funcs[] = {
   { 0x018487, "DrawBar", Tg3DrawBar, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
@@ -31,6 +32,7 @@ const TgPortFunc tg3_port_funcs[] = {
   { 0x01E812, "CarsTurn", Tg3CarsTurn, TG_CALL_JSL, TG_MX_16, TG_MX_16, 0 },
   { 0x01F887, "MoveObject", Tg3MoveObject, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x01FBB1, "ObjectSegment", Tg3ObjectSegment, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
+  { 0x02A9B7, "CameraFollow", Tg3CameraFollow, TG_CALL_JSR, TG_MX_16, TG_MX_16, TG_DEAD_A | TG_DEAD_FLAGS },
   { 0x02AD2C, "RacePlaces", Tg3RacePlaces, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02CBD4, "SceneryLoop", Tg3SceneryLoop, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
   { 0x02D934, "SendObject", Tg3SendObject, TG_CALL_JSR, TG_MX_16, TG_MX_16, 0 },
