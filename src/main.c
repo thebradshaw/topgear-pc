@@ -746,9 +746,17 @@ static struct {
   bool quit;
 } menu = {false, 0, 0, -1, false};
 
-static void setFullscreen(bool on) {
+// The mouse is hidden and kept in the window only while fullscreen: the game has no use for
+// it, and over the picture the pointer is in the way.
+static void applyFullscreen(bool on) {
   app.fullscreen = on;
   SDL_SetWindowFullscreen(app.window, on);
+  if(on) SDL_HideCursor(); else SDL_ShowCursor();
+  SDL_SetWindowMouseGrab(app.window, on);
+}
+
+static void setFullscreen(bool on) {
+  applyFullscreen(on);
   saveSettings();
 }
 
@@ -1133,7 +1141,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   SDL_SetWindowMinimumSize(app.window, SNES_W, SNES_H);
-  if(app.fullscreen) SDL_SetWindowFullscreen(app.window, true);
+  applyFullscreen(app.fullscreen);
   app.texture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, TG_FB_WIDTH, TG_FB_HEIGHT);
   SDL_SetTextureScaleMode(app.texture, SDL_SCALEMODE_NEAREST);
   updateTitle();
@@ -1169,15 +1177,11 @@ int main(int argc, char** argv) {
           }
           if(down && !e.key.repeat) {
             if(e.key.key == SDLK_F11 || (e.key.key == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT))) {
-              app.fullscreen = !app.fullscreen;
-              SDL_SetWindowFullscreen(app.window, app.fullscreen);
-              saveSettings();
+              setFullscreen(!app.fullscreen);
               break;
             }
             if(e.key.key == SDLK_ESCAPE && app.fullscreen) {
-              app.fullscreen = false;
-              SDL_SetWindowFullscreen(app.window, false);
-              saveSettings();
+              setFullscreen(false);
               break;
             }
             if(e.key.key == SDLK_F2) { app.aspect = (app.aspect + 1) % ASPECT_COUNT; updateTitle(); break; }
