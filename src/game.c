@@ -56,6 +56,7 @@ void tg_game_destroy(TgGame* game) {
 
 void tg_game_reset(TgGame* game, bool hard) {
   snes_reset(game->snes, hard);
+  tg_lockstep_reset(game->lockstep);
 }
 
 void tg_game_set_input(TgGame* game, int player, uint16_t buttons) {

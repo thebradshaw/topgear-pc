@@ -205,6 +205,16 @@ bool tg_port_take_leave(uint32_t* adr) {
   return l;
 }
 
+// After the machine is reset: forget the state of calls that were under way.
+void tg_port_reset(void) {
+  g_declined = false;
+  g_emulatedDepth = 0;
+  g_minSp = 0xffff;
+  g_resumeDefault = (TgResumePoint) { 0 };
+  g_resumeAt = &g_resumeDefault;
+  g_leaving = false;
+}
+
 uint8_t tg_port_set_bank(uint8_t bank) {
   uint8_t old = g_snes->cpu->k;
   g_snes->cpu->k = bank;
