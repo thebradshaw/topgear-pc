@@ -30,6 +30,8 @@ typedef struct TgLockstep TgLockstep;
 
 TgLockstep* tg_lockstep_create(Snes* snes, const uint8_t* rom, TgPortMode mode);
 void tg_lockstep_destroy(TgLockstep* ls);
+// After the machine is reset: forget routines waiting for interrupts.
+void tg_lockstep_reset(TgLockstep* ls);
 TgPortMode tg_lockstep_mode(const TgLockstep* ls);
 
 // From the CPU's call hook: true when a translated routine handled the call.

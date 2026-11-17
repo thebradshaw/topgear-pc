@@ -26,6 +26,7 @@ typedef void TgPortFn(TgRegs* r);
 // Called by a translated routine, before it changes anything, when the original would
 // never return (a deliberate hang): the call then runs emulated instead.
 void tg_port_decline(void);
+void tg_port_reset(void);  // after the machine is reset: forget calls under way
 bool tg_port_take_declined(void);
 
 // Runs original code from a translated routine: a JSR to target in the routine's bank,

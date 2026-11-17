@@ -137,6 +137,23 @@ void tg_lockstep_destroy(TgLockstep* ls) {
   free(ls);
 }
 
+// The machine was reset: a routine waiting for an interrupt will never be resumed (the
+// place it waits for may come round again with the machine in another state), so drop it,
+// or it keeps its slot and its resume point and the game stops after a reset.
+void tg_lockstep_reset(TgLockstep* ls) {
+  if(ls == NULL) return;
+  for(int i = 0; i < 2; i++) {
+    if(ls->fibers[i].fiber) tg_fiber_destroy(ls->fibers[i].fiber);
+    memset(&ls->fibers[i], 0, sizeof(ls->fibers[i]));
+  }
+  ls->curFiber = NULL;
+  ls->inC = false;
+  ls->inOriginal = false;
+  ls->poisoned = false;
+  ls->skipOnce = 0xffffffff;
+  tg_port_reset();
+}
+
 TgPortMode tg_lockstep_mode(const TgLockstep* ls) { return ls->mode; }
 bool tg_lockstep_in_c(const TgLockstep* ls) { return ls->inC; }
 
